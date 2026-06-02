@@ -1,0 +1,15 @@
+{
+  "extraKnownMarketplaces": {
+    "harness-marketplace": {
+      "source": { "source": "github", "repo": "revfactory/harness" }
+    }
+  },
+  "enabledPlugins": { "harness@harness-marketplace": true },
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [
+        { "type": "command", "command": "bash \"$HOME/.claude/hooks/ensure-harness.sh\"" }
+      ]}
+    ]
+  }
+}
