@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SessionStart 훅 — 어디서 claude 를 열든 Harness 자동 설치 보장.
 set -uo pipefail
 MARKER="$HOME/.claude/plugins/installed_plugins.json"
 if [ -f "$MARKER" ] && grep -q "harness@harness-marketplace" "$MARKER" 2>/dev/null; then
