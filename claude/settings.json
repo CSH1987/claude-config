@@ -21,13 +21,20 @@
     ]
   },
   "enabledPlugins": {
-    "harness@harness-marketplace": true
+    "harness@harness-marketplace": true,
+    "oh-my-claudecode@omc": true
   },
   "extraKnownMarketplaces": {
     "harness-marketplace": {
       "source": {
         "source": "github",
         "repo": "revfactory/harness"
+      }
+    },
+    "omc": {
+      "source": {
+        "source": "github",
+        "repo": "Yeachan-Heo/oh-my-claudecode"
       }
     }
   },

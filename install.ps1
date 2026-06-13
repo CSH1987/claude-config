@@ -91,10 +91,12 @@ if (Test-Path $settingsPath) {
 }
 if ($s -isnot [System.Collections.IDictionary]) { $s = @{} }
 
-# 마켓플레이스 — 기존 보존, harness 항목만 추가/갱신
+# 마켓플레이스 — 기존 보존, 항목만 추가/갱신 (harness, omc=oh-my-claudecode)
 (Get-Dict $s 'extraKnownMarketplaces')['harness-marketplace'] = @{ source = @{ source = 'github'; repo = 'revfactory/harness' } }
-# 플러그인 — 기존 보존, harness만 추가
+(Get-Dict $s 'extraKnownMarketplaces')['omc'] = @{ source = @{ source = 'github'; repo = 'Yeachan-Heo/oh-my-claudecode' } }
+# 플러그인 — 기존 보존, harness + oh-my-claudecode(/deep-interview, /ralph) 추가
 (Get-Dict $s 'enabledPlugins')['harness@harness-marketplace'] = $true
+(Get-Dict $s 'enabledPlugins')['oh-my-claudecode@omc'] = $true
 # effort 기본값 — 영구화되는 유일한 부분(xhigh). 없을 때만 설정해 사용자 선택 보존.
 # (.ContainsKey 는 Hashtable·Generic Dictionary 모두 지원; .Contains 는 제네릭 Dictionary 에 없음)
 if (-not $s.ContainsKey('effortLevel')) { $s['effortLevel'] = 'xhigh' }
@@ -148,7 +150,10 @@ if (Get-Command claude -CommandType Application -ErrorAction SilentlyContinue) {
     claude plugin marketplace add revfactory/harness  *> $null
     claude plugin install harness@harness-marketplace *> $null
     Write-Host '  ✓ harness installed'
-    claude plugin list 2>$null | Select-String -Pattern 'harness|Status'
+    claude plugin marketplace add Yeachan-Heo/oh-my-claudecode *> $null
+    claude plugin install oh-my-claudecode@omc                 *> $null
+    Write-Host '  ✓ oh-my-claudecode installed (/deep-interview, /ralph)'
+    claude plugin list 2>$null | Select-String -Pattern 'harness|oh-my-claudecode|Status'
 } else {
     Write-Host '  ℹ claude 미설치 — 다음 세션 훅이 설치'
 }

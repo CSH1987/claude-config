@@ -101,7 +101,10 @@ if command -v claude >/dev/null 2>&1; then
   claude plugin marketplace add revfactory/harness  >/dev/null 2>&1 || true
   claude plugin install harness@harness-marketplace >/dev/null 2>&1 || true
   echo "  ✓ harness installed"
-  claude plugin list 2>/dev/null | grep -E "harness|Status" || true
+  claude plugin marketplace add Yeachan-Heo/oh-my-claudecode >/dev/null 2>&1 || true
+  claude plugin install oh-my-claudecode@omc               >/dev/null 2>&1 || true
+  echo "  ✓ oh-my-claudecode installed (/deep-interview, /ralph)"
+  claude plugin list 2>/dev/null | grep -E "harness|oh-my-claudecode|Status" || true
 else
   echo "  ℹ claude 미설치 — 다음 세션 훅이 설치"
 fi
