@@ -1,0 +1,11 @@
+# 기본: 텍스트 자동 감지, 저장(repo)은 LF
+* text=auto eol=lf
+
+# 셸 스크립트·설정·문서는 반드시 LF — Mac/Linux 실행 안정성(CRLF면 bash가 깨짐)
+*.sh   text eol=lf
+*.txt  text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+
+# PowerShell 은 Windows 관례상 CRLF 유지 (기능엔 무관)
+*.ps1  text eol=crlf
