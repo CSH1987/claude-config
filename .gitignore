@@ -1,0 +1,5 @@
+# OMC (oh-my-claudecode) runtime state — never commit
+.omc/
+
+# Claude settings backups created by install scripts
+claude/settings.json.bak.*

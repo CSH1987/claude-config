@@ -22,7 +22,17 @@
   },
   "enabledPlugins": {
     "harness@harness-marketplace": true,
-    "oh-my-claudecode@omc": true
+    "oh-my-claudecode@omc": true,
+    "vercel@claude-plugins-official": true,
+    "hookify@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true,
+    "plugin-dev@claude-plugins-official": true,
+    "mcp-server-dev@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "github@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "harness-marketplace": {

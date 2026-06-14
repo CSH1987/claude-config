@@ -1,4 +1,4 @@
-# Claude dotfiles 설치 (Windows) — 이 머신의 모든 폴더·세션에서:
+﻿# Claude dotfiles 설치 (Windows) — 이 머신의 모든 폴더·세션에서:
 #   · Harness 플러그인 자동 설치/복구
 #   · effortLevel=xhigh 영구 적용 + ultracode/ultraplan 리마인더
 #   · `claude` 명령을 ultracode 로 자동 실행($PROFILE 함수 오버라이드)
@@ -23,13 +23,14 @@ Write-Host '  ✓ ultracode.json copied'
 $claudeMd = Join-Path $dst 'CLAUDE.md'
 $srcMd    = Join-Path $dot 'claude\CLAUDE.md'
 $u8       = New-Object System.Text.UTF8Encoding($false)
-$mdStart  = '<!-- dotfiles:claude-md:start (자동 생성 — 이 블록은 재설치 시 갱신됩니다) -->'
+$mdStart    = '<!-- dotfiles:claude-md:start (auto-generated; updated on reinstall) -->'
+$mdStartTok = '<!-- dotfiles:claude-md:start'   # ASCII 토큰 — 기존(모지바케 포함) 블록까지 매칭
 $mdEnd    = '<!-- dotfiles:claude-md:end -->'
 $mdBody   = [System.IO.File]::ReadAllText($srcMd, $u8).TrimEnd([char]13, [char]10)
 $block    = "$mdStart`n$mdBody`n$mdEnd"
 if (Test-Path $claudeMd) {
     $cur = [System.IO.File]::ReadAllText($claudeMd, $u8)
-    $i = $cur.IndexOf($mdStart)
+    $i = $cur.IndexOf($mdStartTok)
     $j = $cur.IndexOf($mdEnd)
     if ($i -ge 0 -and $j -ge $i) {
         $new = $cur.Substring(0, $i) + $block + $cur.Substring($j + $mdEnd.Length)
@@ -94,9 +95,15 @@ if ($s -isnot [System.Collections.IDictionary]) { $s = @{} }
 # 마켓플레이스 — 기존 보존, 항목만 추가/갱신 (harness, omc=oh-my-claudecode)
 (Get-Dict $s 'extraKnownMarketplaces')['harness-marketplace'] = @{ source = @{ source = 'github'; repo = 'revfactory/harness' } }
 (Get-Dict $s 'extraKnownMarketplaces')['omc'] = @{ source = @{ source = 'github'; repo = 'Yeachan-Heo/oh-my-claudecode' } }
-# 플러그인 — 기존 보존, harness + oh-my-claudecode(/deep-interview, /ralph) 추가
+# 플러그인 — 기존 보존, base(harness, omc, vercel) + 작업 기반 보강 플러그인 추가
 (Get-Dict $s 'enabledPlugins')['harness@harness-marketplace'] = $true
 (Get-Dict $s 'enabledPlugins')['oh-my-claudecode@omc'] = $true
+# claude-plugins-official 은 기본 내장 마켓 — 별도 등록 불필요
+$officialPlugins = @(
+    'vercel', 'hookify', 'security-guidance', 'skill-creator', 'plugin-dev',
+    'mcp-server-dev', 'frontend-design', 'playwright', 'context7', 'github'
+)
+foreach ($p in $officialPlugins) { (Get-Dict $s 'enabledPlugins')["$p@claude-plugins-official"] = $true }
 # effort 기본값 — 영구화되는 유일한 부분(xhigh). 없을 때만 설정해 사용자 선택 보존.
 # (.ContainsKey 는 Hashtable·Generic Dictionary 모두 지원; .Contains 는 제네릭 Dictionary 에 없음)
 if (-not $s.ContainsKey('effortLevel')) { $s['effortLevel'] = 'xhigh' }
@@ -132,6 +139,27 @@ $jsonOut = Format-Json ($ser.Serialize($s))
 [System.IO.File]::WriteAllText($settingsPath, $jsonOut + "`n", (New-Object System.Text.UTF8Encoding($false)))
 Write-Host '  ✓ settings merged (기존 보존, 백업됨)'
 
+# python3 심 — hookify 훅이 python3 를 직접 호출. Windows 의 python3 는 MS-Store 스텁(깨짐)이라
+# 실제 python(py)을 가리키는 venv 리다이렉터 python3.exe 를 만들고 USER PATH 앞에 둔다 (멱등, admin 불필요).
+# 맥/리눅스는 python3 가 네이티브라 install.sh 에는 이 단계가 없다.
+$pyShim        = Join-Path $env:USERPROFILE '.pyshim'
+$pyShimScripts = Join-Path $pyShim 'Scripts'
+$py3           = Join-Path $pyShimScripts 'python3.exe'
+if (-not (Test-Path $py3)) {
+    if (Get-Command py -ErrorAction SilentlyContinue)         { & py     -m venv --system-site-packages $pyShim 2>$null }
+    elseif (Get-Command python -ErrorAction SilentlyContinue) { & python -m venv --system-site-packages $pyShim 2>$null }
+    $venvPy = Join-Path $pyShimScripts 'python.exe'
+    if (Test-Path $venvPy) { Copy-Item $venvPy $py3 -Force; Write-Host '  ✓ python3 shim created (.pyshim)' }
+    else { Write-Host '  ! python3 shim skipped — python/py not found (hookify needs python3)' }
+}
+if (Test-Path $py3) {
+    $up = [Environment]::GetEnvironmentVariable('Path','User'); if ($null -eq $up) { $up = '' }
+    if ($up -notlike "*$pyShimScripts*") {
+        [Environment]::SetEnvironmentVariable('Path', "$pyShimScripts;$up", 'User')
+        Write-Host '  ✓ python3 shim added to USER PATH (new sessions)'
+    }
+}
+
 # `claude` → ultracode 자동: $PROFILE 에 함수 오버라이드 dot-source (idempotent)
 $prof    = $PROFILE.CurrentUserCurrentHost
 $profDir = Split-Path -Parent $prof
@@ -153,7 +181,10 @@ if (Get-Command claude -CommandType Application -ErrorAction SilentlyContinue) {
     claude plugin marketplace add Yeachan-Heo/oh-my-claudecode *> $null
     claude plugin install oh-my-claudecode@omc                 *> $null
     Write-Host '  ✓ oh-my-claudecode installed (/deep-interview, /ralph)'
-    claude plugin list 2>$null | Select-String -Pattern 'harness|oh-my-claudecode|Status'
+    foreach ($p in $officialPlugins) { claude plugin install "$p@claude-plugins-official" *> $null }
+    Write-Host '  ✓ official plugins installed (vercel, hookify, security-guidance, skill-creator, plugin-dev, mcp-server-dev, frontend-design, playwright, context7, github)'
+    Write-Host '  i  github MCP needs env GITHUB_PERSONAL_ACCESS_TOKEN (set per machine; never commit)'
+    claude plugin list 2>$null | Select-String -Pattern 'harness|oh-my-claudecode|hookify|security-guidance|skill-creator|plugin-dev|mcp-server-dev|frontend-design|playwright|context7|github|vercel|Status'
 } else {
     Write-Host '  ℹ claude 미설치 — 다음 세션 훅이 설치'
 }

@@ -29,12 +29,13 @@ else
 import sys
 dst,src=sys.argv[1],sys.argv[2]
 body=open(src,encoding='utf-8').read().rstrip('\n')
-START='<!-- dotfiles:claude-md:start (자동 생성 — 이 블록은 재설치 시 갱신됩니다) -->'
+START='<!-- dotfiles:claude-md:start (auto-generated; updated on reinstall) -->'
+START_TOK='<!-- dotfiles:claude-md:start'
 END='<!-- dotfiles:claude-md:end -->'
 block=START+'\n'+body+'\n'+END
 try: cur=open(dst,encoding='utf-8').read()
 except FileNotFoundError: cur=None
-i=cur.find(START) if cur is not None else -1
+i=cur.find(START_TOK) if cur is not None else -1
 j=cur.find(END) if cur is not None else -1
 if cur is None:
     out=block+'\n'
@@ -104,7 +105,12 @@ if command -v claude >/dev/null 2>&1; then
   claude plugin marketplace add Yeachan-Heo/oh-my-claudecode >/dev/null 2>&1 || true
   claude plugin install oh-my-claudecode@omc               >/dev/null 2>&1 || true
   echo "  ✓ oh-my-claudecode installed (/deep-interview, /ralph)"
-  claude plugin list 2>/dev/null | grep -E "harness|oh-my-claudecode|Status" || true
+  for p in vercel hookify security-guidance skill-creator plugin-dev mcp-server-dev frontend-design playwright context7 github; do
+    claude plugin install "$p@claude-plugins-official" >/dev/null 2>&1 || true
+  done
+  echo "  ✓ official plugins installed (vercel, hookify, security-guidance, skill-creator, plugin-dev, mcp-server-dev, frontend-design, playwright, context7, github)"
+  echo "  i  github MCP needs env GITHUB_PERSONAL_ACCESS_TOKEN (set per machine; never commit)"
+  claude plugin list 2>/dev/null | grep -E "harness|oh-my-claudecode|hookify|security-guidance|skill-creator|plugin-dev|mcp-server-dev|frontend-design|playwright|context7|github|vercel|Status" || true
 else
   echo "  ℹ claude 미설치 — 다음 세션 훅이 설치"
 fi
