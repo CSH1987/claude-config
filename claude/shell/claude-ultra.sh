@@ -47,3 +47,72 @@ claude-newproj() {
   fi
   echo "  + '$name' pushed to a private GitHub repo. Auto-backup on every session end is now ON."
 }
+
+# claude-config:update — pull the latest config repo + re-run the installer (one command).
+claude-update() {
+  local cf="$HOME/.claude/.config-sync-path" repo
+  [ -f "$cf" ] || { echo "config repo path unknown (~/.claude/.config-sync-path) - run install.sh once" >&2; return 1; }
+  repo="$(cat "$cf" 2>/dev/null)"
+  [ -d "$repo/.git" ] || { echo "config repo not found: $repo" >&2; return 1; }
+  echo "  updating $repo ..."
+  git -C "$repo" pull --ff-only || git -C "$repo" pull --rebase --autostash || true
+  bash "$repo/install.sh"
+  echo "  + updated. Open a NEW terminal for shell changes to take effect."
+}
+
+# claude-config:doctor — read-only health-check of THIS machine's setup.
+claude-doctor() {
+  local dst="$HOME/.claude" ok=0 warn=0 fail=0
+  _row() {
+    local s="$1" m="$2" h="${3:-}"
+    printf '  [%-4s] %s\n' "$s" "$m"
+    case "$s" in
+      OK)   ok=$((ok+1)) ;;
+      WARN) warn=$((warn+1)); [ -n "$h" ] && printf '         -> %s\n' "$h" ;;
+      *)    fail=$((fail+1)); [ -n "$h" ] && printf '         -> %s\n' "$h" ;;
+    esac
+  }
+  printf '\nclaude-doctor:\n'
+  command -v claude >/dev/null 2>&1 && _row OK "claude CLI found" || _row FAIL "claude CLI not found" "npm i -g @anthropic-ai/claude-code"
+  if [ -f "$dst/settings.json" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+      if python3 - "$dst/settings.json" >/dev/null 2>&1 <<'PY'
+import json,sys; json.load(open(sys.argv[1]))
+PY
+      then _row OK "settings.json valid JSON"; else _row FAIL "settings.json invalid" "claude-update"; fi
+    else _row OK "settings.json present"; fi
+  else _row FAIL "settings.json missing" "run install.sh"; fi
+  for h in ensure-harness.sh effort-reminder.sh config-sync.sh work-autosync.sh; do
+    [ -e "$dst/hooks/$h" ] && _row OK "hook: $h" || _row WARN "hook missing: $h" "claude-update"
+  done
+  if command -v gh >/dev/null 2>&1; then gh auth status >/dev/null 2>&1 && _row OK "gh authenticated" || _row WARN "gh not authenticated" "gh auth login (github MCP token)"; else _row WARN "gh not installed" "brew/apt install gh"; fi
+  command -v python3 >/dev/null 2>&1 && _row OK "python3 available (hookify)" || _row WARN "python3 missing" "install python3"
+  [ -e "$dst/ultracode.json" ] && _row OK "ultracode.json present" || _row WARN "ultracode.json missing" "claude-update"
+  git config --global --get core.excludesfile >/dev/null 2>&1 && _row OK "git core.excludesfile set (global gitignore)" || _row WARN "global gitignore not set" "claude-update"
+  local cf="$dst/.config-sync-path"
+  if [ -f "$cf" ]; then local r; r="$(cat "$cf")"; [ -d "$r/.git" ] && _row OK "config repo: $r" || _row WARN "config repo missing: $r"; else _row WARN ".config-sync-path missing"; fi
+  printf '\n  %d OK / %d WARN / %d FAIL\n\n' "$ok" "$warn" "$fail"
+}
+
+# claude-config:help — cheatsheet of commands, modes, and kill-switches.
+claude-help() {
+  cat <<'EOF'
+
+claude-config — commands & modes
+  claude            launch Claude Code in ultracode (auto via this wrapper)
+  claude-newproj    current folder -> private GitHub repo + opt-in auto-backup
+  claude-update     pull latest config + re-run installer
+  claude-doctor     health-check this machine's setup
+  claude-help       this cheatsheet
+
+  work-autosync (opt-in project backup): add a .claude-autosync marker at the repo root.
+    off (project): delete .claude-autosync   |   off (global): CLAUDE_AUTOSYNC_OFF=1
+  config auto-sync: SessionStart=pull / SessionEnd=push.  off: CLAUDE_CONFIG_NO_SYNC=1
+
+OMC modes (you run the slash command; Claude suggests them proactively):
+  /deep-interview  crystallize vague requirements
+  /ralph           persist until done + reviewer-verified
+  /autopilot       idea -> code pipeline     /ultrawork  parallel throughput
+
+EOF
+}

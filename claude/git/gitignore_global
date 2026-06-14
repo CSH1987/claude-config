@@ -1,0 +1,48 @@
+# claude-config global gitignore — deployed to ~/.gitignore_global and wired via
+# `git config --global core.excludesfile`. Applies to EVERY repo so secrets never
+# get committed by accident (defense-in-depth beyond claude-newproj / work-autosync).
+
+# --- secrets / credentials (never commit in any repo) ---
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.envrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.ppk
+*.p8
+id_rsa
+id_ed25519
+id_dsa
+id_ecdsa
+.npmrc
+.netrc
+.pgpass
+.pypirc
+*service-account*.json
+*credentials*.json
+*token*.json
+database.yml
+*.tfstate
+*.tfstate.*
+secrets.yml
+secrets.yaml
+secrets.json
+.aws/
+.kube/
+.ssh/
+
+# --- common noise ---
+.DS_Store
+Thumbs.db
+*.log
+node_modules/
+.venv/
+__pycache__/
+.omc/

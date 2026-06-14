@@ -169,6 +169,36 @@ if [ "${CLAUDE_INSTALL_DEPLOY_ONLY:-}" = "1" ]; then
   exit 0
 fi
 
+# 전역 git 안전 기본값: ~/.gitignore_global(모든 레포가 시크릿 무시) + sane 기본값(미설정 시에만).
+if command -v git >/dev/null 2>&1; then
+  gi_src="$REPO_DIR/claude/git/gitignore_global"
+  if [ -f "$gi_src" ]; then
+    # 사용자가 이미 전역 gitignore 를 쓰면 그 파일에 시크릿 패턴만 보강(설정을 덮어쓰지 않음).
+    existing="$(git config --global --get core.excludesfile 2>/dev/null)"
+    target=""
+    if [ -n "$existing" ]; then
+      res="${existing/#\~/$HOME}"
+      [ -f "$res" ] && target="$res"
+    fi
+    if [ -z "$target" ]; then
+      target="$HOME/.gitignore_global"
+      [ -f "$target" ] || cp "$gi_src" "$target"
+      git config --global core.excludesfile "$target"
+    fi
+    while IFS= read -r line; do
+      case "$line" in ''|'#'*) continue ;; esac
+      grep -qxF "$line" "$target" 2>/dev/null || printf '%s\n' "$line" >> "$target"
+    done < "$gi_src"
+    echo "  ✓ global gitignore secrets ensured ($target)"
+  fi
+  # sane git 기본값 — 미설정일 때만 (사용자 선택 보존)
+  git config --global --get init.defaultBranch   >/dev/null 2>&1 || git config --global init.defaultBranch main
+  git config --global --get push.autoSetupRemote >/dev/null 2>&1 || git config --global push.autoSetupRemote true
+  git config --global --get fetch.prune          >/dev/null 2>&1 || git config --global fetch.prune true
+  git config --global --get rebase.autoStash     >/dev/null 2>&1 || git config --global rebase.autoStash true
+  echo "  ✓ git defaults (init.defaultBranch, push.autoSetupRemote, fetch.prune, rebase.autoStash) — only if unset"
+fi
+
 # 즉시 설치
 if command -v claude >/dev/null 2>&1; then
   claude plugin marketplace add revfactory/harness  >/dev/null 2>&1 || true

@@ -227,6 +227,35 @@ foreach ($prof in $profiles) {
     }
 }
 
+# 전역 git 안전 기본값: ~/.gitignore_global(모든 레포가 시크릿 무시) + sane 기본값(미설정 시에만).
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    $giSrc = Join-Path $repoDir 'claude\git\gitignore_global'
+    if (Test-Path $giSrc) {
+        # 사용자가 이미 전역 gitignore 를 쓰면 그 파일에 시크릿 패턴만 보강(설정을 덮어쓰지 않음).
+        $existing = (& git config --global --get core.excludesfile)
+        $existing = if ($existing) { "$existing".Trim() } else { '' }
+        $target = $null
+        if ($existing) {
+            $res = [Environment]::ExpandEnvironmentVariables(($existing -replace '^~', $env:USERPROFILE))
+            if (Test-Path $res) { $target = $res }
+        }
+        if (-not $target) {
+            $target = Join-Path $env:USERPROFILE '.gitignore_global'
+            if (-not (Test-Path $target)) { Copy-Item $giSrc $target -Force }
+            git config --global core.excludesfile $target
+        }
+        $cur = @(Get-Content $target -ErrorAction SilentlyContinue)
+        $add = @(Get-Content $giSrc | Where-Object { $_ -ne '' -and (-not $_.StartsWith('#')) -and ($_ -notin $cur) })
+        if ($add.Count) { Add-Content $target $add }
+        Write-Host "  ✓ global gitignore secrets ensured ($target)"
+    }
+    # sane git 기본값 — 미설정일 때만 (사용자 선택 보존)
+    foreach ($kv in @(@('init.defaultBranch', 'main'), @('push.autoSetupRemote', 'true'), @('fetch.prune', 'true'), @('rebase.autoStash', 'true'))) {
+        if (-not (& git config --global --get $kv[0])) { git config --global $kv[0] $kv[1] }
+    }
+    Write-Host '  ✓ git defaults (init.defaultBranch, push.autoSetupRemote, fetch.prune, rebase.autoStash) — 미설정 시에만'
+}
+
 # 즉시 설치 (실제 실행파일 사용)
 if (Get-Command claude -CommandType Application -ErrorAction SilentlyContinue) {
     claude plugin marketplace add revfactory/harness  *> $null

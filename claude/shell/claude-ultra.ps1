@@ -47,3 +47,74 @@ function claude-newproj {
     if ($LASTEXITCODE -ne 0) { Write-Error "push/create failed - NOT backed up (repo name conflict? gh auth?). Nothing was pushed."; return }
     Write-Host "  + '$Name' pushed to a private GitHub repo. Auto-backup on every session end is now ON."
 }
+
+# claude-config:update — pull the latest config repo + re-run the installer (one command).
+function claude-update {
+    $cf = Join-Path $env:USERPROFILE '.claude\.config-sync-path'
+    if (-not (Test-Path $cf)) { Write-Error 'config repo path unknown (~/.claude/.config-sync-path missing) - run install.ps1 once'; return }
+    $repo = ((Get-Content $cf -Raw)).Trim()
+    if (-not (Test-Path (Join-Path $repo '.git'))) { Write-Error "config repo not found: $repo"; return }
+    Write-Host "  updating $repo ..."
+    git -C $repo pull --ff-only
+    if ($LASTEXITCODE -ne 0) { git -C $repo pull --rebase --autostash }
+    powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo 'install.ps1')
+    Write-Host '  + updated. Open a NEW terminal for shell changes to take effect.'
+}
+
+# claude-config:doctor — read-only health-check of THIS machine's setup.
+function claude-doctor {
+    $dst = Join-Path $env:USERPROFILE '.claude'
+    $rows = New-Object System.Collections.ArrayList
+    function _add($s, $m, $h = '') { [void]$rows.Add([pscustomobject]@{ s = $s; m = $m; h = $h }) }
+    if ((Get-Command claude.cmd -CommandType Application -ErrorAction SilentlyContinue) -or (Get-Command claude -CommandType Application -ErrorAction SilentlyContinue)) { _add 'OK' 'claude CLI found' } else { _add 'FAIL' 'claude CLI not found' 'npm i -g @anthropic-ai/claude-code' }
+    $sp = Join-Path $dst 'settings.json'
+    if (Test-Path $sp) {
+        try {
+            $s = Get-Content $sp -Raw | ConvertFrom-Json
+            $pc = @($s.enabledPlugins.PSObject.Properties).Count
+            if ($pc -ge 11) { _add 'OK' "enabledPlugins: $pc" } else { _add 'WARN' "enabledPlugins: $pc (expected >= 11)" 'claude-update' }
+            if ($s.effortLevel -eq 'xhigh') { _add 'OK' 'effortLevel = xhigh' } else { _add 'WARN' "effortLevel = $($s.effortLevel)" }
+            _add 'OK' ("hooks: SessionStart={0} SessionEnd={1}" -f @($s.hooks.SessionStart).Count, @($s.hooks.SessionEnd).Count)
+        } catch { _add 'FAIL' 'settings.json invalid JSON' 'claude-update' }
+    } else { _add 'FAIL' 'settings.json missing' 'run install.ps1' }
+    foreach ($h in 'ensure-harness.ps1', 'effort-reminder.ps1', 'config-sync.ps1', 'work-autosync.ps1') {
+        if (Test-Path (Join-Path $dst "hooks\$h")) { _add 'OK' "hook: $h" } else { _add 'WARN' "hook missing: $h" 'claude-update' }
+    }
+    if (Get-Command gh -ErrorAction SilentlyContinue) { & gh auth status *> $null; if ($LASTEXITCODE -eq 0) { _add 'OK' 'gh authenticated' } else { _add 'WARN' 'gh not authenticated' 'gh auth login (github MCP token)' } } else { _add 'WARN' 'gh not installed' 'winget install GitHub.cli' }
+    if (Get-Command python3 -ErrorAction SilentlyContinue) { _add 'OK' 'python3 available (hookify)' } else { _add 'WARN' 'python3 not on PATH' 'claude-update (.pyshim)' }
+    if (Test-Path (Join-Path $dst 'ultracode.json')) { _add 'OK' 'ultracode.json present' } else { _add 'WARN' 'ultracode.json missing' 'claude-update' }
+    if ((Test-Path $PROFILE) -and (Select-String -Path $PROFILE -SimpleMatch 'claude-ultra' -Quiet)) { _add 'OK' 'claude wrapper in $PROFILE' } else { _add 'WARN' 'claude wrapper not in $PROFILE' 'open a new terminal / claude-update' }
+    if ((& git config --global --get core.excludesfile)) { _add 'OK' 'git core.excludesfile set (global gitignore)' } else { _add 'WARN' 'global gitignore not set' 'claude-update' }
+    $cf = Join-Path $dst '.config-sync-path'
+    if (Test-Path $cf) { $r = ((Get-Content $cf -Raw)).Trim(); if (Test-Path (Join-Path $r '.git')) { _add 'OK' "config repo: $r" } else { _add 'WARN' "config repo missing: $r" } } else { _add 'WARN' '.config-sync-path missing' }
+    Write-Host "`nclaude-doctor:" -ForegroundColor Cyan
+    foreach ($r in $rows) {
+        $c = switch ($r.s) { 'OK' { 'Green' } 'WARN' { 'Yellow' } default { 'Red' } }
+        Write-Host ("  [{0,-4}] {1}" -f $r.s, $r.m) -ForegroundColor $c
+        if ($r.h -and $r.s -ne 'OK') { Write-Host "         -> $($r.h)" -ForegroundColor DarkGray }
+    }
+    Write-Host ("`n  {0} OK / {1} WARN / {2} FAIL`n" -f @($rows | Where-Object { $_.s -eq 'OK' }).Count, @($rows | Where-Object { $_.s -eq 'WARN' }).Count, @($rows | Where-Object { $_.s -eq 'FAIL' }).Count) -ForegroundColor Cyan
+}
+
+# claude-config:help — cheatsheet of commands, modes, and kill-switches.
+function claude-help {
+    Write-Host @'
+
+claude-config — commands & modes
+  claude            launch Claude Code in ultracode (auto via this wrapper)
+  claude-newproj    current folder -> private GitHub repo + opt-in auto-backup
+  claude-update     pull latest config + re-run installer
+  claude-doctor     health-check this machine's setup
+  claude-help       this cheatsheet
+
+  work-autosync (opt-in project backup): add a .claude-autosync marker at the repo root.
+    off (project): delete .claude-autosync   |   off (global): CLAUDE_AUTOSYNC_OFF=1
+  config auto-sync: SessionStart=pull / SessionEnd=push.  off: CLAUDE_CONFIG_NO_SYNC=1
+
+OMC modes (you run the slash command; Claude suggests them proactively):
+  /deep-interview  crystallize vague requirements
+  /ralph           persist until done + reviewer-verified
+  /autopilot       idea -> code pipeline     /ultrawork  parallel throughput
+
+'@
+}
