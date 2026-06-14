@@ -8,6 +8,68 @@ DOTDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DST="$HOME/.claude"
 mkdir -p "$DST/hooks"
 
+# `claude` → ultracode 자동: 로그인 셸 rc 에 함수 오버라이드 source (idempotent).
+# 레포가 사라져도 셸이 깨지지 않도록 [ -f ] 가드. macOS 기본 셸은 zsh.
+install_bash_wrapper() {
+  local SRC="$DOTDIR/claude/shell/claude-ultra.sh"
+  local primary
+  add_one() {
+    local rc="$1"
+    [ -e "$rc" ] || : > "$rc"   # 없으면 생성 (zsh 가 읽도록)
+    if ! grep -q "dotfiles:claude-ultra" "$rc" 2>/dev/null; then
+      printf '\n# dotfiles:claude-ultra\n[ -f "%s" ] && source "%s"\n' "$SRC" "$SRC" >> "$rc"
+      echo "  ✓ claude override → $(basename "$rc")"
+    fi
+  }
+  # 로그인 셸($SHELL)에 맞는 주 rc 선택 — 없으면 생성. zsh 가 .bashrc 를 안 읽는 문제 해결.
+  case "${SHELL:-}" in
+    *zsh*)  primary="$HOME/.zshrc" ;;
+    *bash*) primary="$HOME/.bashrc" ;;
+    *) if [ "$(uname -s)" = "Darwin" ]; then primary="$HOME/.zshrc"; else primary="$HOME/.bashrc"; fi ;;
+  esac
+  add_one "$primary"
+  # 이미 존재하는 다른 셸 rc 에도 심어 둠(셸 전환 대비)
+  if [ "$primary" != "$HOME/.zshrc" ]  && [ -e "$HOME/.zshrc" ];  then add_one "$HOME/.zshrc";  fi
+  if [ "$primary" != "$HOME/.bashrc" ] && [ -e "$HOME/.bashrc" ]; then add_one "$HOME/.bashrc"; fi
+  # macOS bash 로그인 셸은 .bash_profile 을 읽음 → .bashrc 를 끌어오게 연결
+  if [ "$(uname -s)" = "Darwin" ] && [ -e "$HOME/.bashrc" ]; then
+    if [ ! -e "$HOME/.bash_profile" ] || ! grep -q 'bashrc' "$HOME/.bash_profile" 2>/dev/null; then
+      printf '\n# dotfiles:claude-ultra (load .bashrc for login shells)\n[ -f ~/.bashrc ] && . ~/.bashrc\n' >> "$HOME/.bash_profile"
+    fi
+  fi
+}
+
+# Windows(Git Bash/MSYS/Cygwin) 감지 — 핵심 분기.
+# Claude Code 는 훅을 "사용자가 claude 를 켠 셸"이 아니라 자기가 직접 스폰한다. 그래서 bash-form
+# 훅(`bash "$HOME/...".sh`)을 settings.json 에 박으면 PowerShell 로 켠 세션에서도 그 명령이
+# Windows 셸로 스폰돼 ① 'bash' 미발견 ② '$HOME' 미확장 → 매 세션 훅 에러가 난다.
+# → Windows 에선 훅/설정 payload 를 powershell-form 으로 쓰는 install.ps1 에 위임하고,
+#   여기선 Git Bash 사용자용 claude 래퍼만 심는다. (uname 으로만 분기; Mac/Linux 는 영향 없음)
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    ps=""
+    command -v powershell.exe >/dev/null 2>&1 && ps=powershell.exe
+    [ -z "$ps" ] && command -v powershell >/dev/null 2>&1 && ps=powershell
+    if [ -z "$ps" ]; then
+      echo "  ! Windows 인데 powershell 미발견 — PowerShell 에서 install.ps1 을 직접 실행하세요." >&2
+      exit 1
+    fi
+    if ! command -v cygpath >/dev/null 2>&1; then
+      echo "  ! cygpath 미발견 — Git Bash 권장. PowerShell 에서 install.ps1 을 직접 실행하세요." >&2
+      exit 1
+    fi
+    win_ps1="$(cygpath -w "$DOTDIR/install.ps1")"
+    echo "  i Windows(Git Bash) 감지 — 훅/설정 payload 는 install.ps1 에 위임 (powershell-form 훅)"
+    if "$ps" -NoProfile -ExecutionPolicy Bypass -File "$win_ps1"; then
+      install_bash_wrapper
+      echo "✓ 완료(Windows) — payload=install.ps1(powershell-form 훅), Git Bash 래퍼 심음. 새 터미널에서 claude."
+      exit 0
+    fi
+    echo "  ! install.ps1 위임 실패 — PowerShell 에서 직접 실행: powershell -ExecutionPolicy Bypass -File \"$win_ps1\"" >&2
+    exit 1
+    ;;
+esac
+
 # 훅 링크 (harness 자동 + effort 리마인더 + 설정 자동 동기화)
 ln -sfn "$DOTDIR/claude/hooks/ensure-harness.sh"   "$DST/hooks/ensure-harness.sh"
 ln -sfn "$DOTDIR/claude/hooks/effort-reminder.sh"  "$DST/hooks/effort-reminder.sh"
@@ -89,32 +151,13 @@ else
   echo "  ! python3 미설치 — settings 머지 건너뜀 (symlink 사용 권장 또는 python3 설치 후 재실행)"
 fi
 
-# `claude` → ultracode 자동: 로그인 셸 rc 에 함수 오버라이드 source (idempotent).
-# 레포가 사라져도 셸이 깨지지 않도록 [ -f ] 가드. macOS 기본 셸은 zsh.
-SRC="$DOTDIR/claude/shell/claude-ultra.sh"
-add_func() {
-  local rc="$1"
-  [ -e "$rc" ] || : > "$rc"   # 없으면 생성 (zsh 가 읽도록)
-  if ! grep -q "dotfiles:claude-ultra" "$rc" 2>/dev/null; then
-    printf '\n# dotfiles:claude-ultra\n[ -f "%s" ] && source "%s"\n' "$SRC" "$SRC" >> "$rc"
-    echo "  ✓ claude override → $(basename "$rc")"
-  fi
-}
-# 로그인 셸($SHELL)에 맞는 주 rc 선택 — 없으면 생성. zsh 가 .bashrc 를 안 읽는 문제 해결.
-case "${SHELL:-}" in
-  *zsh*)  primary="$HOME/.zshrc" ;;
-  *bash*) primary="$HOME/.bashrc" ;;
-  *) if [ "$(uname -s)" = "Darwin" ]; then primary="$HOME/.zshrc"; else primary="$HOME/.bashrc"; fi ;;
-esac
-add_func "$primary"
-# 이미 존재하는 다른 셸 rc 에도 심어 둠(셸 전환 대비)
-if [ "$primary" != "$HOME/.zshrc" ]  && [ -e "$HOME/.zshrc" ];  then add_func "$HOME/.zshrc";  fi
-if [ "$primary" != "$HOME/.bashrc" ] && [ -e "$HOME/.bashrc" ]; then add_func "$HOME/.bashrc"; fi
-# macOS bash 로그인 셸은 .bash_profile 을 읽음 → .bashrc 를 끌어오게 연결
-if [ "$(uname -s)" = "Darwin" ] && [ -e "$HOME/.bashrc" ]; then
-  if [ ! -e "$HOME/.bash_profile" ] || ! grep -q 'bashrc' "$HOME/.bash_profile" 2>/dev/null; then
-    printf '\n# dotfiles:claude-ultra (load .bashrc for login shells)\n[ -f ~/.bashrc ] && . ~/.bashrc\n' >> "$HOME/.bash_profile"
-  fi
+# `claude` → ultracode 자동: 위에서 정의한 래퍼 설치 (Unix 경로; Windows 는 위 분기에서 처리됨).
+install_bash_wrapper
+
+# 테스트/CI 용 deploy-only: payload(훅·settings·CLAUDE.md·래퍼)만 배치하고 플러그인 설치는 건너뜀.
+if [ "${CLAUDE_INSTALL_DEPLOY_ONLY:-}" = "1" ]; then
+  echo "  i deploy-only — plugin install skipped"
+  exit 0
 fi
 
 # 즉시 설치

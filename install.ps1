@@ -132,6 +132,11 @@ $managedHooks = [ordered]@{
 # 우리가 관리하는 모든 명령(이벤트 불문) — 기존 그룹에서 우리 것만 제거(자가 치유)
 $allManaged = @{}
 foreach ($evt in $managedHooks.Keys) { foreach ($c in $managedHooks[$evt]) { $allManaged[$c] = $true } }
+# 런처(bash/powershell)·경로·인자가 달라도 "우리 훅 파일을 실제 실행"하면 관리 훅으로 인식해 교체한다.
+# → 과거 bash-form 훅(`bash "$HOME/.claude/hooks/config-sync.sh"`)이 박힌 머신도 재실행으로 자가 치유.
+#   딱 3개 관리 파일명으로만 한정 + 호출 위치(-File "..." / bash "...")에 앵커 →
+#   사용자 자신의 bash 훅이나, 관리 경로를 인자/문구로 "언급만" 하는 훅은 보존(과잉 제거 방지).
+$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|config-sync)\.(ps1|sh)\b'
 $hk = Get-Dict $s 'hooks'
 foreach ($evt in $managedHooks.Keys) {
     $existing = @(); if ($hk[$evt]) { $existing = @($hk[$evt]) }
@@ -142,7 +147,10 @@ foreach ($evt in $managedHooks.Keys) {
         if ($grp -isnot [System.Collections.IDictionary]) { [void]$kept.Add($grp); continue }
         $isManaged = $false
         foreach ($h in @($grp['hooks'])) {
-            if (($h -is [System.Collections.IDictionary]) -and ($h['command']) -and $allManaged.ContainsKey([string]$h['command'])) { $isManaged = $true }
+            if (($h -is [System.Collections.IDictionary]) -and ($h['command'])) {
+                $cmdStr = [string]$h['command']
+                if ($allManaged.ContainsKey($cmdStr) -or ($cmdStr -match $managedRe)) { $isManaged = $true }
+            }
         }
         if (-not $isManaged) { [void]$kept.Add($grp) }   # 우리 훅이 아닌 그룹만 보존
     }
@@ -154,6 +162,13 @@ foreach ($evt in $managedHooks.Keys) {
 $jsonOut = Format-Json ($ser.Serialize($s))
 [System.IO.File]::WriteAllText($settingsPath, $jsonOut + "`n", (New-Object System.Text.UTF8Encoding($false)))
 Write-Host '  ✓ settings merged (기존 보존, 백업됨)'
+
+# 테스트/CI 용 deploy-only: 파일 배치(훅·settings·CLAUDE.md·ultracode.json)만 하고
+# 머신 상태 변경(python shim PATH·ExecutionPolicy·셸 프로필·플러그인 설치)은 건너뜀. (멱등·부작용 없음)
+if ($env:CLAUDE_INSTALL_DEPLOY_ONLY -eq '1') {
+    Write-Host '  i deploy-only — machine-state steps skipped (PATH/ExecutionPolicy/profile/plugins)'
+    return
+}
 
 # python3 심 — hookify 훅이 python3 를 직접 호출. Windows 의 python3 는 MS-Store 스텁(깨짐)이라
 # 실제 python(py)을 가리키는 venv 리다이렉터 python3.exe 를 만들고 USER PATH 앞에 둔다 (멱등, admin 불필요).
