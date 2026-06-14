@@ -1,4 +1,4 @@
-# dotfiles — Claude Code 기본값 자동 적용 (Harness + 최고 강도)
+# claude-config — Claude Code 기본값 자동 적용 (Harness + 최고 강도)
 
 이 머신과 **앞으로의 모든 새 머신(Mac · Windows · Linux)**에서 Claude Code(CLI)에:
 - **플러그인** 자동 설치·복구: `harness` + `oh-my-claudecode`(`/deep-interview`, `/ralph` 등)
@@ -28,30 +28,30 @@
 
 ### 🍎 macOS / 🐧 Linux  (터미널)
 ```bash
-gh repo clone CSH1987/dotfiles ~/dotfiles && bash ~/dotfiles/install.sh
+gh repo clone CSH1987/claude-config ~/claude-config && bash ~/claude-config/install.sh
 ```
 `gh` 없이 git만:
 ```bash
-git clone https://github.com/CSH1987/dotfiles.git ~/dotfiles && bash ~/dotfiles/install.sh
+git clone https://github.com/CSH1987/claude-config.git ~/claude-config && bash ~/claude-config/install.sh
 ```
 
 ### 🪟 Windows 11  (PowerShell)
 ```powershell
-gh repo clone CSH1987/dotfiles "$env:USERPROFILE\dotfiles"; powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\dotfiles\install.ps1"
+gh repo clone CSH1987/claude-config "$env:USERPROFILE\claude-config"; powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\claude-config\install.ps1"
 ```
 `gh` 없이 git만:
 ```powershell
-git clone https://github.com/CSH1987/dotfiles.git "$env:USERPROFILE\dotfiles"; powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\dotfiles\install.ps1"
+git clone https://github.com/CSH1987/claude-config.git "$env:USERPROFILE\claude-config"; powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\claude-config\install.ps1"
 ```
 
 ### 이미 받아둔 머신 — 최신 설정으로 갱신
 ```bash
 # Mac/Linux
-git -C ~/dotfiles pull && bash ~/dotfiles/install.sh
+git -C ~/claude-config pull && bash ~/claude-config/install.sh
 ```
 ```powershell
 # Windows
-git -C "$env:USERPROFILE\dotfiles" pull; powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\dotfiles\install.ps1"
+git -C "$env:USERPROFILE\claude-config" pull; powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\claude-config\install.ps1"
 ```
 
 ---
@@ -68,7 +68,7 @@ git -C "$env:USERPROFILE\dotfiles" pull; powershell -ExecutionPolicy Bypass -Fil
 
 ## 3. "완전 무동작"에 가장 가까운 경로 (Mac)
 
-- **Migration Assistant / 백업 복원**으로 새 Mac을 셋업하면 `~/dotfiles`와
+- **Migration Assistant / 백업 복원**으로 새 Mac을 셋업하면 `~/claude-config`와
   `~/.claude`(링크 + 훅)가 그대로 복사돼 → **추가 동작 0**으로 즉시 동작합니다.
 - 새로 깨끗이 설치하거나 Windows인 경우에만 위 부트스트랩 한 줄이 필요합니다.
 
@@ -84,7 +84,7 @@ git -C "$env:USERPROFILE\dotfiles" pull; powershell -ExecutionPolicy Bypass -Fil
 ## 구성
 
 ```
-dotfiles/
+claude-config/
 ├── install.sh                      # Mac/Linux 부트스트랩 (링크 + 즉시 설치)
 ├── install.ps1                     # Windows 부트스트랩 (복사+머지 + 즉시 설치)
 └── claude/
