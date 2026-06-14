@@ -84,6 +84,10 @@ $se = Get-Cmds $s 'SessionEnd'
 Check 'SessionStart has exactly 4 hooks'    { $ss.Count -eq 4 }
 Check 'SessionEnd has exactly 2 hooks'      { $se.Count -eq 2 }
 Check 'SessionStart = ensure+effort+config+autosync' { ($ss -match 'ensure-harness\.ps1').Count -eq 1 -and ($ss -match 'effort-reminder\.ps1').Count -eq 1 -and ($ss -match 'config-sync\.ps1').Count -eq 1 -and ($ss -match 'work-autosync\.ps1').Count -eq 1 }
+$pt = Get-Cmds $s 'PreToolUse'
+Check 'PreToolUse has exactly 1 hook (guardrails)' { $pt.Count -eq 1 -and (@($pt -match 'guardrails\.ps1').Count -eq 1) }
+Check 'PreToolUse hook is powershell -File'        { @($pt | Where-Object { $_ -notmatch '^powershell ' }).Count -eq 0 }
+Check 'guardrails.ps1 + guardrails.py deployed'    { (Test-Path (Join-Path $HooksDir 'guardrails.ps1')) -and (Test-Path (Join-Path $HooksDir 'guardrails.py')) }
 Check 'all hooks use powershell -File'       { ($ss + $se | Where-Object { $_ -notmatch '^powershell ' }).Count -eq 0 }
 Check 'NO bash-form hook on Windows'        { ($ss + $se | Where-Object { $_ -match '(^|\s)bash\b' }).Count -eq 0 }
 Check 'hook paths point into fake HOME'     { ($ss + $se | Where-Object { $_ -notmatch [regex]::Escape($HooksDir) }).Count -eq 0 }
@@ -227,7 +231,7 @@ Check 'work-autosync: safe file WAS pushed'          { $remoteFiles -contains 's
 Phase 'E. Cross-shell invariants (committed blob = what new machines clone)'
 # Check the git INDEX eol (the blob that gets cloned/deployed), not the local working tree —
 # a dev machine may have a stale CRLF working copy, but Mac/Linux installs get the blob (must be LF).
-$shFiles = @('claude/hooks/config-sync.sh','claude/hooks/work-autosync.sh','claude/hooks/effort-reminder.sh','claude/hooks/ensure-harness.sh','claude/hooks/effort-reminder.txt','install.sh','bootstrap.sh','claude/shell/claude-ultra.sh')
+$shFiles = @('claude/hooks/config-sync.sh','claude/hooks/work-autosync.sh','claude/hooks/guardrails.sh','claude/hooks/guardrails.py','claude/hooks/effort-reminder.sh','claude/hooks/ensure-harness.sh','claude/hooks/effort-reminder.txt','install.sh','bootstrap.sh','claude/shell/claude-ultra.sh')
 foreach ($f in $shFiles) {
   $info = (& git -C $Repo ls-files --eol -- $f 2>$null) -join "`n"
   Check "committed LF (index) for $f" { $info -match '(^|\n)\s*i/lf\b' }
@@ -361,6 +365,35 @@ if (-not $gitBash) {
   Remove-Item Env:\HOME, Env:\CLAUDE_INSTALL_DEPLOY_ONLY -ErrorAction SilentlyContinue
   $rc = Get-Content (Join-Path $bh2 '.bashrc') -Raw
   Check 'wrapper migrate: legacy marker recognized (no second wrapper)' { ([regex]::Matches($rc, ':claude-ultra')).Count -eq 1 }
+}
+
+# ----------------------------------------------------------------------------
+Phase 'K. Guardrail (PreToolUse): block catastrophic / warn dangerous / allow / fail-open'
+$gPy = Join-Path $HooksDir 'guardrails.py'
+function _verdict($json) {
+  $tmp = [System.IO.Path]::GetTempFileName()
+  [System.IO.File]::WriteAllText($tmp, $json, (New-Object System.Text.UTF8Encoding($false)))
+  $out = (& cmd /c "python3 `"$gPy`" < `"$tmp`"" 2>$null)
+  Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+  $out = "$out".Trim()
+  if (-not $out) { return 'ALLOW' }
+  try { $o = $out | ConvertFrom-Json } catch { return 'BADJSON' }
+  if ($o.hookSpecificOutput.permissionDecision -eq 'deny') { return 'BLOCK' }
+  if ($o.systemMessage) { return 'WARN' }
+  return 'ALLOW'
+}
+if (-not (Get-Command python3 -ErrorAction SilentlyContinue)) {
+  Write-Host '  SKIP  python3 not available' -ForegroundColor DarkYellow
+} else {
+  $RM = 'rm -' + 'rf '; $SL = [char]47   # assemble to keep literal danger strings out of this file
+  Check 'guardrail: catastrophic root -> BLOCK'      { (_verdict ('{"tool_name":"Bash","tool_input":{"command":"' + $RM + $SL + '"}}')) -eq 'BLOCK' }
+  Check 'guardrail: fork bomb -> BLOCK'              { (_verdict '{"tool_name":"Bash","tool_input":{"command":":()@{ :|:& @};:"}}'.Replace('@','')) -eq 'BLOCK' }
+  Check 'guardrail: safe ls -> ALLOW'                { (_verdict '{"tool_name":"Bash","tool_input":{"command":"ls -la"}}') -eq 'ALLOW' }
+  Check 'guardrail: rm -rf ./dir -> WARN'            { (_verdict ('{"tool_name":"Bash","tool_input":{"command":"' + $RM + './build"}}')) -eq 'WARN' }
+  Check 'guardrail: force-push -> WARN'              { (_verdict '{"tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}') -eq 'WARN' }
+  Check 'guardrail: secret edit -> WARN'             { (_verdict '{"tool_name":"Edit","tool_input":{"file_path":"cfg/.env"}}') -eq 'WARN' }
+  Check 'guardrail: .env.example edit -> ALLOW'      { (_verdict '{"tool_name":"Edit","tool_input":{"file_path":".env.example"}}') -eq 'ALLOW' }
+  Check 'guardrail: malformed -> ALLOW (fail-open)'  { (_verdict 'not valid json') -eq 'ALLOW' }
 }
 
 # ----------------------------------------------------------------------------

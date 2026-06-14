@@ -14,9 +14,11 @@ Copy-Item (Join-Path $repoDir 'claude\hooks\effort-reminder.ps1') (Join-Path $ho
 Copy-Item (Join-Path $repoDir 'claude\hooks\effort-reminder.txt') (Join-Path $hooks 'effort-reminder.txt') -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\config-sync.ps1')     (Join-Path $hooks 'config-sync.ps1')     -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\work-autosync.ps1')   (Join-Path $hooks 'work-autosync.ps1')   -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.ps1')      (Join-Path $hooks 'guardrails.ps1')      -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.py')       (Join-Path $hooks 'guardrails.py')       -Force
 # config-sync 가 레포 위치를 찾도록 기록 (BOM 없이)
 [System.IO.File]::WriteAllText((Join-Path $dst '.config-sync-path'), $repoDir, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync)'
+Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, guardrails)'
 
 # ultracode 설정 파일(--settings 로 넘길 용도) 복사
 Copy-Item (Join-Path $repoDir 'claude\ultracode.json') (Join-Path $dst 'ultracode.json') -Force
@@ -133,6 +135,9 @@ $managedHooks = [ordered]@{
         (New-PsHook 'config-sync.ps1'     " -Mode end -Repo `"$repoDir`""),
         (New-PsHook 'work-autosync.ps1'   ' -Mode end')
     )
+    PreToolUse = @(
+        (New-PsHook 'guardrails.ps1'      '')
+    )
 }
 # 우리가 관리하는 모든 명령(이벤트 불문) — 기존 그룹에서 우리 것만 제거(자가 치유)
 $allManaged = @{}
@@ -141,7 +146,7 @@ foreach ($evt in $managedHooks.Keys) { foreach ($c in $managedHooks[$evt]) { $al
 # → 과거 bash-form 훅(`bash "$HOME/.claude/hooks/config-sync.sh"`)이 박힌 머신도 재실행으로 자가 치유.
 #   딱 3개 관리 파일명으로만 한정 + 호출 위치(-File "..." / bash "...")에 앵커 →
 #   사용자 자신의 bash 훅이나, 관리 경로를 인자/문구로 "언급만" 하는 훅은 보존(과잉 제거 방지).
-$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|config-sync|work-autosync)\.(ps1|sh)\b'
+$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|config-sync|work-autosync|guardrails)\.(ps1|sh)\b'
 $hk = Get-Dict $s 'hooks'
 foreach ($evt in $managedHooks.Keys) {
     $existing = @(); if ($hk[$evt]) { $existing = @($hk[$evt]) }
