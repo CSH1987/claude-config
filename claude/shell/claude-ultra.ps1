@@ -7,5 +7,10 @@ function claude {
     if (-not $real) { $real = (Get-Command claude -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source }
     if (-not $real) { Write-Error 'claude 실행파일을 찾을 수 없습니다.'; return }
     $s = Join-Path $env:USERPROFILE '.claude\ultracode.json'
+    # github MCP 토큰: 명시적으로 설정돼 있지 않으면 로그인된 gh 에서 런타임으로 가져옴 (레포엔 비밀 미포함)
+    if ((-not $env:GITHUB_PERSONAL_ACCESS_TOKEN) -and (Get-Command gh -ErrorAction SilentlyContinue)) {
+        $ghTok = (& gh auth token 2>$null)
+        if ($ghTok) { $env:GITHUB_PERSONAL_ACCESS_TOKEN = "$ghTok".Trim() }
+    }
     if (Test-Path $s) { & $real --settings $s @args } else { & $real @args }
 }
