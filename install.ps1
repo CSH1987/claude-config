@@ -3,28 +3,28 @@
 #   · effortLevel=xhigh 영구 적용 + ultracode/ultraplan 리마인더
 #   · `claude` 명령을 ultracode 로 자동 실행($PROFILE 함수 오버라이드)
 $ErrorActionPreference = 'Stop'
-$dot   = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$repoDir   = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $dst   = Join-Path $env:USERPROFILE '.claude'
 $hooks = Join-Path $dst 'hooks'
 New-Item -ItemType Directory -Force -Path $hooks | Out-Null
 
 # 훅 복사 (Windows는 심볼릭 링크가 관리자 권한을 요구하므로 복사 방식)
-Copy-Item (Join-Path $dot 'claude\hooks\ensure-harness.ps1')  (Join-Path $hooks 'ensure-harness.ps1')  -Force
-Copy-Item (Join-Path $dot 'claude\hooks\effort-reminder.ps1') (Join-Path $hooks 'effort-reminder.ps1') -Force
-Copy-Item (Join-Path $dot 'claude\hooks\effort-reminder.txt') (Join-Path $hooks 'effort-reminder.txt') -Force
-Copy-Item (Join-Path $dot 'claude\hooks\config-sync.ps1')     (Join-Path $hooks 'config-sync.ps1')     -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\ensure-harness.ps1')  (Join-Path $hooks 'ensure-harness.ps1')  -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\effort-reminder.ps1') (Join-Path $hooks 'effort-reminder.ps1') -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\effort-reminder.txt') (Join-Path $hooks 'effort-reminder.txt') -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\config-sync.ps1')     (Join-Path $hooks 'config-sync.ps1')     -Force
 # config-sync 가 레포 위치를 찾도록 기록 (BOM 없이)
-[System.IO.File]::WriteAllText((Join-Path $dst '.config-sync-path'), $dot, (New-Object System.Text.UTF8Encoding($false)))
+[System.IO.File]::WriteAllText((Join-Path $dst '.config-sync-path'), $repoDir, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync)'
 
 # ultracode 설정 파일(--settings 로 넘길 용도) 복사
-Copy-Item (Join-Path $dot 'claude\ultracode.json') (Join-Path $dst 'ultracode.json') -Force
+Copy-Item (Join-Path $repoDir 'claude\ultracode.json') (Join-Path $dst 'ultracode.json') -Force
 Write-Host '  ✓ ultracode.json copied'
 
 # CLAUDE.md (전역 세션 기본값): claude-config 관리 블록을 마커 사이에 삽입/갱신.
 # 마커 밖의 사용자 내용은 보존하고, 재실행 시 블록만 최신본으로 교체(업데이트 자동 반영).
 $claudeMd = Join-Path $dst 'CLAUDE.md'
-$srcMd    = Join-Path $dot 'claude\CLAUDE.md'
+$srcMd    = Join-Path $repoDir 'claude\CLAUDE.md'
 $u8       = New-Object System.Text.UTF8Encoding($false)
 $mdStart  = '<!-- claude-config:claude-md:start (auto-generated; updated on reinstall) -->'
 $mdEnd    = '<!-- claude-config:claude-md:end -->'
@@ -125,10 +125,10 @@ $managedHooks = [ordered]@{
     SessionStart = @(
         (New-PsHook 'ensure-harness.ps1'  ''),
         (New-PsHook 'effort-reminder.ps1' ''),
-        (New-PsHook 'config-sync.ps1'     " -Mode start -Repo `"$dot`"")
+        (New-PsHook 'config-sync.ps1'     " -Mode start -Repo `"$repoDir`"")
     )
     SessionEnd = @(
-        (New-PsHook 'config-sync.ps1'     " -Mode end -Repo `"$dot`"")
+        (New-PsHook 'config-sync.ps1'     " -Mode end -Repo `"$repoDir`"")
     )
 }
 # 우리가 관리하는 모든 명령(이벤트 불문) — 기존 그룹에서 우리 것만 제거(자가 치유)
@@ -204,7 +204,7 @@ try {
 
 # `claude` → ultracode 자동: Windows PowerShell 5.1 + (있으면) PowerShell 7 프로필 양쪽에 dot-source (idempotent).
 # 레포 삭제/이동 대비 Test-Path 가드. OneDrive 리디렉션은 MyDocuments 로 해결.
-$srcFunc = Join-Path $dot 'claude\shell\claude-ultra.ps1'
+$srcFunc = Join-Path $repoDir 'claude\shell\claude-ultra.ps1'
 $marker    = 'claude-config:claude-ultra'
 $markerOld = 'dotfiles:claude-ultra'   # 레거시 마커도 감지해 중복 삽입 방지(자가 마이그레이션)
 $docs    = [Environment]::GetFolderPath('MyDocuments')

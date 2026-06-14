@@ -4,14 +4,14 @@
 #   · effortLevel=xhigh 영구 적용 + ultracode/ultraplan 리마인더
 #   · `claude` 명령을 ultracode 로 자동 실행(셸 함수 오버라이드)
 set -euo pipefail
-DOTDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DST="$HOME/.claude"
 mkdir -p "$DST/hooks"
 
 # `claude` → ultracode 자동: 로그인 셸 rc 에 함수 오버라이드 source (idempotent).
 # 레포가 사라져도 셸이 깨지지 않도록 [ -f ] 가드. macOS 기본 셸은 zsh.
 install_bash_wrapper() {
-  local SRC="$DOTDIR/claude/shell/claude-ultra.sh"
+  local SRC="$REPO_DIR/claude/shell/claude-ultra.sh"
   local primary
   add_one() {
     local rc="$1"
@@ -58,7 +58,7 @@ case "$(uname -s)" in
       echo "  ! cygpath 미발견 — Git Bash 권장. PowerShell 에서 install.ps1 을 직접 실행하세요." >&2
       exit 1
     fi
-    win_ps1="$(cygpath -w "$DOTDIR/install.ps1")"
+    win_ps1="$(cygpath -w "$REPO_DIR/install.ps1")"
     echo "  i Windows(Git Bash) 감지 — 훅/설정 payload 는 install.ps1 에 위임 (powershell-form 훅)"
     if "$ps" -NoProfile -ExecutionPolicy Bypass -File "$win_ps1"; then
       install_bash_wrapper
@@ -71,25 +71,25 @@ case "$(uname -s)" in
 esac
 
 # 훅 링크 (harness 자동 + effort 리마인더 + 설정 자동 동기화)
-ln -sfn "$DOTDIR/claude/hooks/ensure-harness.sh"   "$DST/hooks/ensure-harness.sh"
-ln -sfn "$DOTDIR/claude/hooks/effort-reminder.sh"  "$DST/hooks/effort-reminder.sh"
-ln -sfn "$DOTDIR/claude/hooks/effort-reminder.txt" "$DST/hooks/effort-reminder.txt"
-ln -sfn "$DOTDIR/claude/hooks/config-sync.sh"      "$DST/hooks/config-sync.sh"
-chmod +x "$DOTDIR/claude/hooks/ensure-harness.sh" "$DOTDIR/claude/hooks/effort-reminder.sh" "$DOTDIR/claude/hooks/config-sync.sh"
-printf '%s' "$DOTDIR" > "$DST/.config-sync-path"   # config-sync 가 레포 위치를 찾도록
+ln -sfn "$REPO_DIR/claude/hooks/ensure-harness.sh"   "$DST/hooks/ensure-harness.sh"
+ln -sfn "$REPO_DIR/claude/hooks/effort-reminder.sh"  "$DST/hooks/effort-reminder.sh"
+ln -sfn "$REPO_DIR/claude/hooks/effort-reminder.txt" "$DST/hooks/effort-reminder.txt"
+ln -sfn "$REPO_DIR/claude/hooks/config-sync.sh"      "$DST/hooks/config-sync.sh"
+chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/config-sync.sh"
+printf '%s' "$REPO_DIR" > "$DST/.config-sync-path"   # config-sync 가 레포 위치를 찾도록
 echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync)"
 
 # ultracode 설정 파일(--settings 로 넘길 용도) — 항상 최신본 링크
-ln -sfn "$DOTDIR/claude/ultracode.json" "$DST/ultracode.json"
+ln -sfn "$REPO_DIR/claude/ultracode.json" "$DST/ultracode.json"
 echo "  ✓ ultracode.json linked"
 
 # CLAUDE.md (전역 세션 기본값): 없으면/심링크면 링크(업데이트 자동 반영),
 # 실제 파일이면 claude-config 관리 블록을 마커 사이에 삽입/갱신(마커 밖 사용자 내용 보존).
 if [ -L "$DST/CLAUDE.md" ] || [ ! -e "$DST/CLAUDE.md" ]; then
-  ln -sfn "$DOTDIR/claude/CLAUDE.md" "$DST/CLAUDE.md"
+  ln -sfn "$REPO_DIR/claude/CLAUDE.md" "$DST/CLAUDE.md"
   echo "  ✓ CLAUDE.md linked"
 elif command -v python3 >/dev/null 2>&1; then
-  python3 - "$DST/CLAUDE.md" "$DOTDIR/claude/CLAUDE.md" <<'PY'
+  python3 - "$DST/CLAUDE.md" "$REPO_DIR/claude/CLAUDE.md" <<'PY'
 import sys
 dst,src=sys.argv[1],sys.argv[2]
 body=open(src,encoding='utf-8').read().rstrip('\n')
@@ -124,11 +124,11 @@ fi
 
 # settings: 없으면 링크, 있으면 머지(기존 보존)
 if [ -L "$DST/settings.json" ] || [ ! -e "$DST/settings.json" ]; then
-  ln -sfn "$DOTDIR/claude/settings.json" "$DST/settings.json"
+  ln -sfn "$REPO_DIR/claude/settings.json" "$DST/settings.json"
   echo "  ✓ settings linked"
 elif command -v python3 >/dev/null 2>&1; then
   cp -p "$DST/settings.json" "$DST/settings.json.bak.$(date +%s)"
-  python3 - "$DST/settings.json" "$DOTDIR/claude/settings.json" <<'PY'
+  python3 - "$DST/settings.json" "$REPO_DIR/claude/settings.json" <<'PY'
 import json,sys
 dst,src=sys.argv[1],sys.argv[2]
 d=json.load(open(dst)); s=json.load(open(src))
