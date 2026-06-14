@@ -25,6 +25,14 @@
             "command": "bash \"$HOME/.claude/hooks/config-sync.sh\" start"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/work-autosync.sh\" start"
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -33,6 +41,14 @@
           {
             "type": "command",
             "command": "bash \"$HOME/.claude/hooks/config-sync.sh\" end"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/work-autosync.sh\" end"
           }
         ]
       }

@@ -81,9 +81,9 @@ Check 'enabledPlugins: vercel NOT in default set' { $s.enabledPlugins.PSObject.P
 Check 'marketplaces: harness + omc'         { $s.extraKnownMarketplaces.'harness-marketplace' -and $s.extraKnownMarketplaces.omc }
 $ss = Get-Cmds $s 'SessionStart'
 $se = Get-Cmds $s 'SessionEnd'
-Check 'SessionStart has exactly 3 hooks'    { $ss.Count -eq 3 }
-Check 'SessionEnd has exactly 1 hook'       { $se.Count -eq 1 }
-Check 'SessionStart = ensure+effort+config' { ($ss -match 'ensure-harness\.ps1').Count -eq 1 -and ($ss -match 'effort-reminder\.ps1').Count -eq 1 -and ($ss -match 'config-sync\.ps1').Count -eq 1 }
+Check 'SessionStart has exactly 4 hooks'    { $ss.Count -eq 4 }
+Check 'SessionEnd has exactly 2 hooks'      { $se.Count -eq 2 }
+Check 'SessionStart = ensure+effort+config+autosync' { ($ss -match 'ensure-harness\.ps1').Count -eq 1 -and ($ss -match 'effort-reminder\.ps1').Count -eq 1 -and ($ss -match 'config-sync\.ps1').Count -eq 1 -and ($ss -match 'work-autosync\.ps1').Count -eq 1 }
 Check 'all hooks use powershell -File'       { ($ss + $se | Where-Object { $_ -notmatch '^powershell ' }).Count -eq 0 }
 Check 'NO bash-form hook on Windows'        { ($ss + $se | Where-Object { $_ -match '(^|\s)bash\b' }).Count -eq 0 }
 Check 'hook paths point into fake HOME'     { ($ss + $se | Where-Object { $_ -notmatch [regex]::Escape($HooksDir) }).Count -eq 0 }
@@ -94,8 +94,8 @@ Phase 'B. Idempotency (run install again)'
 $r2 = Run-Install
 $s2 = Read-Settings
 Check 'second install exits 0'              { $r2.Code -eq 0 }
-Check 'still exactly 3 SessionStart hooks'  { (Get-Cmds $s2 'SessionStart').Count -eq 3 }
-Check 'still exactly 1 SessionEnd hook'     { (Get-Cmds $s2 'SessionEnd').Count -eq 1 }
+Check 'still exactly 4 SessionStart hooks'  { (Get-Cmds $s2 'SessionStart').Count -eq 4 }
+Check 'still exactly 2 SessionEnd hooks'    { (Get-Cmds $s2 'SessionEnd').Count -eq 2 }
 Check 'still valid JSON after re-run'       { $s2 -ne $null }
 Check 'CLAUDE.md block not duplicated'      { ([regex]::Matches((Get-Content (Join-Path $ClaudeDir 'CLAUDE.md') -Raw),'claude-config:claude-md:start \(')).Count -eq 1 }
 
@@ -118,7 +118,7 @@ $s3 = Read-Settings
 Check 'custom top-level key preserved'      { $s3.myCustomKey -eq 123 }
 Check 'unrelated UserPromptSubmit preserved' { (Get-Cmds $s3 'UserPromptSubmit') -contains 'echo ups-hook' }
 Check 'custom SessionStart hook preserved'  { (Get-Cmds $s3 'SessionStart') -contains 'echo custom-user-hook' }
-Check 'managed hooks appended (3 + 1 user)' { (Get-Cmds $s3 'SessionStart').Count -eq 4 }
+Check 'managed hooks appended (4 + 1 user)' { (Get-Cmds $s3 'SessionStart').Count -eq 5 }
 Check 'effortLevel preserved-or-set'        { $s3.effortLevel -eq 'xhigh' }
 
 # ----------------------------------------------------------------------------
@@ -184,11 +184,50 @@ git -C $noup -c user.email='t@t' -c user.name='t' commit -qm init 2>&1 | Out-Nul
 $csNoup = Invoke-Child $cs @('-Mode','start','-Repo',$noup)
 Check 'config-sync no-upstream exits 0'     { $csNoup.Code -eq 0 }
 
+# D6 work-autosync: opt-in gate — skips without the .claude-autosync marker, pushes with it
+$waPs = Join-Path $HooksDir 'work-autosync.ps1'
+$waRemote = Join-Path $SbRoot 'wa-remote.git'
+$waWork   = Join-Path $SbRoot 'wa-work'
+foreach ($p in @($waRemote,$waWork)) { if (Test-Path $p) { Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue } }
+git init --bare --quiet $waRemote
+git clone --quiet $waRemote $waWork 2>&1 | Out-Null
+Set-Content (Join-Path $waWork 'a.txt') 'one' -NoNewline
+git -C $waWork add -A 2>&1 | Out-Null
+git -C $waWork -c user.email='t@t' -c user.name='t' commit -qm init 2>&1 | Out-Null
+git -C $waWork push -q -u origin HEAD 2>&1 | Out-Null
+# no marker -> must skip even when dirty (opt-in)
+Set-Content (Join-Path $waWork 'a.txt') 'two' -NoNewline
+$beforeNo = [int]((git -C $waRemote rev-list --count HEAD) 2>$null)
+Push-Location $waWork; $waNo = Invoke-Child $waPs @('-Mode','end'); Pop-Location
+$afterNo = [int]((git -C $waRemote rev-list --count HEAD) 2>$null)
+Check 'work-autosync: no marker exits 0'         { $waNo.Code -eq 0 }
+Check 'work-autosync: no marker pushes nothing'  { $afterNo -eq $beforeNo }
+# add marker -> must commit + push
+Set-Content (Join-Path $waWork '.claude-autosync') 'on' -NoNewline
+$beforeYes = [int]((git -C $waRemote rev-list --count HEAD) 2>$null)
+Push-Location $waWork; $waYes = Invoke-Child $waPs @('-Mode','end'); Pop-Location
+$afterYes = [int]((git -C $waRemote rev-list --count HEAD) 2>$null)
+Check 'work-autosync: with marker exits 0'       { $waYes.Code -eq 0 }
+Check 'work-autosync: with marker pushed a commit' { $afterYes -eq ($beforeYes + 1) }
+
+# D6b fail-closed secret guard: a staged .env must be EXCLUDED from the push; safe files still pushed
+Set-Content (Join-Path $waWork '.env') 'SECRET=topsecret' -NoNewline
+Set-Content (Join-Path $waWork 'id_rsa') 'PRIVATEKEY' -NoNewline
+Set-Content (Join-Path $waWork '.env.example') 'SECRET=' -NoNewline
+Set-Content (Join-Path $waWork 'safe.txt') 'ok' -NoNewline
+Push-Location $waWork; $waSec = Invoke-Child $waPs @('-Mode','end'); Pop-Location
+$remoteFiles = @(git -C $waRemote ls-tree -r --name-only HEAD 2>$null)
+Check 'work-autosync: secret guard exits 0'          { $waSec.Code -eq 0 }
+Check 'work-autosync: .env NOT pushed (fail-closed)'  { $remoteFiles -notcontains '.env' }
+Check 'work-autosync: id_rsa NOT pushed (widened denylist)' { $remoteFiles -notcontains 'id_rsa' }
+Check 'work-autosync: .env.example WAS pushed (template ok)' { $remoteFiles -contains '.env.example' }
+Check 'work-autosync: safe file WAS pushed'          { $remoteFiles -contains 'safe.txt' }
+
 # ----------------------------------------------------------------------------
 Phase 'E. Cross-shell invariants (committed blob = what new machines clone)'
 # Check the git INDEX eol (the blob that gets cloned/deployed), not the local working tree —
 # a dev machine may have a stale CRLF working copy, but Mac/Linux installs get the blob (must be LF).
-$shFiles = @('claude/hooks/config-sync.sh','claude/hooks/effort-reminder.sh','claude/hooks/ensure-harness.sh','claude/hooks/effort-reminder.txt','install.sh','bootstrap.sh','claude/shell/claude-ultra.sh')
+$shFiles = @('claude/hooks/config-sync.sh','claude/hooks/work-autosync.sh','claude/hooks/effort-reminder.sh','claude/hooks/ensure-harness.sh','claude/hooks/effort-reminder.txt','install.sh','bootstrap.sh','claude/shell/claude-ultra.sh')
 foreach ($f in $shFiles) {
   $info = (& git -C $Repo ls-files --eol -- $f 2>$null) -join "`n"
   Check "committed LF (index) for $f" { $info -match '(^|\n)\s*i/lf\b' }
@@ -250,17 +289,17 @@ $null = Run-Install
 $sg = Read-Settings
 $gss = Get-Cmds $sg 'SessionStart'; $gse = Get-Cmds $sg 'SessionEnd'
 # anchored detectors: only a command that actually INVOKES a managed hook file counts
-$invSh  = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|config-sync)\.sh\b'
-$invPs1 = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|config-sync)\.ps1\b'
+$invSh  = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|config-sync|work-autosync)\.sh\b'
+$invPs1 = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|config-sync|work-autosync)\.ps1\b'
 Check 'heal: settings still valid JSON'                  { $sg -ne $null }
 Check 'heal: ZERO invoked bash-form managed hooks remain' { @(($gss+$gse) | Where-Object { $_ -match $invSh }).Count -eq 0 }
-Check 'heal: exactly 3 invoked-ps1 managed in SessionStart' { @($gss | Where-Object { $_ -match $invPs1 }).Count -eq 3 }
-Check 'heal: exactly 1 invoked-ps1 managed in SessionEnd' { @($gse | Where-Object { $_ -match $invPs1 }).Count -eq 1 }
+Check 'heal: exactly 4 invoked-ps1 managed in SessionStart' { @($gss | Where-Object { $_ -match $invPs1 }).Count -eq 4 }
+Check 'heal: exactly 2 invoked-ps1 managed in SessionEnd' { @($gse | Where-Object { $_ -match $invPs1 }).Count -eq 2 }
 Check 'heal: stale ps managed at C:\old evicted'         { @(($gss+$gse) | Where-Object { $_ -match 'C:\\old' }).Count -eq 0 }
 Check 'heal: user OWN bash hook PRESERVED'               { $gss -contains 'bash "$HOME/my-own-hook.sh"' }
 Check 'heal: path-mention hook PRESERVED (no over-evict)' { $gss -contains 'echo "docs: .claude/hooks/config-sync.ps1"' }
 Check 'heal: custom top-level key preserved'             { $sg.myCustomKey -eq 7 }
-Check 'heal: no managed duplication (5 start / 1 end)'   { $gss.Count -eq 5 -and $gse.Count -eq 1 }
+Check 'heal: no managed duplication (6 start / 2 end)'   { $gss.Count -eq 6 -and $gse.Count -eq 2 }
 
 # ----------------------------------------------------------------------------
 Phase 'H. Spaces in HOME path'

@@ -106,6 +106,18 @@ git -C "$env:USERPROFILE\claude-config" pull; powershell -ExecutionPolicy Bypass
 - **Windows**: `~/.pyshim` 생성 후 USER PATH 앞에 추가(hookify 의 python3), ExecutionPolicy(CurrentUser)를 필요시 `RemoteSigned` 로, `claude` 오버라이드를 Windows PowerShell 5.1 + (있으면) pwsh 7 프로필 양쪽에 기록.
 - **공통**: `claude` 실행 시 `gh auth token` 으로 `GITHUB_PERSONAL_ACCESS_TOKEN` 을 런타임 주입(github MCP). 레포에 토큰 저장 안 함.
 
+## 6. 작업물(프로젝트) 클라우드 백업 — `claude-newproj` + 자동 동기화
+
+config 레포(설정)는 config-sync 가 늘 동기화하지만, **실제 작업 프로젝트**는 포맷·PC 고장 시 날아갈 수 있습니다. 그래서:
+
+- **`claude-newproj [이름]`** (bash/PowerShell 함수 — 새 터미널에서 사용): 현재 폴더를 한 번에 **비공개 GitHub 레포**로 만들어 처음부터 클라우드 백업.
+  - `git init` + **시크릿-안전 `.gitignore` 자동 보강**(`.env`·키·토큰류; `.env.example` 등 템플릿은 보존) + `gh repo create --private --push` + `.claude-autosync` 마커 생성.
+- **`.claude-autosync` 마커가 있는 프로젝트**는 이후 **세션 종료마다 자동 커밋·푸시**(work-autosync 훅; SessionStart=pull / SessionEnd=push). **옵트인**이라 마커 없는 폴더는 절대 안 건드립니다.
+- **시크릿 보호(fail-closed)**: 커밋 직전 `.env`·`id_rsa`·`*.pem`·`*credentials*.json` 등 시크릿 패턴을 **스캔해 푸시에서 제외**(경고 표시). 단 **denylist 방식의 한계**상 알려지지 않은 형식이나 이미 커밋된 비밀은 못 막으니 **무엇을 올리는지 직접 확인**하세요(절대 안전 보장 아님 — 비공개 레포 전제).
+- 끄기: 마커 파일 삭제(프로젝트별) 또는 `CLAUDE_AUTOSYNC_OFF=1`(전역).
+
+> 또한 전역 `CLAUDE.md` 에 **OMC 모드 안내(제안 후 승인)** 규칙이 있어, 모호한 요구사항엔 `/deep-interview`, 끝까지 완성·검증이 필요하면 `/ralph` 사용을 Claude 가 먼저 제안합니다(모르는 사용자도 쓰도록).
+
 ## 구성
 
 ```
@@ -113,16 +125,18 @@ claude-config/
 ├── bootstrap.sh / bootstrap.ps1    # 한 줄 진입점 (git·gh·node 설치 → clone → install)
 ├── install.sh                      # Mac/Linux 설치 (링크 + 머지 + 즉시 설치)
 ├── install.ps1                     # Windows 설치 (복사+머지 + 즉시 설치)
+├── test/fresh-install.ps1          # 설치 회귀 하네스 (Windows; 80+ 체크, Git Bash 로 bash 경로도 검증)
 └── claude/
     ├── settings.json               # 훅·플러그인·마켓플레이스 + effortLevel:xhigh
-    ├── CLAUDE.md                    # 전역 세션 기본값(ultracode/ultraplan 넛지) → ~/.claude/CLAUDE.md
+    ├── CLAUDE.md                    # 전역 세션 기본값(ultracode 넛지 + OMC 모드 안내) → ~/.claude/CLAUDE.md
     ├── ultracode.json              # {"ultracode":true} — claude --settings 로 주입
     ├── shell/
-    │   ├── claude-ultra.sh          # `claude` 오버라이드 함수 (bash/zsh)
-    │   └── claude-ultra.ps1         # `claude` 오버라이드 함수 (PowerShell)
+    │   ├── claude-ultra.sh          # `claude` 오버라이드 + `claude-newproj` (bash/zsh)
+    │   └── claude-ultra.ps1         # `claude` 오버라이드 + `claude-newproj` (PowerShell)
     └── hooks/
         ├── ensure-harness.sh/.ps1   # SessionStart — harness 자동 설치/복구
         ├── effort-reminder.sh/.ps1  # SessionStart — 매 세션 ultracode/ultraplan 리마인더 주입
         ├── effort-reminder.txt      # 위 리마인더 본문(.sh/.ps1 이 읽음)
-        └── config-sync.sh/.ps1      # SessionStart=pull / SessionEnd=push — 설정 자동 동기화
+        ├── config-sync.sh/.ps1      # SessionStart=pull / SessionEnd=push — 설정 레포 자동 동기화
+        └── work-autosync.sh/.ps1    # 옵트인(.claude-autosync) 작업 프로젝트 자동 백업 (시크릿 fail-closed)
 ```
