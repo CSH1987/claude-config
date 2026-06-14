@@ -168,12 +168,12 @@ if command -v claude >/dev/null 2>&1; then
   claude plugin marketplace add Yeachan-Heo/oh-my-claudecode >/dev/null 2>&1 || true
   claude plugin install oh-my-claudecode@omc               >/dev/null 2>&1 || true
   echo "  ✓ oh-my-claudecode installed (/deep-interview, /ralph)"
-  for p in vercel hookify security-guidance skill-creator plugin-dev mcp-server-dev frontend-design playwright context7 github; do
+  for p in hookify security-guidance skill-creator plugin-dev mcp-server-dev frontend-design playwright context7 github; do
     claude plugin install "$p@claude-plugins-official" >/dev/null 2>&1 || true
   done
-  echo "  ✓ official plugins installed (vercel, hookify, security-guidance, skill-creator, plugin-dev, mcp-server-dev, frontend-design, playwright, context7, github)"
+  echo "  ✓ official plugins installed (hookify, security-guidance, skill-creator, plugin-dev, mcp-server-dev, frontend-design, playwright, context7, github)"
   echo "  i  github MCP needs env GITHUB_PERSONAL_ACCESS_TOKEN (set per machine; never commit)"
-  claude plugin list 2>/dev/null | grep -E "harness|oh-my-claudecode|hookify|security-guidance|skill-creator|plugin-dev|mcp-server-dev|frontend-design|playwright|context7|github|vercel|Status" || true
+  claude plugin list 2>/dev/null | grep -E "harness|oh-my-claudecode|hookify|security-guidance|skill-creator|plugin-dev|mcp-server-dev|frontend-design|playwright|context7|github|Status" || true
 else
   echo "  ℹ claude 미설치 — 다음 세션 훅이 설치"
 fi

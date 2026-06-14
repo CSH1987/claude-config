@@ -98,12 +98,12 @@ if ($s -isnot [System.Collections.IDictionary]) { $s = @{} }
 # 마켓플레이스 — 기존 보존, 항목만 추가/갱신 (harness, omc=oh-my-claudecode)
 (Get-Dict $s 'extraKnownMarketplaces')['harness-marketplace'] = @{ source = @{ source = 'github'; repo = 'revfactory/harness' } }
 (Get-Dict $s 'extraKnownMarketplaces')['omc'] = @{ source = @{ source = 'github'; repo = 'Yeachan-Heo/oh-my-claudecode' } }
-# 플러그인 — 기존 보존, base(harness, omc, vercel) + 작업 기반 보강 플러그인 추가
+# 플러그인 — 기존 보존, base(harness, omc) + 작업 기반 보강 플러그인 추가
 (Get-Dict $s 'enabledPlugins')['harness@harness-marketplace'] = $true
 (Get-Dict $s 'enabledPlugins')['oh-my-claudecode@omc'] = $true
 # claude-plugins-official 은 기본 내장 마켓 — 별도 등록 불필요
 $officialPlugins = @(
-    'vercel', 'hookify', 'security-guidance', 'skill-creator', 'plugin-dev',
+    'hookify', 'security-guidance', 'skill-creator', 'plugin-dev',
     'mcp-server-dev', 'frontend-design', 'playwright', 'context7', 'github'
 )
 foreach ($p in $officialPlugins) { (Get-Dict $s 'enabledPlugins')["$p@claude-plugins-official"] = $true }
@@ -230,9 +230,9 @@ if (Get-Command claude -CommandType Application -ErrorAction SilentlyContinue) {
     claude plugin install oh-my-claudecode@omc                 *> $null
     Write-Host '  ✓ oh-my-claudecode installed (/deep-interview, /ralph)'
     foreach ($p in $officialPlugins) { claude plugin install "$p@claude-plugins-official" *> $null }
-    Write-Host '  ✓ official plugins installed (vercel, hookify, security-guidance, skill-creator, plugin-dev, mcp-server-dev, frontend-design, playwright, context7, github)'
+    Write-Host '  ✓ official plugins installed (hookify, security-guidance, skill-creator, plugin-dev, mcp-server-dev, frontend-design, playwright, context7, github)'
     Write-Host '  i  github MCP needs env GITHUB_PERSONAL_ACCESS_TOKEN (set per machine; never commit)'
-    claude plugin list 2>$null | Select-String -Pattern 'harness|oh-my-claudecode|hookify|security-guidance|skill-creator|plugin-dev|mcp-server-dev|frontend-design|playwright|context7|github|vercel|Status'
+    claude plugin list 2>$null | Select-String -Pattern 'harness|oh-my-claudecode|hookify|security-guidance|skill-creator|plugin-dev|mcp-server-dev|frontend-design|playwright|context7|github|Status'
 } else {
     Write-Host '  ℹ claude 미설치 — 다음 세션 훅이 설치'
 }

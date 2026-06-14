@@ -26,7 +26,7 @@
 ## 도구 선택 단계 (실행 전)
 
 - 비자명 작업은 deep-interview 로 요구사항을 확정한 뒤, **실행 전에** 설치된 플러그인·스킬·에이전트 중 그 작업에 가장 맞는 도구를 먼저 식별·명시하고 진행하세요. (단순/사소한 작업은 이 단계 생략)
-- 라우팅 힌트(설치된 base): 브라우저 자동화·스크린샷 → **playwright**, 최신 라이브러리 문서 → **context7**, GitHub 이슈/PR/리포 → **github**(gh 로그인 시 토큰 자동), 보안·시크릿 점검 → **security-guidance**, 결정적 가드레일 → **hookify**, 스킬 제작·측정 → **skill-creator**, 플러그인/MCP 제작 → **plugin-dev·mcp-server-dev**, 신규 UI 코드 품질 → **frontend-design**, 오케스트레이션·검증·리뷰·딥인터뷰·랄프 → **oh-my-claudecode**, 전문 에이전트팀 설계 → **harness**, 배포 → **vercel**.
+- 라우팅 힌트(설치된 base): 브라우저 자동화·스크린샷 → **playwright**, 최신 라이브러리 문서 → **context7**, GitHub 이슈/PR/리포 → **github**(gh 로그인 시 토큰 자동), 보안·시크릿 점검 → **security-guidance**, 결정적 가드레일 → **hookify**, 스킬 제작·측정 → **skill-creator**, 플러그인/MCP 제작 → **plugin-dev·mcp-server-dev**, 신규 UI 코드 품질 → **frontend-design**, 오케스트레이션·검증·리뷰·딥인터뷰·랄프 → **oh-my-claudecode**, 전문 에이전트팀 설계 → **harness**. (배포 특화 vercel 등은 base 에서 제외 — 필요 시 `claude plugin install vercel@claude-plugins-official` 로 그때 설치)
 - 필요한 능력이 설치돼 있지 않으면 즉석에서 쓰려 하지 말고(플러그인·MCP·훅은 활성화 + 세션 재시작 후에야 동작), 먼저 "설치 + 재시작" 을 권고하세요.
 - 대부분의 작업은 이미 깔린 base 로 커버되므로, 매번 새 플러그인을 깔기보다 **가진 것 안에서 라우팅**하는 것을 우선하세요.
 
