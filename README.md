@@ -81,6 +81,24 @@ git -C "$env:USERPROFILE\claude-config" pull; powershell -ExecutionPolicy Bypass
   2. `~/.claude/CLAUDE.md` + `effort-reminder` 훅이 매 세션 Claude 에게 상태를 주입 → 혹시 ultracode 가 아니면 능동적으로 `/effort ultracode` 를 제안(사용자가 잊어도 챙김).
 - 끄고 싶은 세션: `claude` 대신 `command claude`(bash) / `& (Get-Command claude.cmd).Source`(PS) 로 직접 실행하거나 세션 중 `/effort high`.
 
+## 5. 설정 자동 동기화 (클라우드 백업) — "깜빡해도 항상 최신"
+
+로컬에만 쌓여 드리프트되는 문제를 없애기 위해, `config-sync` 훅이 이 레포를 GitHub 와 자동 동기화합니다(설정-전용).
+
+- **SessionStart → `git pull --rebase --autostash`**: 매 세션 시작 시 다른 머신의 변경을 자동 수신.
+- **SessionEnd → commit + push**: 변경분이 있으면 `auto-sync: <host> <시각>` 으로 커밋·푸시.
+- **세션을 절대 막지 않음**: git 미설치·오프라인·충돌 시 조용히 스킵(충돌은 rebase abort). 끄려면 `CLAUDE_CONFIG_NO_SYNC=1`.
+- **안전**: 비밀은 레포에 없고(`gh auth token` 런타임 주입) `.omc/` 는 gitignore 라 `git add -A` 가 안전.
+- 훅으로 구현해 `claude` 래퍼가 안 걸리는 셸(pwsh·zsh 미설정 등)에서도 **항상 동작**합니다.
+
+> **플랫폼 차이**: Mac/Linux 는 `~/.claude/*` 가 레포로 **심링크**라 `/config` 등 실시간 편집까지 자동 동기화됩니다.
+> Windows 는 **복사본**이라 레포 자체 편집은 동기화되지만, `~/.claude` 실시간 편집은 `install.ps1` 재실행으로 반영하세요
+> (머신별 절대경로가 박힌 `settings.json` 은 의도적으로 올리지 않습니다).
+
+### install 이 머신에 바꾸는 것
+- **Windows**: `~/.pyshim` 생성 후 USER PATH 앞에 추가(hookify 의 python3), ExecutionPolicy(CurrentUser)를 필요시 `RemoteSigned` 로, `claude` 오버라이드를 Windows PowerShell 5.1 + (있으면) pwsh 7 프로필 양쪽에 기록.
+- **공통**: `claude` 실행 시 `gh auth token` 으로 `GITHUB_PERSONAL_ACCESS_TOKEN` 을 런타임 주입(github MCP). 레포에 토큰 저장 안 함.
+
 ## 구성
 
 ```
@@ -96,5 +114,7 @@ claude-config/
     │   └── claude-ultra.ps1         # `claude` 오버라이드 함수 (PowerShell)
     └── hooks/
         ├── ensure-harness.sh/.ps1   # SessionStart — harness 자동 설치/복구
-        └── effort-reminder.sh/.ps1  # SessionStart — 매 세션 ultracode/ultraplan 리마인더 주입
+        ├── effort-reminder.sh/.ps1  # SessionStart — 매 세션 ultracode/ultraplan 리마인더 주입
+        ├── effort-reminder.txt      # 위 리마인더 본문(.sh/.ps1 이 읽음)
+        └── config-sync.sh/.ps1      # SessionStart=pull / SessionEnd=push — 설정 자동 동기화
 ```

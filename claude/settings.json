@@ -17,6 +17,24 @@
             "command": "bash \"$HOME/.claude/hooks/effort-reminder.sh\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/config-sync.sh\" start"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/config-sync.sh\" end"
+          }
+        ]
       }
     ]
   },

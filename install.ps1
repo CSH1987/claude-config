@@ -12,7 +12,10 @@ New-Item -ItemType Directory -Force -Path $hooks | Out-Null
 Copy-Item (Join-Path $dot 'claude\hooks\ensure-harness.ps1')  (Join-Path $hooks 'ensure-harness.ps1')  -Force
 Copy-Item (Join-Path $dot 'claude\hooks\effort-reminder.ps1') (Join-Path $hooks 'effort-reminder.ps1') -Force
 Copy-Item (Join-Path $dot 'claude\hooks\effort-reminder.txt') (Join-Path $hooks 'effort-reminder.txt') -Force
-Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder)'
+Copy-Item (Join-Path $dot 'claude\hooks\config-sync.ps1')     (Join-Path $hooks 'config-sync.ps1')     -Force
+# config-sync 가 레포 위치를 찾도록 기록 (BOM 없이)
+[System.IO.File]::WriteAllText((Join-Path $dst '.config-sync-path'), $dot, (New-Object System.Text.UTF8Encoding($false)))
+Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync)'
 
 # ultracode 설정 파일(--settings 로 넘길 용도) 복사
 Copy-Item (Join-Path $dot 'claude\ultracode.json') (Join-Path $dst 'ultracode.json') -Force
@@ -112,27 +115,40 @@ if (-not $s.ContainsKey('effortLevel')) { $s['effortLevel'] = 'xhigh' }
 # 결정적 재구성: 우리 관리 명령(ensure-harness, effort-reminder)을 포함한 기존 그룹은 모두 제거하고
 # (기존 중복도 함께 정리), 관계없는 사용자 훅 그룹은 보존한 뒤, 우리 두 훅을 정확히 1개씩 추가.
 # → 반복 실행해도 항상 정확히 1쌍 (자가 치유, 멱등).
-$hookCmds = @(
-    "powershell -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $hooks 'ensure-harness.ps1')`"",
-    "powershell -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $hooks 'effort-reminder.ps1')`""
-)
-$managed = @{}
-foreach ($cmd in $hookCmds) { $managed[$cmd] = $true }
-$hk = Get-Dict $s 'hooks'
-$ss = @($hk['SessionStart'])   # null→빈배열, 단일→배열로 정규화
-# ArrayList 사용: PS5.1에서 빈 배열 `@() += 해시테이블` 이 스칼라로 붕괴해 다음 +=가
-# 해시테이블 병합(키 충돌)을 일으키는 문제를 회피한다.
-$kept = New-Object System.Collections.ArrayList
-foreach ($grp in $ss) {
-    if ($grp -isnot [System.Collections.IDictionary]) { [void]$kept.Add($grp); continue }
-    $isManaged = $false
-    foreach ($h in @($grp['hooks'])) {
-        if (($h -is [System.Collections.IDictionary]) -and ($h['command']) -and $managed.ContainsKey([string]$h['command'])) { $isManaged = $true }
-    }
-    if (-not $isManaged) { [void]$kept.Add($grp) }   # 우리 훅이 아닌 그룹만 보존
+function New-PsHook([string]$file, [string]$rest) {
+    "powershell -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $hooks $file)`"$rest"
 }
-foreach ($cmd in $hookCmds) { [void]$kept.Add(@{ hooks = @(@{ type = 'command'; command = $cmd }) }) }
-$hk['SessionStart'] = @($kept.ToArray())
+# 관리 훅: 이벤트 → 명령 목록. config-sync 는 레포 경로를 -Repo 로 박아 넘김(Windows settings.json 은 머신별).
+$managedHooks = [ordered]@{
+    SessionStart = @(
+        (New-PsHook 'ensure-harness.ps1'  ''),
+        (New-PsHook 'effort-reminder.ps1' ''),
+        (New-PsHook 'config-sync.ps1'     " -Mode start -Repo `"$dot`"")
+    )
+    SessionEnd = @(
+        (New-PsHook 'config-sync.ps1'     " -Mode end -Repo `"$dot`"")
+    )
+}
+# 우리가 관리하는 모든 명령(이벤트 불문) — 기존 그룹에서 우리 것만 제거(자가 치유)
+$allManaged = @{}
+foreach ($evt in $managedHooks.Keys) { foreach ($c in $managedHooks[$evt]) { $allManaged[$c] = $true } }
+$hk = Get-Dict $s 'hooks'
+foreach ($evt in $managedHooks.Keys) {
+    $existing = @(); if ($hk[$evt]) { $existing = @($hk[$evt]) }
+    # ArrayList: PS5.1에서 빈 배열 += 해시테이블이 스칼라로 붕괴하는 문제 회피
+    $kept = New-Object System.Collections.ArrayList
+    foreach ($grp in $existing) {
+        if ($null -eq $grp) { continue }
+        if ($grp -isnot [System.Collections.IDictionary]) { [void]$kept.Add($grp); continue }
+        $isManaged = $false
+        foreach ($h in @($grp['hooks'])) {
+            if (($h -is [System.Collections.IDictionary]) -and ($h['command']) -and $allManaged.ContainsKey([string]$h['command'])) { $isManaged = $true }
+        }
+        if (-not $isManaged) { [void]$kept.Add($grp) }   # 우리 훅이 아닌 그룹만 보존
+    }
+    foreach ($cmd in $managedHooks[$evt]) { [void]$kept.Add(@{ hooks = @(@{ type = 'command'; command = $cmd }) }) }
+    $hk[$evt] = @($kept.ToArray())
+}
 
 # UTF-8(BOM 없이) 기록 — Set-Content -Encoding UTF8 이 PS5.1에서 BOM 붙이는 문제 회피
 $jsonOut = Format-Json ($ser.Serialize($s))
@@ -160,17 +176,34 @@ if (Test-Path $py3) {
     }
 }
 
-# `claude` → ultracode 자동: $PROFILE 에 함수 오버라이드 dot-source (idempotent)
-$prof    = $PROFILE.CurrentUserCurrentHost
-$profDir = Split-Path -Parent $prof
-if (-not (Test-Path $profDir)) { New-Item -ItemType Directory -Force -Path $profDir | Out-Null }
+# ExecutionPolicy: 새 머신 기본(Restricted)이면 프로필 자체가 로드 거부됨 → CurrentUser 를 RemoteSigned 로.
+try {
+    $cp = Get-ExecutionPolicy -Scope CurrentUser
+    if ($cp -in @('Restricted', 'Undefined', 'AllSigned')) {
+        Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force
+        Write-Host '  ✓ ExecutionPolicy(CurrentUser) → RemoteSigned'
+    }
+} catch { Write-Host '  ! ExecutionPolicy 설정 실패(무시) — 수동: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned' }
+
+# `claude` → ultracode 자동: Windows PowerShell 5.1 + (있으면) PowerShell 7 프로필 양쪽에 dot-source (idempotent).
+# 레포 삭제/이동 대비 Test-Path 가드. OneDrive 리디렉션은 MyDocuments 로 해결.
 $srcFunc = Join-Path $dot 'claude\shell\claude-ultra.ps1'
 $marker  = 'dotfiles:claude-ultra'
-if ((Test-Path $prof) -and (Select-String -Path $prof -SimpleMatch $marker -Quiet)) {
-    Write-Host '  ✓ claude override already in PROFILE'
-} else {
-    Add-Content -Path $prof -Value "`n# $marker`n. `"$srcFunc`""
-    Write-Host '  ✓ claude override → PROFILE'
+$docs    = [Environment]::GetFolderPath('MyDocuments')
+$profiles = @( (Join-Path $docs 'WindowsPowerShell\Microsoft.PowerShell_profile.ps1') )
+if ((Get-Command pwsh -ErrorAction SilentlyContinue) -or (Test-Path (Join-Path $docs 'PowerShell'))) {
+    $profiles += (Join-Path $docs 'PowerShell\Microsoft.PowerShell_profile.ps1')   # pwsh 7
+}
+foreach ($prof in $profiles) {
+    $profDir = Split-Path -Parent $prof
+    $edition = Split-Path -Leaf $profDir
+    if (-not (Test-Path $profDir)) { New-Item -ItemType Directory -Force -Path $profDir | Out-Null }
+    if ((Test-Path $prof) -and (Select-String -Path $prof -SimpleMatch $marker -Quiet)) {
+        Write-Host "  ✓ claude override already in $edition"
+    } else {
+        Add-Content -Path $prof -Value "`n# $marker`nif (Test-Path `"$srcFunc`") { . `"$srcFunc`" }"
+        Write-Host "  ✓ claude override → $edition"
+    }
 }
 
 # 즉시 설치 (실제 실행파일 사용)

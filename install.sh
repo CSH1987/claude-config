@@ -8,12 +8,14 @@ DOTDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DST="$HOME/.claude"
 mkdir -p "$DST/hooks"
 
-# 훅 링크 (harness 자동 + effort 리마인더)
+# 훅 링크 (harness 자동 + effort 리마인더 + 설정 자동 동기화)
 ln -sfn "$DOTDIR/claude/hooks/ensure-harness.sh"   "$DST/hooks/ensure-harness.sh"
 ln -sfn "$DOTDIR/claude/hooks/effort-reminder.sh"  "$DST/hooks/effort-reminder.sh"
 ln -sfn "$DOTDIR/claude/hooks/effort-reminder.txt" "$DST/hooks/effort-reminder.txt"
-chmod +x "$DOTDIR/claude/hooks/ensure-harness.sh" "$DOTDIR/claude/hooks/effort-reminder.sh"
-echo "  ✓ hooks linked (ensure-harness, effort-reminder)"
+ln -sfn "$DOTDIR/claude/hooks/config-sync.sh"      "$DST/hooks/config-sync.sh"
+chmod +x "$DOTDIR/claude/hooks/ensure-harness.sh" "$DOTDIR/claude/hooks/effort-reminder.sh" "$DOTDIR/claude/hooks/config-sync.sh"
+printf '%s' "$DOTDIR" > "$DST/.config-sync-path"   # config-sync 가 레포 위치를 찾도록
+echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync)"
 
 # ultracode 설정 파일(--settings 로 넘길 용도) — 항상 최신본 링크
 ln -sfn "$DOTDIR/claude/ultracode.json" "$DST/ultracode.json"
@@ -24,7 +26,7 @@ echo "  ✓ ultracode.json linked"
 if [ -L "$DST/CLAUDE.md" ] || [ ! -e "$DST/CLAUDE.md" ]; then
   ln -sfn "$DOTDIR/claude/CLAUDE.md" "$DST/CLAUDE.md"
   echo "  ✓ CLAUDE.md linked"
-else
+elif command -v python3 >/dev/null 2>&1; then
   python3 - "$DST/CLAUDE.md" "$DOTDIR/claude/CLAUDE.md" <<'PY'
 import sys
 dst,src=sys.argv[1],sys.argv[2]
@@ -46,13 +48,15 @@ else:
 open(dst,'w',encoding='utf-8').write(out)
 PY
   echo "  ✓ CLAUDE.md dotfiles 블록 삽입/갱신 (마커 밖 사용자 내용 보존)"
+else
+  echo "  ! python3 미설치 — CLAUDE.md 머지 건너뜀 (python3 설치 후 재실행)"
 fi
 
 # settings: 없으면 링크, 있으면 머지(기존 보존)
 if [ -L "$DST/settings.json" ] || [ ! -e "$DST/settings.json" ]; then
   ln -sfn "$DOTDIR/claude/settings.json" "$DST/settings.json"
   echo "  ✓ settings linked"
-else
+elif command -v python3 >/dev/null 2>&1; then
   cp -p "$DST/settings.json" "$DST/settings.json.bak.$(date +%s)"
   python3 - "$DST/settings.json" "$DOTDIR/claude/settings.json" <<'PY'
 import json,sys
@@ -61,40 +65,56 @@ d=json.load(open(dst)); s=json.load(open(src))
 d.setdefault("extraKnownMarketplaces",{}).update(s["extraKnownMarketplaces"])
 d.setdefault("enabledPlugins",{}).update(s["enabledPlugins"])
 d.setdefault("effortLevel", s.get("effortLevel","xhigh"))  # 없을 때만 — 사용자 선택 보존
-ss=d.setdefault("hooks",{}).setdefault("SessionStart",[])
-# 자가 치유 dedup: 명령 집합이 완전히 동일한 중복 그룹 제거(순서 보존)
-seen=set(); dedup=[]
-for g in ss:
-    key=tuple(h.get("command") for h in g.get("hooks",[]))
-    if key and key in seen: continue
-    if key: seen.add(key)
-    dedup.append(g)
-ss=dedup
-have={h.get("command") for g in ss for h in g.get("hooks",[])}
-for g in s["hooks"]["SessionStart"]:
-    for h in g["hooks"]:
-        if h["command"] not in have:
-            ss.append({"hooks":[{"type":"command","command":h["command"]}]}); have.add(h["command"])
-d["hooks"]["SessionStart"]=ss
+# 소스의 모든 hook 이벤트(SessionStart, SessionEnd, ...)를 머지. 자가 치유 dedup(순서 보존).
+hk=d.setdefault("hooks",{})
+for event, groups in s.get("hooks",{}).items():
+    cur=hk.setdefault(event,[])
+    seen=set(); dedup=[]
+    for g in cur:
+        key=tuple(h.get("command") for h in g.get("hooks",[]))
+        if key and key in seen: continue
+        if key: seen.add(key)
+        dedup.append(g)
+    cur=dedup
+    have={h.get("command") for g in cur for h in g.get("hooks",[])}
+    for g in groups:
+        for h in g.get("hooks",[]):
+            if h.get("command") and h["command"] not in have:
+                cur.append({"hooks":[{"type":"command","command":h["command"]}]}); have.add(h["command"])
+    hk[event]=cur
 json.dump(d,open(dst,"w"),indent=2,ensure_ascii=False); open(dst,"a").write("\n")
 PY
   echo "  ✓ settings merged (기존 보존, 백업됨)"
+else
+  echo "  ! python3 미설치 — settings 머지 건너뜀 (symlink 사용 권장 또는 python3 설치 후 재실행)"
 fi
 
-# `claude` → ultracode 자동: 셸 rc 에 함수 오버라이드 source (idempotent)
+# `claude` → ultracode 자동: 로그인 셸 rc 에 함수 오버라이드 source (idempotent).
+# 레포가 사라져도 셸이 깨지지 않도록 [ -f ] 가드. macOS 기본 셸은 zsh.
+SRC="$DOTDIR/claude/shell/claude-ultra.sh"
 add_func() {
   local rc="$1"
-  [ -e "$rc" ] || return 0
+  [ -e "$rc" ] || : > "$rc"   # 없으면 생성 (zsh 가 읽도록)
   if ! grep -q "dotfiles:claude-ultra" "$rc" 2>/dev/null; then
-    printf '\n# dotfiles:claude-ultra\nsource "%s/claude/shell/claude-ultra.sh"\n' "$DOTDIR" >> "$rc"
+    printf '\n# dotfiles:claude-ultra\n[ -f "%s" ] && source "%s"\n' "$SRC" "$SRC" >> "$rc"
     echo "  ✓ claude override → $(basename "$rc")"
   fi
 }
-add_func "$HOME/.bashrc"
-add_func "$HOME/.zshrc"
-if [ ! -e "$HOME/.bashrc" ] && [ ! -e "$HOME/.zshrc" ]; then
-  printf '# dotfiles:claude-ultra\nsource "%s/claude/shell/claude-ultra.sh"\n' "$DOTDIR" > "$HOME/.bashrc"
-  echo "  ✓ claude override → new .bashrc"
+# 로그인 셸($SHELL)에 맞는 주 rc 선택 — 없으면 생성. zsh 가 .bashrc 를 안 읽는 문제 해결.
+case "${SHELL:-}" in
+  *zsh*)  primary="$HOME/.zshrc" ;;
+  *bash*) primary="$HOME/.bashrc" ;;
+  *) if [ "$(uname -s)" = "Darwin" ]; then primary="$HOME/.zshrc"; else primary="$HOME/.bashrc"; fi ;;
+esac
+add_func "$primary"
+# 이미 존재하는 다른 셸 rc 에도 심어 둠(셸 전환 대비)
+if [ "$primary" != "$HOME/.zshrc" ]  && [ -e "$HOME/.zshrc" ];  then add_func "$HOME/.zshrc";  fi
+if [ "$primary" != "$HOME/.bashrc" ] && [ -e "$HOME/.bashrc" ]; then add_func "$HOME/.bashrc"; fi
+# macOS bash 로그인 셸은 .bash_profile 을 읽음 → .bashrc 를 끌어오게 연결
+if [ "$(uname -s)" = "Darwin" ] && [ -e "$HOME/.bashrc" ]; then
+  if [ ! -e "$HOME/.bash_profile" ] || ! grep -q 'bashrc' "$HOME/.bash_profile" 2>/dev/null; then
+    printf '\n# dotfiles:claude-ultra (load .bashrc for login shells)\n[ -f ~/.bashrc ] && . ~/.bashrc\n' >> "$HOME/.bash_profile"
+  fi
 fi
 
 # 즉시 설치
