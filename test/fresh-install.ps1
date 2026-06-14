@@ -72,7 +72,7 @@ Check 'install.ps1 exits 0'                 { $r.Code -eq 0 }
 Check 'hooks copied (4 files)'              { (Test-Path (Join-Path $HooksDir 'ensure-harness.ps1')) -and (Test-Path (Join-Path $HooksDir 'effort-reminder.ps1')) -and (Test-Path (Join-Path $HooksDir 'effort-reminder.txt')) -and (Test-Path (Join-Path $HooksDir 'config-sync.ps1')) }
 Check 'ultracode.json deployed = {"ultracode":true}' { ((Get-Content (Join-Path $ClaudeDir 'ultracode.json') -Raw | ConvertFrom-Json).ultracode) -eq $true }
 Check '.config-sync-path points at repo'   { ((Get-Content (Join-Path $ClaudeDir '.config-sync-path') -Raw).Trim()) -eq $Repo }
-Check 'CLAUDE.md has dotfiles block'        { (Get-Content (Join-Path $ClaudeDir 'CLAUDE.md') -Raw) -match 'dotfiles:claude-md:start' }
+Check 'CLAUDE.md has claude-config block'    { (Get-Content (Join-Path $ClaudeDir 'CLAUDE.md') -Raw) -match 'claude-config:claude-md:start' }
 Check 'settings.json is valid JSON'         { (Read-Settings) -ne $null }
 $s = Read-Settings
 Check 'effortLevel = xhigh'                  { $s.effortLevel -eq 'xhigh' }
@@ -97,7 +97,7 @@ Check 'second install exits 0'              { $r2.Code -eq 0 }
 Check 'still exactly 3 SessionStart hooks'  { (Get-Cmds $s2 'SessionStart').Count -eq 3 }
 Check 'still exactly 1 SessionEnd hook'     { (Get-Cmds $s2 'SessionEnd').Count -eq 1 }
 Check 'still valid JSON after re-run'       { $s2 -ne $null }
-Check 'CLAUDE.md block not duplicated'      { ([regex]::Matches((Get-Content (Join-Path $ClaudeDir 'CLAUDE.md') -Raw),'dotfiles:claude-md:start \(')).Count -eq 1 }
+Check 'CLAUDE.md block not duplicated'      { ([regex]::Matches((Get-Content (Join-Path $ClaudeDir 'CLAUDE.md') -Raw),'claude-config:claude-md:start \(')).Count -eq 1 }
 
 # ----------------------------------------------------------------------------
 Phase 'C. Preserve unrelated user settings + hooks'
@@ -217,7 +217,7 @@ if (-not $gitBash) {
   Check 'install.sh produced valid settings.json' { $bs -ne $null }
   Check 'install.sh hooks are powershell-form'  { $bcmds.Count -ge 4 -and (@($bcmds | Where-Object { $_ -notmatch '^powershell ' }).Count -eq 0) }
   Check 'install.sh writes NO bash-form hook'   { @($bcmds | Where-Object { $_ -match '(^|\s)bash\b' }).Count -eq 0 }
-  Check 'install.sh installs bash claude wrapper' { (Test-Path (Join-Path $bhWin '.bashrc')) -and (Select-String -Path (Join-Path $bhWin '.bashrc') -Pattern 'dotfiles:claude-ultra' -Quiet) }
+  Check 'install.sh installs bash claude wrapper' { (Test-Path (Join-Path $bhWin '.bashrc')) -and (Select-String -Path (Join-Path $bhWin '.bashrc') -Pattern 'claude-config:claude-ultra' -Quiet) }
 }
 
 # ----------------------------------------------------------------------------
@@ -277,6 +277,52 @@ Check 'spaces: install exits 0'                 { $rh.Code -eq 0 }
 Check 'spaces: valid settings.json'             { $sh -ne $null }
 Check 'spaces: hooks powershell-form'           { $shcmds.Count -ge 4 -and (@($shcmds | Where-Object { $_ -notmatch '^powershell ' }).Count -eq 0) }
 Check 'spaces: -File path is double-quoted'     { @($shcmds | Where-Object { $_ -match '-File "[^"]*dir with space' }).Count -ge 4 }
+
+# ----------------------------------------------------------------------------
+Phase 'I. Marker migration: legacy dotfiles: CLAUDE.md block -> claude-config: (no duplicate)'
+Reset-Home
+New-Item -ItemType Directory -Force -Path $ClaudeDir | Out-Null
+# ASCII-only test tokens (avoid PS 5.1 ANSI-decoding of BOM-less .ps1 mangling non-ASCII regex)
+$legacyMd = @'
+PREAMBLE-KEEP : user content before the managed block
+
+<!-- dotfiles:claude-md:start (auto-generated; updated on reinstall) -->
+OLDBODY-REPLACE : this legacy body must be replaced on reinstall
+<!-- dotfiles:claude-md:end -->
+
+POSTAMBLE-KEEP : user content after the managed block
+'@
+[System.IO.File]::WriteAllText((Join-Path $ClaudeDir 'CLAUDE.md'), $legacyMd, (New-Object System.Text.UTF8Encoding($false)))
+$null = Run-Install
+$md = Get-Content (Join-Path $ClaudeDir 'CLAUDE.md') -Raw
+Check 'migrate: NEW claude-config start marker present' { $md -match 'claude-config:claude-md:start' }
+Check 'migrate: legacy dotfiles start marker GONE'      { $md -notmatch 'dotfiles:claude-md:start' }
+Check 'migrate: exactly ONE block (no duplicate)'       { ([regex]::Matches($md,'claude-config:claude-md:start \(')).Count -eq 1 }
+Check 'migrate: user preamble preserved'                { $md -match 'PREAMBLE-KEEP' }
+Check 'migrate: user postamble preserved'               { $md -match 'POSTAMBLE-KEEP' }
+Check 'migrate: old block body replaced'                { $md -notmatch 'OLDBODY-REPLACE' }
+$null = Run-Install   # re-run on already-migrated file: must stay exactly one block (idempotent)
+$md2 = Get-Content (Join-Path $ClaudeDir 'CLAUDE.md') -Raw
+Check 'migrate: idempotent (ONE block after re-run)'    { (([regex]::Matches($md2,'claude-config:claude-md:start \(')).Count -eq 1) -and ($md2 -match 'POSTAMBLE-KEEP') }
+
+# ----------------------------------------------------------------------------
+Phase 'J. install.sh wrapper: legacy dotfiles:claude-ultra marker -> no duplicate'
+if (-not $gitBash) {
+  Write-Host '  SKIP  no Git bash on this machine' -ForegroundColor DarkYellow
+} else {
+  $bh2 = Join-Path $SbRoot 'bashhome2'
+  if (Test-Path $bh2) { Remove-Item $bh2 -Recurse -Force -ErrorAction SilentlyContinue }
+  New-Item -ItemType Directory -Force $bh2 | Out-Null
+  # seed a .bashrc that already has the LEGACY wrapper marker
+  [System.IO.File]::WriteAllText((Join-Path $bh2 '.bashrc'), "# user stuff`n`n# dotfiles:claude-ultra`n[ -f x ] && source x`n", (New-Object System.Text.UTF8Encoding($false)))
+  $savedUP3 = $env:USERPROFILE
+  $env:HOME = (To-Msys $bh2); $env:USERPROFILE = $bh2; $env:CLAUDE_INSTALL_DEPLOY_ONLY = '1'
+  & $gitBash -c "bash '$(To-Msys $Repo)/install.sh'" > $null 2>&1
+  $env:USERPROFILE = $savedUP3
+  Remove-Item Env:\HOME, Env:\CLAUDE_INSTALL_DEPLOY_ONLY -ErrorAction SilentlyContinue
+  $rc = Get-Content (Join-Path $bh2 '.bashrc') -Raw
+  Check 'wrapper migrate: legacy marker recognized (no second wrapper)' { ([regex]::Matches($rc, ':claude-ultra')).Count -eq 1 }
+}
 
 # ----------------------------------------------------------------------------
 Write-Host "`n========================================" -ForegroundColor Yellow

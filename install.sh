@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude dotfiles 설치 (Mac/Linux) — 이 머신의 모든 폴더·세션에서:
+# claude-config 설치 (Mac/Linux) — 이 머신의 모든 폴더·세션에서:
 #   · Harness 플러그인 자동 설치/복구
 #   · effortLevel=xhigh 영구 적용 + ultracode/ultraplan 리마인더
 #   · `claude` 명령을 ultracode 로 자동 실행(셸 함수 오버라이드)
@@ -16,8 +16,8 @@ install_bash_wrapper() {
   add_one() {
     local rc="$1"
     [ -e "$rc" ] || : > "$rc"   # 없으면 생성 (zsh 가 읽도록)
-    if ! grep -q "dotfiles:claude-ultra" "$rc" 2>/dev/null; then
-      printf '\n# dotfiles:claude-ultra\n[ -f "%s" ] && source "%s"\n' "$SRC" "$SRC" >> "$rc"
+    if ! grep -qE "claude-config:claude-ultra|dotfiles:claude-ultra" "$rc" 2>/dev/null; then
+      printf '\n# claude-config:claude-ultra\n[ -f "%s" ] && source "%s"\n' "$SRC" "$SRC" >> "$rc"
       echo "  ✓ claude override → $(basename "$rc")"
     fi
   }
@@ -34,7 +34,7 @@ install_bash_wrapper() {
   # macOS bash 로그인 셸은 .bash_profile 을 읽음 → .bashrc 를 끌어오게 연결
   if [ "$(uname -s)" = "Darwin" ] && [ -e "$HOME/.bashrc" ]; then
     if [ ! -e "$HOME/.bash_profile" ] || ! grep -q 'bashrc' "$HOME/.bash_profile" 2>/dev/null; then
-      printf '\n# dotfiles:claude-ultra (load .bashrc for login shells)\n[ -f ~/.bashrc ] && . ~/.bashrc\n' >> "$HOME/.bash_profile"
+      printf '\n# claude-config:claude-ultra (load .bashrc for login shells)\n[ -f ~/.bashrc ] && . ~/.bashrc\n' >> "$HOME/.bash_profile"
     fi
   fi
 }
@@ -84,7 +84,7 @@ ln -sfn "$DOTDIR/claude/ultracode.json" "$DST/ultracode.json"
 echo "  ✓ ultracode.json linked"
 
 # CLAUDE.md (전역 세션 기본값): 없으면/심링크면 링크(업데이트 자동 반영),
-# 실제 파일이면 dotfiles 관리 블록을 마커 사이에 삽입/갱신(마커 밖 사용자 내용 보존).
+# 실제 파일이면 claude-config 관리 블록을 마커 사이에 삽입/갱신(마커 밖 사용자 내용 보존).
 if [ -L "$DST/CLAUDE.md" ] || [ ! -e "$DST/CLAUDE.md" ]; then
   ln -sfn "$DOTDIR/claude/CLAUDE.md" "$DST/CLAUDE.md"
   echo "  ✓ CLAUDE.md linked"
@@ -93,23 +93,31 @@ elif command -v python3 >/dev/null 2>&1; then
 import sys
 dst,src=sys.argv[1],sys.argv[2]
 body=open(src,encoding='utf-8').read().rstrip('\n')
-START='<!-- dotfiles:claude-md:start (auto-generated; updated on reinstall) -->'
-START_TOK='<!-- dotfiles:claude-md:start'
-END='<!-- dotfiles:claude-md:end -->'
+START='<!-- claude-config:claude-md:start (auto-generated; updated on reinstall) -->'
+END='<!-- claude-config:claude-md:end -->'
+# 블록 검색 토큰: 신규 + 레거시(dotfiles:) 모두 → 옛 마커 머신도 중복 없이 교체(자가 마이그레이션)
+START_TOKS=['<!-- claude-config:claude-md:start','<!-- dotfiles:claude-md:start']
+END_TOKS=['<!-- claude-config:claude-md:end -->','<!-- dotfiles:claude-md:end -->']
 block=START+'\n'+body+'\n'+END
 try: cur=open(dst,encoding='utf-8').read()
 except FileNotFoundError: cur=None
-i=cur.find(START_TOK) if cur is not None else -1
-j=cur.find(END) if cur is not None else -1
+i=-1; j=-1; elen=0
+if cur is not None:
+    for t in START_TOKS:
+        k=cur.find(t)
+        if k>=0: i=k; break
+    for t in END_TOKS:
+        k=cur.find(t)
+        if k>=0: j=k; elen=len(t); break
 if cur is None:
     out=block+'\n'
 elif i>=0 and j>=i:
-    out=cur[:i]+block+cur[j+len(END):]
+    out=cur[:i]+block+cur[j+elen:]
 else:
     out=cur.rstrip('\n')+'\n\n'+block+'\n'
 open(dst,'w',encoding='utf-8').write(out)
 PY
-  echo "  ✓ CLAUDE.md dotfiles 블록 삽입/갱신 (마커 밖 사용자 내용 보존)"
+  echo "  ✓ CLAUDE.md claude-config 블록 삽입/갱신 (마커 밖 사용자 내용 보존)"
 else
   echo "  ! python3 미설치 — CLAUDE.md 머지 건너뜀 (python3 설치 후 재실행)"
 fi

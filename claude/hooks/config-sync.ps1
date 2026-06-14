@@ -1,4 +1,4 @@
-﻿# dotfiles:config-sync — claude-config 레포를 GitHub(클라우드)와 자동 동기화 (설정-전용).
+﻿# claude-config:config-sync — claude-config 레포를 GitHub(클라우드)와 자동 동기화 (설정-전용).
 #   -Mode start (SessionStart) → git pull --rebase : 매 세션 최신 설정 수신
 #   -Mode end   (SessionEnd)   → commit + push     : 변경분을 클라우드에 백업
 # 원칙: 세션을 절대 막지 않는다.
