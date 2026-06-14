@@ -13,36 +13,40 @@
 
 ---
 
-## 0. 사전 준비 (새 머신 공통, 한 번만)
+## 0. 사전 준비 (새 머신, 한 번만)
 
-- **Claude Code CLI** 설치되어 있어야 함
-- 저장소가 **비공개**라 GitHub 로그인 필요 → 새 머신이면 먼저:
-  ```bash
-  gh auth login
-  ```
-  (`gh`가 없으면 git 자격증명으로 로그인해도 됩니다.)
+- **Claude Code CLI** 설치 + 로그인 (예: `npm i -g @anthropic-ai/claude-code`)
+- (선택) github MCP 토큰용으로 한 번 `gh auth login` — 아래 한 줄이 `gh` 를 자동 설치하니 그 뒤 로그인만 하면 됩니다. 안 해도 나머지 설정은 그대로 적용됩니다.
+
+> 레포는 **공개**라 clone 에 인증이 필요 없고, 아래 **한 줄**이 git·gh·node 설치까지 알아서 합니다.
 
 ---
 
-## 1. 새 머신 셋업 — OS별 한 줄 (복붙, 지식 불필요)
+## 1. 새 머신 셋업 — 진짜 "한 줄" (복붙, 이거 하나만 저장해 다니면 됨)
 
 ### 🍎 macOS / 🐧 Linux  (터미널)
 ```bash
-gh repo clone CSH1987/claude-config ~/claude-config && bash ~/claude-config/install.sh
-```
-`gh` 없이 git만:
-```bash
-git clone https://github.com/CSH1987/claude-config.git ~/claude-config && bash ~/claude-config/install.sh
+curl -fsSL https://raw.githubusercontent.com/CSH1987/claude-config/main/bootstrap.sh | bash
 ```
 
 ### 🪟 Windows 11  (PowerShell)
 ```powershell
-gh repo clone CSH1987/claude-config "$env:USERPROFILE\claude-config"; powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\claude-config\install.ps1"
+irm https://raw.githubusercontent.com/CSH1987/claude-config/main/bootstrap.ps1 | iex
 ```
-`gh` 없이 git만:
+
+→ 이 한 줄이: 누락된 **git·gh·node 설치** → 레포 **clone** → **install** 까지 전부. 끝나면 **새 터미널**을 열고 `claude`.
+
+<details><summary>수동(저수준) 방식 — 도구가 이미 다 깔려 있을 때</summary>
+
+```bash
+# macOS / Linux
+git clone https://github.com/CSH1987/claude-config.git ~/claude-config && bash ~/claude-config/install.sh
+```
 ```powershell
+# Windows
 git clone https://github.com/CSH1987/claude-config.git "$env:USERPROFILE\claude-config"; powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\claude-config\install.ps1"
 ```
+</details>
 
 ### 이미 받아둔 머신 — 최신 설정으로 갱신
 ```bash
@@ -103,8 +107,9 @@ git -C "$env:USERPROFILE\claude-config" pull; powershell -ExecutionPolicy Bypass
 
 ```
 claude-config/
-├── install.sh                      # Mac/Linux 부트스트랩 (링크 + 즉시 설치)
-├── install.ps1                     # Windows 부트스트랩 (복사+머지 + 즉시 설치)
+├── bootstrap.sh / bootstrap.ps1    # 한 줄 진입점 (git·gh·node 설치 → clone → install)
+├── install.sh                      # Mac/Linux 설치 (링크 + 머지 + 즉시 설치)
+├── install.ps1                     # Windows 설치 (복사+머지 + 즉시 설치)
 └── claude/
     ├── settings.json               # 훅·플러그인·마켓플레이스 + effortLevel:xhigh
     ├── CLAUDE.md                    # 전역 세션 기본값(ultracode/ultraplan 넛지) → ~/.claude/CLAUDE.md
