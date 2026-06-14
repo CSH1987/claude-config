@@ -36,6 +36,9 @@ irm https://raw.githubusercontent.com/CSH1987/claude-config/main/bootstrap.ps1 |
 
 → 이 한 줄이: 누락된 **git·gh·node 설치** → 레포 **clone** → **install** 까지 전부. 끝나면 **새 터미널**을 열고 `claude`.
 
+> 🪟 **Windows에서 Git Bash를 쓰거나 셸별 차이가 궁금하면** → [SETUP-NOTE.md](./SETUP-NOTE.md)
+> (PowerShell vs Git Bash, "공용 한 줄"이 없는 이유, 새 PC 실패 케이스 정리).
+
 <details><summary>수동(저수준) 방식 — 도구가 이미 다 깔려 있을 때</summary>
 
 ```bash
