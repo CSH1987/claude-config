@@ -106,11 +106,14 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          track_progress: true
           prompt: |
-            이 PR의 변경사항을 코드 리뷰해줘. 정확성 버그·로직 오류·엣지케이스,
-            보안 이슈, 더 단순/효율적으로 만들 수 있는 부분 위주로 구체적 근거와 함께
-            리뷰 코멘트를 한국어로 남겨줘. 사소한 스타일 지적은 최소화.
-          claude_args: "--max-turns 8 --model claude-sonnet-4-6"
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+            이 PR을 코드 리뷰해줘. 정확성 버그·로직 오류·엣지케이스·보안·단순화 위주로.
+            구체적 라인은 mcp__github_inline_comment__create_inline_comment (confirmed: true),
+            총평은 `gh pr comment` 로 반드시 GitHub 코멘트로 게시. 한국어로, 사소한 건 최소화.
+          claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)" --max-turns 15 --model claude-sonnet-4-6'
 '@
         [System.IO.File]::WriteAllText((Join-Path (Get-Location).Path ($out -replace '/', '\')), $yml + "`n", $u8)
     }

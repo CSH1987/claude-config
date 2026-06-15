@@ -39,12 +39,19 @@ jobs:
         with:
           # 구독 OAuth 토큰 (anthropic_api_key 아님 — 인증 흐름이 다름).
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # 진행/요약 코멘트 자동 게시.
+          track_progress: true
           prompt: |
-            이 PR의 변경사항을 코드 리뷰해줘.
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            이 PR의 변경사항을 코드 리뷰해줘. 중점:
             - 정확성 버그 · 로직 오류 · 놓친 엣지케이스
             - 보안 이슈(시크릿 노출, 인젝션, 잘못된 권한 등)
             - 더 단순하거나 효율적으로 만들 수 있는 부분
-            위주로 보고, 구체적 근거와 함께 리뷰 코멘트를 한국어로 남겨줘.
-            사소한 스타일 지적은 최소화하고 정말 중요한 것만 지적해줘.
-          # 모델은 구독 사용량 절약을 위해 Sonnet 기본. 더 강하게 보려면 opus 로 변경.
-          claude_args: "--max-turns 8 --model claude-sonnet-4-6"
+            구체적 코드 라인은 mcp__github_inline_comment__create_inline_comment
+            (confirmed: true) 로 인라인 코멘트, 전체 총평은 `gh pr comment` 로 남겨줘.
+            반드시 GitHub 코멘트로 게시(메시지로만 끝내지 말 것). 모두 한국어로.
+            사소한 스타일 지적은 최소화.
+          # 코멘트 게시 도구 허용 — 없으면 리뷰가 PR 에 안 남음(권한 거부). Sonnet 기본(구독 절약).
+          claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)" --max-turns 15 --model claude-sonnet-4-6'
