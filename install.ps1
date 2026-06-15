@@ -31,9 +31,9 @@ $srcMd    = Join-Path $repoDir 'claude\CLAUDE.md'
 $u8       = New-Object System.Text.UTF8Encoding($false)
 $mdStart  = '<!-- claude-config:claude-md:start (auto-generated; updated on reinstall) -->'
 $mdEnd    = '<!-- claude-config:claude-md:end -->'
-# 블록 검색 토큰: 신규 + 레거시(dotfiles:) 모두 매칭 → 옛 마커가 박힌 기존 머신도 중복 없이 교체(자가 마이그레이션)
-$mdStartToks = @('<!-- claude-config:claude-md:start', '<!-- dotfiles:claude-md:start')
-$mdEndToks   = @('<!-- claude-config:claude-md:end -->', '<!-- dotfiles:claude-md:end -->')
+# 블록 검색 토큰
+$mdStartToks = @('<!-- claude-config:claude-md:start')
+$mdEndToks   = @('<!-- claude-config:claude-md:end -->')
 $mdBody   = [System.IO.File]::ReadAllText($srcMd, $u8).TrimEnd([char]13, [char]10)
 $block    = "$mdStart`n$mdBody`n$mdEnd"
 if (Test-Path $claudeMd) {
@@ -214,7 +214,6 @@ try {
 # 레포 삭제/이동 대비 Test-Path 가드. OneDrive 리디렉션은 MyDocuments 로 해결.
 $srcFunc = Join-Path $repoDir 'claude\shell\claude-ultra.ps1'
 $marker    = 'claude-config:claude-ultra'
-$markerOld = 'dotfiles:claude-ultra'   # 레거시 마커도 감지해 중복 삽입 방지(자가 마이그레이션)
 $docs    = [Environment]::GetFolderPath('MyDocuments')
 $profiles = @( (Join-Path $docs 'WindowsPowerShell\Microsoft.PowerShell_profile.ps1') )
 if ((Get-Command pwsh -ErrorAction SilentlyContinue) -or (Test-Path (Join-Path $docs 'PowerShell'))) {
@@ -224,7 +223,7 @@ foreach ($prof in $profiles) {
     $profDir = Split-Path -Parent $prof
     $edition = Split-Path -Leaf $profDir
     if (-not (Test-Path $profDir)) { New-Item -ItemType Directory -Force -Path $profDir | Out-Null }
-    if ((Test-Path $prof) -and ((Select-String -Path $prof -SimpleMatch $marker -Quiet) -or (Select-String -Path $prof -SimpleMatch $markerOld -Quiet))) {
+    if ((Test-Path $prof) -and (Select-String -Path $prof -SimpleMatch $marker -Quiet)) {
         Write-Host "  ✓ claude override already in $edition"
     } else {
         Add-Content -Path $prof -Value "`n# $marker`nif (Test-Path `"$srcFunc`") { . `"$srcFunc`" }"

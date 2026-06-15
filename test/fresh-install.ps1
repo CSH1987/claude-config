@@ -322,52 +322,6 @@ Check 'spaces: hooks powershell-form'           { $shcmds.Count -ge 4 -and (@($s
 Check 'spaces: -File path is double-quoted'     { @($shcmds | Where-Object { $_ -match '-File "[^"]*dir with space' }).Count -ge 4 }
 
 # ----------------------------------------------------------------------------
-Phase 'I. Marker migration: legacy dotfiles: CLAUDE.md block -> claude-config: (no duplicate)'
-Reset-Home
-New-Item -ItemType Directory -Force -Path $ClaudeDir | Out-Null
-# ASCII-only test tokens (avoid PS 5.1 ANSI-decoding of BOM-less .ps1 mangling non-ASCII regex)
-$legacyMd = @'
-PREAMBLE-KEEP : user content before the managed block
-
-<!-- dotfiles:claude-md:start (auto-generated; updated on reinstall) -->
-OLDBODY-REPLACE : this legacy body must be replaced on reinstall
-<!-- dotfiles:claude-md:end -->
-
-POSTAMBLE-KEEP : user content after the managed block
-'@
-[System.IO.File]::WriteAllText((Join-Path $ClaudeDir 'CLAUDE.md'), $legacyMd, (New-Object System.Text.UTF8Encoding($false)))
-$null = Run-Install
-$md = Get-Content (Join-Path $ClaudeDir 'CLAUDE.md') -Raw
-Check 'migrate: NEW claude-config start marker present' { $md -match 'claude-config:claude-md:start' }
-Check 'migrate: legacy dotfiles start marker GONE'      { $md -notmatch 'dotfiles:claude-md:start' }
-Check 'migrate: exactly ONE block (no duplicate)'       { ([regex]::Matches($md,'claude-config:claude-md:start \(')).Count -eq 1 }
-Check 'migrate: user preamble preserved'                { $md -match 'PREAMBLE-KEEP' }
-Check 'migrate: user postamble preserved'               { $md -match 'POSTAMBLE-KEEP' }
-Check 'migrate: old block body replaced'                { $md -notmatch 'OLDBODY-REPLACE' }
-$null = Run-Install   # re-run on already-migrated file: must stay exactly one block (idempotent)
-$md2 = Get-Content (Join-Path $ClaudeDir 'CLAUDE.md') -Raw
-Check 'migrate: idempotent (ONE block after re-run)'    { (([regex]::Matches($md2,'claude-config:claude-md:start \(')).Count -eq 1) -and ($md2 -match 'POSTAMBLE-KEEP') }
-
-# ----------------------------------------------------------------------------
-Phase 'J. install.sh wrapper: legacy dotfiles:claude-ultra marker -> no duplicate'
-if (-not $gitBash) {
-  Write-Host '  SKIP  no Git bash on this machine' -ForegroundColor DarkYellow
-} else {
-  $bh2 = Join-Path $SbRoot 'bashhome2'
-  if (Test-Path $bh2) { Remove-Item $bh2 -Recurse -Force -ErrorAction SilentlyContinue }
-  New-Item -ItemType Directory -Force $bh2 | Out-Null
-  # seed a .bashrc that already has the LEGACY wrapper marker
-  [System.IO.File]::WriteAllText((Join-Path $bh2 '.bashrc'), "# user stuff`n`n# dotfiles:claude-ultra`n[ -f x ] && source x`n", (New-Object System.Text.UTF8Encoding($false)))
-  $savedUP3 = $env:USERPROFILE
-  $env:HOME = (To-Msys $bh2); $env:USERPROFILE = $bh2; $env:CLAUDE_INSTALL_DEPLOY_ONLY = '1'
-  & $gitBash -c "bash '$(To-Msys $Repo)/install.sh'" > $null 2>&1
-  $env:USERPROFILE = $savedUP3
-  Remove-Item Env:\HOME, Env:\CLAUDE_INSTALL_DEPLOY_ONLY -ErrorAction SilentlyContinue
-  $rc = Get-Content (Join-Path $bh2 '.bashrc') -Raw
-  Check 'wrapper migrate: legacy marker recognized (no second wrapper)' { ([regex]::Matches($rc, ':claude-ultra')).Count -eq 1 }
-}
-
-# ----------------------------------------------------------------------------
 Phase 'K. Guardrail (PreToolUse): block catastrophic / warn dangerous / allow / fail-open'
 $gPy = Join-Path $HooksDir 'guardrails.py'
 function _verdict($json) {

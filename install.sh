@@ -16,7 +16,7 @@ install_bash_wrapper() {
   add_one() {
     local rc="$1"
     [ -e "$rc" ] || : > "$rc"   # 없으면 생성 (zsh 가 읽도록)
-    if ! grep -qE "claude-config:claude-ultra|dotfiles:claude-ultra" "$rc" 2>/dev/null; then
+    if ! grep -qF "claude-config:claude-ultra" "$rc" 2>/dev/null; then
       printf '\n# claude-config:claude-ultra\n[ -f "%s" ] && source "%s"\n' "$SRC" "$SRC" >> "$rc"
       echo "  ✓ claude override → $(basename "$rc")"
     fi
@@ -98,9 +98,9 @@ dst,src=sys.argv[1],sys.argv[2]
 body=open(src,encoding='utf-8').read().rstrip('\n')
 START='<!-- claude-config:claude-md:start (auto-generated; updated on reinstall) -->'
 END='<!-- claude-config:claude-md:end -->'
-# 블록 검색 토큰: 신규 + 레거시(dotfiles:) 모두 → 옛 마커 머신도 중복 없이 교체(자가 마이그레이션)
-START_TOKS=['<!-- claude-config:claude-md:start','<!-- dotfiles:claude-md:start']
-END_TOKS=['<!-- claude-config:claude-md:end -->','<!-- dotfiles:claude-md:end -->']
+# 블록 검색 토큰
+START_TOKS=['<!-- claude-config:claude-md:start']
+END_TOKS=['<!-- claude-config:claude-md:end -->']
 block=START+'\n'+body+'\n'+END
 try: cur=open(dst,encoding='utf-8').read()
 except FileNotFoundError: cur=None
