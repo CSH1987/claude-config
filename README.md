@@ -118,6 +118,28 @@ config 레포(설정)는 config-sync 가 늘 동기화하지만, **실제 작업
 
 > 또한 전역 `CLAUDE.md` 에 **OMC 모드 안내(제안 후 승인)** 규칙이 있어, 모호한 요구사항엔 `/deep-interview`, 끝까지 완성·검증이 필요하면 `/ralph` 사용을 Claude 가 먼저 제안합니다(모르는 사용자도 쓰도록).
 
+## 7. PR 자동 코드 리뷰 — `claude-review` (구독으로, 추가 과금 없음)
+
+올린 **모든 PR**에 Claude 가 자동으로 코드 리뷰 코멘트를 남깁니다. **GitHub Action** 방식이라 한 번 설치하면 세션·로컬·내 PC 와 무관하게 **서버에서 항상 동작**합니다(greptile 같은 봇과 동일한 always-on 모델, 단 같은 Claude 생태계).
+
+- **레포당 한 번**: 리뷰할 레포 폴더에서 **`claude-review`** 실행 →
+  1. 워크플로 `.github/workflows/claude-auto-review.yml` 생성·커밋·푸시,
+  2. `CLAUDE_CODE_OAUTH_TOKEN` 시크릿 설정(없으면 hidden 입력으로 받아 `gh secret set`),
+  3. 마지막 1회 브라우저 단계 안내(Claude GitHub App 설치: <https://github.com/apps/claude> 또는 `claude /install-github-app`).
+- **토큰**: `claude setup-token`(1년) 으로 발급. **그 레포의 시크릿에만** 저장되고 **config 레포·워크플로 파일엔 절대 안 들어갑니다**(공개 레포라 필수 원칙). 다른 사용자는 각자 자기 구독 토큰을 씁니다.
+- **비용**: 리뷰 호출은 **당신의 Claude 구독 사용량**에서 차감 — 별도 API 종량 과금 없음.
+- **상태 확인**: `claude-review --status`(bash) / `claude-review -Status`(PowerShell).
+- **끄기**: 그 레포의 워크플로 파일 삭제. 시크릿까지 지우려면 `gh secret delete CLAUDE_CODE_OAUTH_TOKEN`.
+
+정직한 한계:
+- 리뷰는 **구독 사용량 한도**를 함께 소모(PR 이 아주 많으면 영향). 토큰은 **개인 계정 묶임 + 1년 만료**(만료 시 재발급).
+- **포크에서 온 PR**은 GitHub 가 보안상 시크릿을 안 넘겨 자동 리뷰가 안 됩니다(자기 브랜치 PR 은 정상).
+- 리뷰는 **코멘트까지만** — 머지 결정은 사람이.
+- 모델 기본값은 `claude-sonnet-4-6`(구독 절약). 더 강하게 보려면 워크플로의 `--model` 을 Opus 로 변경.
+- 인증은 **`claude_code_oauth_token`** 입력 사용(구독 OAuth 전용). `anthropic_api_key` 와 혼용하면 인증 흐름이 달라 실패합니다.
+
+> 새 머신·다른 사용자: 이 레포가 배포되면 `claude-review` 가 자동으로 포함되므로, 각자 자기 레포에서 한 번 실행하면 끝입니다(각자 자기 구독 토큰 사용).
+
 ## 구성
 
 ```
@@ -130,9 +152,11 @@ claude-config/
     ├── settings.json               # 훅·플러그인·마켓플레이스 + effortLevel:xhigh
     ├── CLAUDE.md                    # 전역 세션 기본값(ultracode 넛지 + OMC 모드 안내) → ~/.claude/CLAUDE.md
     ├── ultracode.json              # {"ultracode":true} — claude --settings 로 주입
+    ├── github/
+    │   └── claude-auto-review.yml   # PR 자동 리뷰 워크플로 템플릿 (claude-review 가 각 레포에 복사)
     ├── shell/
-    │   ├── claude-ultra.sh          # `claude` 오버라이드 + `claude-newproj` (bash/zsh)
-    │   └── claude-ultra.ps1         # `claude` 오버라이드 + `claude-newproj` (PowerShell)
+    │   ├── claude-ultra.sh          # `claude` 오버라이드 + claude-newproj/claude-review/update/doctor (bash/zsh)
+    │   └── claude-ultra.ps1         # `claude` 오버라이드 + claude-newproj/claude-review/update/doctor (PowerShell)
     └── hooks/
         ├── ensure-harness.sh/.ps1   # SessionStart — harness 자동 설치/복구
         ├── effort-reminder.sh/.ps1  # SessionStart — 매 세션 ultracode/ultraplan 리마인더 주입

@@ -48,6 +48,116 @@ function claude-newproj {
     Write-Host "  + '$Name' pushed to a private GitHub repo. Auto-backup on every session end is now ON."
 }
 
+# claude-config:review — enable Claude auto code-review (GitHub Action) on the CURRENT repo.
+#   Reviews EVERY pull request using YOUR Claude subscription via an OAuth token (no API billing).
+#   Usage:  claude-review            enable/refresh auto-review on this repo
+#           claude-review -Status    show current setup state (read-only)
+function claude-review {
+    param([switch]$Status)
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Write-Error 'git not found'; return }
+    if (-not (Get-Command gh  -ErrorAction SilentlyContinue)) { Write-Error 'gh not found - winget install GitHub.cli ; gh auth login'; return }
+    & gh auth status *> $null
+    if ($LASTEXITCODE -ne 0) { Write-Error 'gh not logged in - run: gh auth login'; return }
+    & git rev-parse --is-inside-work-tree *> $null
+    if ($LASTEXITCODE -ne 0) { Write-Error 'not inside a git repo - cd into your project first'; return }
+    $slug = (& gh repo view --json nameWithOwner -q .nameWithOwner 2>$null)
+    if (-not $slug) { Write-Error 'no GitHub remote for this repo - create one first (e.g. claude-newproj), then re-run'; return }
+    $out = '.github/workflows/claude-auto-review.yml'
+    $hasSecret = ((& gh secret list 2>$null) | Select-String -Pattern '^CLAUDE_CODE_OAUTH_TOKEN' -Quiet)
+
+    if ($Status) {
+        Write-Host "claude-review status - $slug"
+        if (Test-Path $out)  { Write-Host "  [OK]   workflow present ($out)" } else { Write-Host "  [MISS] workflow $out" }
+        if ($hasSecret)      { Write-Host '  [OK]   secret CLAUDE_CODE_OAUTH_TOKEN set' } else { Write-Host '  [MISS] secret CLAUDE_CODE_OAUTH_TOKEN' }
+        return
+    }
+
+    # 1) write the workflow (prefer the config-repo template; fall back to an embedded copy)
+    New-Item -ItemType Directory -Force -Path '.github/workflows' | Out-Null
+    $u8 = New-Object System.Text.UTF8Encoding($false)
+    $tmpl = $null
+    $cfp = Join-Path $env:USERPROFILE '.claude\.config-sync-path'
+    if (Test-Path $cfp) { $tmpl = Join-Path ((Get-Content $cfp -Raw).Trim()) 'claude\github\claude-auto-review.yml' }
+    if ($tmpl -and (Test-Path $tmpl)) {
+        Copy-Item $tmpl $out -Force
+    } else {
+        $yml = @'
+# Claude 자동 코드 리뷰 — 모든 Pull Request 에서 실행. (claude-config / claude-review)
+# 인증: Claude 구독 OAuth 토큰을 레포 시크릿 CLAUDE_CODE_OAUTH_TOKEN 으로 저장.
+#   발급:  claude setup-token   저장:  gh secret set CLAUDE_CODE_OAUTH_TOKEN  (또는 claude-review)
+# 주의: 구독 OAuth 는 anthropic_api_key 가 아니라 claude_code_oauth_token 입력을 써야 함.
+name: Claude Auto Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false && github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            이 PR의 변경사항을 코드 리뷰해줘. 정확성 버그·로직 오류·엣지케이스,
+            보안 이슈, 더 단순/효율적으로 만들 수 있는 부분 위주로 구체적 근거와 함께
+            리뷰 코멘트를 한국어로 남겨줘. 사소한 스타일 지적은 최소화.
+          claude_args: "--max-turns 8 --model claude-sonnet-4-6"
+'@
+        [System.IO.File]::WriteAllText((Join-Path (Get-Location).Path ($out -replace '/', '\')), $yml + "`n", $u8)
+    }
+    Write-Host "  + wrote $out"
+
+    # 2) ensure the subscription OAuth token secret exists on the repo (never stored in the repo)
+    if ($hasSecret) {
+        Write-Host "  + secret CLAUDE_CODE_OAUTH_TOKEN already set on $slug"
+    } else {
+        Write-Host '  This review runs on YOUR Claude subscription via an OAuth token.'
+        Write-Host '  In ANOTHER terminal run:  claude setup-token   (1-year token; copy the output)'
+        $sec = Read-Host -Prompt '  Paste token here (hidden), or press Enter to skip' -AsSecureString
+        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+        $tok = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+        if ($tok) {
+            # Feed EXACT bytes via a temp file + cmd redirection: a PowerShell pipe would append a
+            # newline that corrupts the token, and --body would leak it into PSReadLine history.
+            $tmp = [System.IO.Path]::GetTempFileName()
+            try {
+                [System.IO.File]::WriteAllText($tmp, $tok, $u8)
+                & cmd /c "gh secret set CLAUDE_CODE_OAUTH_TOKEN < `"$tmp`"" 2>$null
+                if ($LASTEXITCODE -eq 0) { Write-Host "  + secret CLAUDE_CODE_OAUTH_TOKEN set on $slug" }
+                else { Write-Host '  ! failed - set manually: claude setup-token then  gh secret set CLAUDE_CODE_OAUTH_TOKEN' }
+            } finally { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+        } else {
+            Write-Host '  i skipped - later:  claude setup-token  then  gh secret set CLAUDE_CODE_OAUTH_TOKEN'
+        }
+    }
+
+    # 3) commit + push the workflow (contains no secret)
+    git add $out *> $null
+    git diff --cached --quiet
+    if ($LASTEXITCODE -ne 0) {
+        git commit -q -m 'ci: Claude auto code-review on PRs (claude-review)' *> $null
+        git push -q *> $null
+        if ($LASTEXITCODE -eq 0) { Write-Host '  + workflow committed & pushed' } else { Write-Host "  i committed locally - run 'git push' when ready" }
+    } else {
+        Write-Host '  i workflow already current'
+    }
+
+    # 4) one-time browser step: install the Claude GitHub App so PRs trigger the action
+    Write-Host ''
+    Write-Host '  Last step (one-time, browser): install the Claude GitHub App on this repo:'
+    Write-Host '     https://github.com/apps/claude      (or run once:  claude /install-github-app)'
+    Write-Host "  Done - every PR on $slug then gets an automatic Claude review (uses your subscription)."
+}
+
 # claude-config:update — pull the latest config repo + re-run the installer (one command).
 function claude-update {
     $cf = Join-Path $env:USERPROFILE '.claude\.config-sync-path'
@@ -103,6 +213,7 @@ function claude-help {
 claude-config — commands & modes
   claude            launch Claude Code in ultracode (auto via this wrapper)
   claude-newproj    current folder -> private GitHub repo + opt-in auto-backup
+  claude-review     enable Claude auto code-review (GitHub Action) on the current repo
   claude-update     pull latest config + re-run installer
   claude-doctor     health-check this machine's setup
   claude-help       this cheatsheet

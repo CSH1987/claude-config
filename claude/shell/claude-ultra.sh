@@ -48,6 +48,99 @@ claude-newproj() {
   echo "  + '$name' pushed to a private GitHub repo. Auto-backup on every session end is now ON."
 }
 
+# claude-config:review — enable Claude auto code-review (GitHub Action) on the CURRENT repo.
+#   Reviews EVERY pull request using YOUR Claude subscription via an OAuth token (no API billing).
+#   Usage:  claude-review            enable/refresh auto-review on this repo
+#           claude-review --status   show current setup state (read-only)
+claude-review() {
+  command -v git >/dev/null 2>&1 || { echo "git not found"; return 1; }
+  command -v gh  >/dev/null 2>&1 || { echo "gh not found - install gh then: gh auth login"; return 1; }
+  gh auth status >/dev/null 2>&1 || { echo "gh not logged in - run: gh auth login"; return 1; }
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not inside a git repo - cd into your project first"; return 1; }
+  local slug; slug="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)"
+  [ -n "$slug" ] || { echo "no GitHub remote for this repo - create one first (e.g. claude-newproj), then re-run"; return 1; }
+  local out=".github/workflows/claude-auto-review.yml"
+
+  if [ "${1:-}" = "--status" ]; then
+    echo "claude-review status - $slug"
+    [ -f "$out" ] && echo "  [OK]   workflow present ($out)" || echo "  [MISS] workflow $out"
+    gh secret list 2>/dev/null | grep -q '^CLAUDE_CODE_OAUTH_TOKEN' && echo "  [OK]   secret CLAUDE_CODE_OAUTH_TOKEN set" || echo "  [MISS] secret CLAUDE_CODE_OAUTH_TOKEN"
+    return 0
+  fi
+
+  # 1) write the workflow (prefer the config-repo template; fall back to an embedded copy)
+  mkdir -p .github/workflows
+  local tmpl="" cfp="$HOME/.claude/.config-sync-path"
+  [ -f "$cfp" ] && tmpl="$(cat "$cfp" 2>/dev/null)/claude/github/claude-auto-review.yml"
+  if [ -n "$tmpl" ] && [ -f "$tmpl" ]; then
+    cp "$tmpl" "$out"
+  else
+    cat > "$out" <<'YML'
+# Claude 자동 코드 리뷰 — 모든 Pull Request 에서 실행. (claude-config / claude-review)
+# 인증: Claude 구독 OAuth 토큰을 레포 시크릿 CLAUDE_CODE_OAUTH_TOKEN 으로 저장.
+#   발급:  claude setup-token   저장:  gh secret set CLAUDE_CODE_OAUTH_TOKEN  (또는 claude-review)
+# 주의: 구독 OAuth 는 anthropic_api_key 가 아니라 claude_code_oauth_token 입력을 써야 함.
+name: Claude Auto Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false && github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            이 PR의 변경사항을 코드 리뷰해줘. 정확성 버그·로직 오류·엣지케이스,
+            보안 이슈, 더 단순/효율적으로 만들 수 있는 부분 위주로 구체적 근거와 함께
+            리뷰 코멘트를 한국어로 남겨줘. 사소한 스타일 지적은 최소화.
+          claude_args: "--max-turns 8 --model claude-sonnet-4-6"
+YML
+  fi
+  echo "  + wrote $out"
+
+  # 2) ensure the subscription OAuth token secret exists on the repo (never stored in the repo)
+  if gh secret list 2>/dev/null | grep -q '^CLAUDE_CODE_OAUTH_TOKEN'; then
+    echo "  + secret CLAUDE_CODE_OAUTH_TOKEN already set on $slug"
+  else
+    echo "  This review runs on YOUR Claude subscription via an OAuth token."
+    echo "  In ANOTHER terminal run:  claude setup-token   (1-year token; copy the output)"
+    printf "  Paste token here (hidden), or press Enter to skip: "
+    local tok; read -rs tok; echo ""
+    if [ -n "$tok" ]; then
+      printf '%s' "$tok" | gh secret set CLAUDE_CODE_OAUTH_TOKEN >/dev/null 2>&1 \
+        && echo "  + secret CLAUDE_CODE_OAUTH_TOKEN set on $slug" \
+        || echo "  ! failed - set manually: claude setup-token then  gh secret set CLAUDE_CODE_OAUTH_TOKEN"
+    else
+      echo "  i skipped - later:  claude setup-token  then  gh secret set CLAUDE_CODE_OAUTH_TOKEN"
+    fi
+  fi
+
+  # 3) commit + push the workflow (contains no secret)
+  git add "$out" 2>/dev/null
+  if ! git diff --cached --quiet 2>/dev/null; then
+    git commit -q -m "ci: Claude auto code-review on PRs (claude-review)" 2>/dev/null
+    git push -q 2>/dev/null && echo "  + workflow committed & pushed" || echo "  i committed locally - run 'git push' when ready"
+  else
+    echo "  i workflow already current"
+  fi
+
+  # 4) one-time browser step: install the Claude GitHub App so PRs trigger the action
+  echo ""
+  echo "  Last step (one-time, browser): install the Claude GitHub App on this repo:"
+  echo "     https://github.com/apps/claude      (or run once:  claude /install-github-app)"
+  echo "  Done - every PR on $slug then gets an automatic Claude review (uses your subscription)."
+}
+
 # claude-config:update — pull the latest config repo + re-run the installer (one command).
 claude-update() {
   local cf="$HOME/.claude/.config-sync-path" repo
@@ -101,6 +194,7 @@ claude-help() {
 claude-config — commands & modes
   claude            launch Claude Code in ultracode (auto via this wrapper)
   claude-newproj    current folder -> private GitHub repo + opt-in auto-backup
+  claude-review     enable Claude auto code-review (GitHub Action) on the current repo
   claude-update     pull latest config + re-run installer
   claude-doctor     health-check this machine's setup
   claude-help       this cheatsheet
