@@ -140,6 +140,16 @@ config 레포(설정)는 config-sync 가 늘 동기화하지만, **실제 작업
 
 > 새 머신·다른 사용자: 이 레포가 배포되면 `claude-review` 가 자동으로 포함되므로, 각자 자기 레포에서 한 번 실행하면 끝입니다(각자 자기 구독 토큰 사용).
 
+### 자동 수정 (옵트인) — `claude-autofix` 라벨
+
+`claude-review` 는 리뷰 워크플로와 함께 **옵트인 자동수정 워크플로**(`claude-autofix.yml`)와 `claude-autofix` 라벨도 설치합니다.
+
+- **켜는 법**: PR 에 **`claude-autofix` 라벨**을 달면 → Claude 가 그 PR 의 "명백하고 확신하는" 결함을 **직접 고쳐 커밋**하고, 무엇을 왜 고쳤는지 요약 코멘트를 남깁니다. 확신 없는 부분은 코멘트로만 제안.
+- **리뷰와 독립**: 라벨이 없으면 아무 일도 안 합니다 — 기존 자동리뷰(코멘트-only)엔 **영향 없음**.
+- **무한루프 방지(2중)**: 자동수정 커밋엔 `[skip ci]` 가 붙어 리뷰를 재트리거하지 않고, 설령 트리거돼도 claude-code-action 이 "봇이 시작한 실행"을 거부합니다.
+- **권한 차이**: 자동수정만 `contents: write`(코드를 직접 커밋). 리뷰는 그대로 `contents: read`.
+- 끄려면 `.github/workflows/claude-autofix.yml` 삭제 또는 그냥 라벨을 달지 않기.
+
 ## 구성
 
 ```
@@ -153,7 +163,8 @@ claude-config/
     ├── CLAUDE.md                    # 전역 세션 기본값(ultracode 넛지 + OMC 모드 안내) → ~/.claude/CLAUDE.md
     ├── ultracode.json              # {"ultracode":true} — claude --settings 로 주입
     ├── github/
-    │   └── claude-auto-review.yml   # PR 자동 리뷰 워크플로 템플릿 (claude-review 가 각 레포에 복사)
+    │   ├── claude-auto-review.yml   # PR 자동 리뷰 워크플로 템플릿 (claude-review 가 각 레포에 복사)
+    │   └── claude-autofix.yml       # 옵트인 자동수정 워크플로 템플릿 (claude-autofix 라벨로 트리거)
     ├── shell/
     │   ├── claude-ultra.sh          # `claude` 오버라이드 + claude-newproj/claude-review/update/doctor (bash/zsh)
     │   └── claude-ultra.ps1         # `claude` 오버라이드 + claude-newproj/claude-review/update/doctor (PowerShell)

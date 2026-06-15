@@ -1,0 +1,49 @@
+# Claude 자동 수정 (옵트인) — PR 에 `claude-autofix` 라벨을 달면 실행.
+# Claude 가 변경사항의 명백한 결함을 직접 수정해 PR 브랜치에 커밋합니다.
+#
+# 안전 설계:
+#  - 자동리뷰(claude-auto-review.yml)와 완전 분리 — 라벨이 있을 때만 동작(옵트인).
+#  - 루프 방지(2중): ① 자동수정 커밋 메시지에 [skip ci] → 그 커밋은 리뷰를 트리거하지 않음.
+#    ② 설령 트리거돼도 claude-code-action 이 "봇이 시작한 실행"을 자동 거부(non-human actor).
+#
+# 인증: 구독 OAuth 토큰(CLAUDE_CODE_OAUTH_TOKEN). claude_code_oauth_token 입력 사용.
+# 사용: PR 에 claude-autofix 라벨 추가. 끄려면 이 파일 삭제 또는 라벨을 달지 않기.
+# 이 파일은 claude-config 의 `claude-review` 명령이 생성/갱신합니다.
+name: Claude Auto-Fix (opt-in)
+
+on:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  auto-fix:
+    # 'claude-autofix' 라벨이 붙었을 때만 실행.
+    if: github.event.label.name == 'claude-autofix'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # 파일 수정 + git push (리뷰와 달리 write 필요)
+      pull-requests: write   # 요약 코멘트
+      id-token: write        # OIDC 인증
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref }}   # PR 브랜치에서 작업
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+            BRANCH: ${{ github.head_ref }}
+
+            이 PR의 변경 파일에서 "명백하고 확신하는" 버그·보안·안전 문제만 직접 수정해줘.
+            수정했으면 반드시 아래 절차로 커밋·푸시:
+              git config user.name "claude-autofix[bot]"
+              git config user.email "noreply@anthropic.com"
+              git add -A
+              git commit -m "fix: Claude auto-fix [skip ci]"
+              git push origin HEAD:${{ github.head_ref }}
+            그리고 무엇을 왜 고쳤는지 gh pr comment 로 한국어 요약을 남겨줘.
+            확신 없는 변경은 하지 말고 그 부분은 코멘트로만 제안해. 무리한 리팩터링 금지.
+          claude_args: '--allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,Bash(git:*),Bash(gh pr comment:*)" --max-turns 20 --model claude-sonnet-4-6'

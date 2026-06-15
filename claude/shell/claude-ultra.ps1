@@ -48,9 +48,10 @@ function claude-newproj {
     Write-Host "  + '$Name' pushed to a private GitHub repo. Auto-backup on every session end is now ON."
 }
 
-# claude-config:review — enable Claude auto code-review (GitHub Action) on the CURRENT repo.
+# claude-config:review — enable Claude auto code-review + opt-in auto-fix (GitHub Action) on the CURRENT repo.
 #   Reviews EVERY pull request using YOUR Claude subscription via an OAuth token (no API billing).
-#   Usage:  claude-review            enable/refresh auto-review on this repo
+#   Also installs an opt-in auto-fix workflow: add the 'claude-autofix' label to a PR to have Claude fix it.
+#   Usage:  claude-review            enable/refresh on this repo
 #           claude-review -Status    show current setup state (read-only)
 function claude-review {
     param([switch]$Status)
@@ -67,8 +68,10 @@ function claude-review {
 
     if ($Status) {
         Write-Host "claude-review status - $slug"
-        if (Test-Path $out)  { Write-Host "  [OK]   workflow present ($out)" } else { Write-Host "  [MISS] workflow $out" }
+        if (Test-Path $out)  { Write-Host '  [OK]   review workflow present' } else { Write-Host "  [MISS] review workflow $out" }
+        if (Test-Path '.github/workflows/claude-autofix.yml') { Write-Host '  [OK]   auto-fix workflow present (opt-in)' } else { Write-Host '  [--]   auto-fix workflow not installed' }
         if ($hasSecret)      { Write-Host '  [OK]   secret CLAUDE_CODE_OAUTH_TOKEN set' } else { Write-Host '  [MISS] secret CLAUDE_CODE_OAUTH_TOKEN' }
+        if ((& gh label list -R $slug 2>$null) -match 'claude-autofix') { Write-Host '  [OK]   label claude-autofix exists' } else { Write-Host '  [--]   label claude-autofix missing' }
         return
     }
 
@@ -119,6 +122,19 @@ jobs:
     }
     Write-Host "  + wrote $out"
 
+    # 1b) also install the opt-in auto-fix workflow (label-triggered) + ensure the label exists
+    $afout = '.github/workflows/claude-autofix.yml'
+    $afTmpl = $null
+    if (Test-Path $cfp) { $afTmpl = Join-Path ((Get-Content $cfp -Raw).Trim()) 'claude\github\claude-autofix.yml' }
+    if ($afTmpl -and (Test-Path $afTmpl)) {
+        Copy-Item $afTmpl $afout -Force
+        & gh label create claude-autofix -R $slug --color 1f6feb --description "Claude가 이 PR을 자동 수정" 2>$null | Out-Null
+        Write-Host "  + wrote $afout  (opt-in: PR에 'claude-autofix' 라벨을 달면 자동 수정)"
+    } else {
+        $afout = $null
+        Write-Host '  i auto-fix 템플릿 못 찾음 (claude-update 후 재시도) - 리뷰만 설치'
+    }
+
     # 2) ensure the subscription OAuth token secret exists on the repo (never stored in the repo)
     if ($hasSecret) {
         Write-Host "  + secret CLAUDE_CODE_OAUTH_TOKEN already set on $slug"
@@ -144,11 +160,12 @@ jobs:
         }
     }
 
-    # 3) commit + push the workflow (contains no secret)
+    # 3) commit + push the workflow(s) (contains no secret)
     git add $out *> $null
+    if ($afout) { git add $afout *> $null }
     git diff --cached --quiet
     if ($LASTEXITCODE -ne 0) {
-        git commit -q -m 'ci: Claude auto code-review on PRs (claude-review)' *> $null
+        git commit -q -m 'ci: Claude auto-review + opt-in auto-fix (claude-review)' *> $null
         git push -q *> $null
         if ($LASTEXITCODE -eq 0) { Write-Host '  + workflow committed & pushed' } else { Write-Host "  i committed locally - run 'git push' when ready" }
     } else {
@@ -160,6 +177,7 @@ jobs:
     Write-Host '  Last step (one-time, browser): install the Claude GitHub App on this repo:'
     Write-Host '     https://github.com/apps/claude      (or run once:  claude /install-github-app)'
     Write-Host "  Done - every PR on $slug then gets an automatic Claude review (uses your subscription)."
+    if ($afout) { Write-Host "  Auto-fix (opt-in): PR에 'claude-autofix' 라벨을 달면 Claude가 직접 고쳐 커밋합니다." }
 }
 
 # claude-config:update — pull the latest config repo + re-run the installer (one command).
