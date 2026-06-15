@@ -3,8 +3,8 @@
 #
 # 안전 설계:
 #  - 자동리뷰(claude-auto-review.yml)와 완전 분리 — 라벨이 있을 때만 동작(옵트인).
-#  - 루프 방지: GITHUB_TOKEN(github-actions[bot])으로 push 하므로 GitHub 정책상
-#    그 커밋은 다른 워크플로(리뷰의 synchronize)를 재트리거하지 않습니다.
+#  - 루프 방지(2중): ① 자동수정 커밋 메시지에 [skip ci] → 그 커밋은 리뷰를 트리거하지 않음.
+#    ② 설령 트리거돼도 claude-code-action 이 "봇이 시작한 실행"을 자동 거부(non-human actor).
 #
 # 인증: 구독 OAuth 토큰(CLAUDE_CODE_OAUTH_TOKEN). claude_code_oauth_token 입력 사용.
 # 끄려면 이 파일을 삭제하거나, 그냥 라벨을 달지 마세요.
@@ -41,7 +41,7 @@ jobs:
               git config user.name "claude-autofix[bot]"
               git config user.email "noreply@anthropic.com"
               git add -A
-              git commit -m "fix: Claude auto-fix"
+              git commit -m "fix: Claude auto-fix [skip ci]"
               git push origin HEAD:${{ github.head_ref }}
             그리고 무엇을 왜 고쳤는지 gh pr comment 로 한국어 요약을 남겨줘.
             확신 없는 변경은 하지 말고 그 부분은 코멘트로만 제안해. 무리한 리팩터링 금지.
