@@ -94,6 +94,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  id-token: write
 jobs:
   claude-review:
     runs-on: ubuntu-latest

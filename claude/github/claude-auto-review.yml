@@ -19,11 +19,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-# 최소 권한: 코드 읽기 + 리뷰 코멘트 작성에 필요한 만큼만.
+# 최소 권한: 코드 읽기 + 리뷰 코멘트 작성 + OIDC(id-token: 액션 인증에 필수).
 permissions:
   contents: read
   pull-requests: write
   issues: write
+  id-token: write
 
 jobs:
   claude-review:
