@@ -1,5 +1,4 @@
 {
-  "effortLevel": "xhigh",
   "hooks": {
     "PreToolUse": [
       {
@@ -91,5 +90,6 @@
       }
     }
   },
+  "effortLevel": "xhigh",
   "theme": "dark"
 }
