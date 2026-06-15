@@ -176,7 +176,8 @@ if command -v git >/dev/null 2>&1; then
   gi_src="$REPO_DIR/claude/git/gitignore_global"
   if [ -f "$gi_src" ]; then
     # 사용자가 이미 전역 gitignore 를 쓰면 그 파일에 시크릿 패턴만 보강(설정을 덮어쓰지 않음).
-    existing="$(git config --global --get core.excludesfile 2>/dev/null)"
+    # `|| true`: 키 미설정 시 git 이 exit 1 → set -e 가 스크립트를 죽이는 것을 방지(2>/dev/null 은 stderr 만 막음)
+    existing="$(git config --global --get core.excludesfile 2>/dev/null || true)"
     target=""
     if [ -n "$existing" ]; then
       res="${existing/#\~/$HOME}"
