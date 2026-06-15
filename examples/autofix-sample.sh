@@ -3,13 +3,12 @@
 # 의도적 결함: set -euo pipefail 없음 · ls 파싱 · 따옴표 누락 · 인자검증 없음.
 
 backup() {
-  src=$1
-  dest=$2
-  files=$(ls $src)
-  for f in $files; do
-    cp $src/$f $dest/$f
+  src="$1"
+  dest="$2"
+  for f in "$src"/*; do
+    cp "$f" "$dest/"
   done
-  echo "backup done: $files"
+  echo "backup done: $src -> $dest"
 }
 
-backup $1 $2
+backup "$1" "$2"
