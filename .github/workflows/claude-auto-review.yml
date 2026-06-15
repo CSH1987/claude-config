@@ -1,0 +1,46 @@
+# Claude 자동 코드 리뷰 — 모든 Pull Request 에서 실행.
+#
+# 인증: 당신의 Claude 구독(Pro/Max) → OAuth 토큰을 레포 시크릿
+#   CLAUDE_CODE_OAUTH_TOKEN 으로 저장해서 사용합니다. 발급:
+#     claude setup-token        # 1년짜리 토큰, 출력값 복사
+#   저장(둘 중 하나):
+#     gh secret set CLAUDE_CODE_OAUTH_TOKEN     # 직접
+#     claude-review                             # claude-config 헬퍼(권장)
+#   → API 종량 과금 없음. 리뷰 호출은 구독 사용량에서 차감됩니다.
+#
+# 주의: 구독 OAuth 는 anthropic_api_key 가 아니라 전용 입력 claude_code_oauth_token
+#       을 써야 합니다 (인증 흐름이 다름 — 키를 바꿔 쓰면 실패).
+name: Claude Auto Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# 최소 권한: 코드 읽기 + 리뷰 코멘트 작성에 필요한 만큼만.
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    # 드래프트 PR 과 Dependabot 은 건너뜀(원하면 이 줄 삭제해 전부 리뷰).
+    if: github.event.pull_request.draft == false && github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          # 구독 OAuth 토큰 (anthropic_api_key 아님 — 인증 흐름이 다름).
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            이 PR의 변경사항을 코드 리뷰해줘.
+            - 정확성 버그 · 로직 오류 · 놓친 엣지케이스
+            - 보안 이슈(시크릿 노출, 인젝션, 잘못된 권한 등)
+            - 더 단순하거나 효율적으로 만들 수 있는 부분
+            위주로 보고, 구체적 근거와 함께 리뷰 코멘트를 한국어로 남겨줘.
+            사소한 스타일 지적은 최소화하고 정말 중요한 것만 지적해줘.
+          # 모델은 구독 사용량 절약을 위해 Sonnet 기본. 더 강하게 보려면 opus 로 변경.
+          claude_args: "--max-turns 8 --model claude-sonnet-4-6"
