@@ -155,6 +155,8 @@ for event, groups in s.get("hooks",{}).items():
             if h.get("command") and h["command"] not in have:
                 cur.append({"hooks":[{"type":"command","command":h["command"]}]}); have.add(h["command"])
     hk[event]=cur
+# 자동업데이트 항상 ON(1/2): settings 의 비활성 레버 제거 (autoupdates→settings 마이그레이션 대비; "0" 도 truthy 라 끄므로 키째 제거)
+if isinstance(d.get("env"), dict): d["env"].pop("DISABLE_AUTOUPDATER", None)
 json.dump(d,open(dst,"w"),indent=2,ensure_ascii=False); open(dst,"a").write("\n")
 PY
   echo "  ✓ settings merged (기존 보존, 백업됨)"
@@ -169,6 +171,19 @@ install_bash_wrapper
 if [ "${CLAUDE_INSTALL_DEPLOY_ONLY:-}" = "1" ]; then
   echo "  i deploy-only — plugin install skipped"
   exit 0
+fi
+
+# 자동업데이트 항상 ON 보장(2/2): 전역 config(~/.claude.json)의 레거시 비활성(autoUpdates:false)을 치유.
+# 이 버전은 자동업데이트 on/off 를 전역 config 의 autoUpdates 에서 읽음(settings.json 아님).
+# native 설치는 보호 차원에서 건드리지 않음. perl 로 해당 불리언만 표면 치환(앱 토큰 등 나머지는 그대로 보존).
+cj="$HOME/.claude.json"
+if [ -f "$cj" ] && command -v perl >/dev/null 2>&1 \
+   && ! grep -q '"installMethod"[[:space:]]*:[[:space:]]*"native"' "$cj" \
+   && grep -q '"autoUpdates"[[:space:]]*:[[:space:]]*false' "$cj"; then
+  cp -p "$cj" "$cj.bak.$(date +%s)" 2>/dev/null || true
+  if perl -i -pe 's/("autoUpdates"\s*:\s*)false/${1}true/' "$cj"; then
+    echo "  ✓ ~/.claude.json autoUpdates:false → true (auto-update 항상 ON)"
+  fi
 fi
 
 # 전역 git 안전 기본값: ~/.gitignore_global(모든 레포가 시크릿 무시) + sane 기본값(미설정 시에만).

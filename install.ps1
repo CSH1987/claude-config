@@ -116,6 +116,14 @@ foreach ($p in $officialPlugins) { (Get-Dict $s 'enabledPlugins')["$p@claude-plu
 # (.ContainsKey 는 Hashtable·Generic Dictionary 모두 지원; .Contains 는 제네릭 Dictionary 에 없음)
 if (-not $s.ContainsKey('effortLevel')) { $s['effortLevel'] = 'xhigh' }
 
+# 자동업데이트 항상 ON 보장(1/2): settings 의 비활성 레버 제거.
+# 전역 config 의 autoUpdates 가 settings 의 env.DISABLE_AUTOUPDATER 로 마이그레이션될 수 있는데,
+# 그 값은 "0" 이어도 JS 에서 truthy 라 끄므로 키 자체를 제거해야 함.
+if (($s['env'] -is [System.Collections.IDictionary]) -and $s['env'].ContainsKey('DISABLE_AUTOUPDATER')) {
+    [void]$s['env'].Remove('DISABLE_AUTOUPDATER')
+    Write-Host '  ✓ settings env.DISABLE_AUTOUPDATER 제거 (auto-update 항상 ON)'
+}
+
 # 훅 (절대 경로 — Windows 환경변수 확장 이슈 회피).
 # 결정적 재구성: 우리 관리 명령(ensure-harness, effort-reminder)을 포함한 기존 그룹은 모두 제거하고
 # (기존 중복도 함께 정리), 관계없는 사용자 훅 그룹은 보존한 뒤, 우리 두 훅을 정확히 1개씩 추가.
@@ -179,6 +187,23 @@ if ($env:CLAUDE_INSTALL_DEPLOY_ONLY -eq '1') {
     Write-Host '  i deploy-only — machine-state steps skipped (PATH/ExecutionPolicy/profile/plugins)'
     return
 }
+
+# 자동업데이트 항상 ON 보장(2/2): 전역 config(~/.claude.json)의 레거시 비활성(autoUpdates:false)을 치유.
+# 이 버전은 자동업데이트 on/off 를 전역 config 의 autoUpdates 에서 읽음(settings.json 아님).
+# native 설치는 보호 차원에서 건드리지 않음. 해당 불리언만 표면 치환(앱 토큰 등 나머지는 그대로 보존).
+# 실패해도 설치를 막지 않음(try/catch) — 앱-상태 파일이라 백업 후 진행.
+try {
+    $cj = Join-Path $env:USERPROFILE '.claude.json'
+    if (Test-Path $cj) {
+        $raw = [System.IO.File]::ReadAllText($cj)
+        if (($raw -notmatch '"installMethod"\s*:\s*"native"') -and ($raw -match '"autoUpdates"\s*:\s*false')) {
+            Copy-Item $cj "$cj.bak.$([int](Get-Date -UFormat %s))" -Force
+            $new = [regex]::Replace($raw, '("autoUpdates"\s*:\s*)false', '${1}true')
+            [System.IO.File]::WriteAllText($cj, $new, (New-Object System.Text.UTF8Encoding($false)))
+            Write-Host '  ✓ ~/.claude.json autoUpdates:false → true (auto-update 항상 ON)'
+        }
+    }
+} catch { Write-Host '  ! auto-update 보장 스킵(무시) — ~/.claude.json 처리 실패' }
 
 # python3 심 — hookify 훅이 python3 를 직접 호출. Windows 의 python3 는 MS-Store 스텁(깨짐)이라
 # 실제 python(py)을 가리키는 venv 리다이렉터 python3.exe 를 만들고 USER PATH 앞에 둔다 (멱등, admin 불필요).
