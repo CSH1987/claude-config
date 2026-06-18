@@ -116,6 +116,11 @@ foreach ($p in $officialPlugins) { (Get-Dict $s 'enabledPlugins')["$p@claude-plu
 # (.ContainsKey 는 Hashtable·Generic Dictionary 모두 지원; .Contains 는 제네릭 Dictionary 에 없음)
 if (-not $s.ContainsKey('effortLevel')) { $s['effortLevel'] = 'xhigh' }
 
+# 편집 자동 수락 기본 모드(acceptEdits) — 없을 때만 설정해 사용자 선택 보존.
+# 새 세션이 auto-accept edits 로 시작(파일 편집 권한 프롬프트 생략). 가드레일 훅은 그대로 동작.
+$perm = Get-Dict $s 'permissions'
+if (-not $perm.ContainsKey('defaultMode')) { $perm['defaultMode'] = 'acceptEdits' }
+
 # 자동업데이트 항상 ON 보장(1/2): settings 의 비활성 레버 제거.
 # 전역 config 의 autoUpdates 가 settings 의 env.DISABLE_AUTOUPDATER 로 마이그레이션될 수 있는데,
 # 그 값은 "0" 이어도 JS 에서 truthy 라 끄므로 키 자체를 제거해야 함.

@@ -138,6 +138,7 @@ d=json.load(open(dst)); s=json.load(open(src))
 d.setdefault("extraKnownMarketplaces",{}).update(s["extraKnownMarketplaces"])
 d.setdefault("enabledPlugins",{}).update(s["enabledPlugins"])
 d.setdefault("effortLevel", s.get("effortLevel","xhigh"))  # 없을 때만 — 사용자 선택 보존
+d.setdefault("permissions",{}).setdefault("defaultMode", s.get("permissions",{}).get("defaultMode","acceptEdits"))  # 편집 자동 수락 — 없을 때만(사용자 선택 보존)
 # 소스의 모든 hook 이벤트(SessionStart, SessionEnd, ...)를 머지. 자가 치유 dedup(순서 보존).
 hk=d.setdefault("hooks",{})
 for event, groups in s.get("hooks",{}).items():

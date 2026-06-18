@@ -91,6 +91,9 @@
     }
   },
   "effortLevel": "xhigh",
+  "permissions": {
+    "defaultMode": "acceptEdits"
+  },
   "autoUpdatesChannel": "latest",
   "skipWorkflowUsageWarning": true,
   "theme": "dark"
