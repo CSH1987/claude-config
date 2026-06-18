@@ -92,7 +92,7 @@
   },
   "effortLevel": "xhigh",
   "permissions": {
-    "defaultMode": "acceptEdits"
+    "defaultMode": "auto"
   },
   "autoUpdatesChannel": "latest",
   "skipWorkflowUsageWarning": true,

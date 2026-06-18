@@ -116,10 +116,13 @@ foreach ($p in $officialPlugins) { (Get-Dict $s 'enabledPlugins')["$p@claude-plu
 # (.ContainsKey 는 Hashtable·Generic Dictionary 모두 지원; .Contains 는 제네릭 Dictionary 에 없음)
 if (-not $s.ContainsKey('effortLevel')) { $s['effortLevel'] = 'xhigh' }
 
-# 편집 자동 수락 기본 모드(acceptEdits) — 없을 때만 설정해 사용자 선택 보존.
-# 새 세션이 auto-accept edits 로 시작(파일 편집 권한 프롬프트 생략). 가드레일 훅은 그대로 동작.
+# auto 모드 기본값(연구 프리뷰) — 없을 때만 설정해 사용자 선택 보존.
+# 새 세션이 'auto mode' 로 시작: AI 안전 classifier 가 각 작업을 검사 후 거의 자동 승인.
+# 보호 경로(.claude/.git)·위험 명령은 여전히 확인, PreToolUse 가드레일 훅도 그대로 동작.
+# 주의: defaultMode=auto 는 사용자수준(~/.claude/settings.json)에서만 유효(프로젝트 .claude/* 는 무시).
+#       우리 배포 대상이 ~/.claude/settings.json 이라 적용됨. 모델은 Opus/Sonnet 4.6+ 필요.
 $perm = Get-Dict $s 'permissions'
-if (-not $perm.ContainsKey('defaultMode')) { $perm['defaultMode'] = 'acceptEdits' }
+if (-not $perm.ContainsKey('defaultMode')) { $perm['defaultMode'] = 'auto' }
 
 # 자동업데이트 항상 ON 보장(1/2): settings 의 비활성 레버 제거.
 # 전역 config 의 autoUpdates 가 settings 의 env.DISABLE_AUTOUPDATER 로 마이그레이션될 수 있는데,
