@@ -99,8 +99,8 @@ body=open(src,encoding='utf-8').read().rstrip('\n')
 START='<!-- claude-config:claude-md:start (auto-generated; updated on reinstall) -->'
 END='<!-- claude-config:claude-md:end -->'
 # 블록 검색 토큰
-START_TOKS=['<!-- claude-config:claude-md:start']
-END_TOKS=['<!-- claude-config:claude-md:end -->']
+START_TOKS=['<!-- claude-config:claude-md:start','<!-- dotfiles:claude-md:start']
+END_TOKS=['<!-- claude-config:claude-md:end -->','<!-- dotfiles:claude-md:end -->']
 block=START+'\n'+body+'\n'+END
 try: cur=open(dst,encoding='utf-8').read()
 except FileNotFoundError: cur=None

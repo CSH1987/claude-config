@@ -32,8 +32,8 @@ $u8       = New-Object System.Text.UTF8Encoding($false)
 $mdStart  = '<!-- claude-config:claude-md:start (auto-generated; updated on reinstall) -->'
 $mdEnd    = '<!-- claude-config:claude-md:end -->'
 # 블록 검색 토큰
-$mdStartToks = @('<!-- claude-config:claude-md:start')
-$mdEndToks   = @('<!-- claude-config:claude-md:end -->')
+$mdStartToks = @('<!-- claude-config:claude-md:start', '<!-- dotfiles:claude-md:start')
+$mdEndToks   = @('<!-- claude-config:claude-md:end -->', '<!-- dotfiles:claude-md:end -->')
 $mdBody   = [System.IO.File]::ReadAllText($srcMd, $u8).TrimEnd([char]13, [char]10)
 $block    = "$mdStart`n$mdBody`n$mdEnd"
 if (Test-Path $claudeMd) {
