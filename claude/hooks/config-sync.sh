@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # claude-config:config-sync — claude-config 레포를 GitHub(클라우드)와 자동 동기화 (설정-전용).
-#   start (SessionStart) → git pull --rebase   : 매 세션 최신 설정 수신
+#   start (SessionStart) → git pull + (변경 시) deploy-only 자동 반영 : 최신 설정 수신·적용
 #   end   (SessionEnd)   → commit + push       : 변경분을 클라우드에 백업
 # 원칙: 세션을 절대 막지 않는다.
 #   · GIT_TERMINAL_PROMPT=0 → 자격증명 프롬프트로 멈추지 않고 즉시 실패(행 방지).
@@ -43,14 +43,30 @@ trap 'rmdir "$lock" 2>/dev/null || true' EXIT
 TO=""
 command -v timeout >/dev/null 2>&1 && TO="timeout 30"
 
+# $TO(timeout) 는 macOS 기본엔 없으므로, git lowSpeed 로도 느린/끊긴 네트워크 pull 을 중단(20초간 1KB/s 미만).
 pull() {
-  $TO git pull --rebase --autostash --quiet >/dev/null 2>&1 \
+  $TO git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 pull --rebase --autostash --quiet >/dev/null 2>&1 \
     || git rebase --abort >/dev/null 2>&1 || true
+}
+
+# pull 로 새 커밋이 들어오면 deploy-only 로 ~/.claude 에 자동 반영(멱등·부작용 없음).
+# deploy-only = 파일 배치만(settings·CLAUDE.md·hooks·ultracode.json), 플러그인/PATH/프로필 스킵.
+# 실패해도 세션 안 막음. 적용은 다음 세션부터(settings·CLAUDE.md 는 세션 시작 시 로드).
+apply_if_changed() {
+  before="$1"
+  after="$(git rev-parse HEAD 2>/dev/null)"
+  [ -z "$after" ] && return 0
+  [ "$before" = "$after" ] && return 0          # pull 로 변경 없으면 스킵
+  [ -f "$repo/install.sh" ] || return 0
+  CLAUDE_INSTALL_DEPLOY_ONLY=1 $TO bash "$repo/install.sh" >/dev/null 2>&1 || true
+  echo "claude-config: 새 설정을 받아 반영했습니다 (다음 세션부터 적용)." >&2
 }
 
 case "$mode" in
   start)
+    head_before="$(git rev-parse HEAD 2>/dev/null)"
     pull
+    apply_if_changed "$head_before"
     ;;
   end)
     if [ -n "$(git status --porcelain 2>/dev/null)" ]; then

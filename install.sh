@@ -131,6 +131,8 @@ if [ -L "$DST/settings.json" ] || [ ! -e "$DST/settings.json" ]; then
   echo "  ✓ settings linked"
 elif command -v python3 >/dev/null 2>&1; then
   cp -p "$DST/settings.json" "$DST/settings.json.bak.$(date +%s)"
+  # 백업 누적 방지(config-sync 가 매 변경마다 deploy 하므로): 최근 5개만 유지
+  ls -1t "$DST"/settings.json.bak.* 2>/dev/null | tail -n +6 | while IFS= read -r _bak; do rm -f "$_bak"; done
   python3 - "$DST/settings.json" "$REPO_DIR/claude/settings.json" <<'PY'
 import json,sys
 dst,src=sys.argv[1],sys.argv[2]
@@ -165,14 +167,16 @@ else
   echo "  ! python3 미설치 — settings 머지 건너뜀 (symlink 사용 권장 또는 python3 설치 후 재실행)"
 fi
 
-# `claude` → ultracode 자동: 위에서 정의한 래퍼 설치 (Unix 경로; Windows 는 위 분기에서 처리됨).
-install_bash_wrapper
-
-# 테스트/CI 용 deploy-only: payload(훅·settings·CLAUDE.md·래퍼)만 배치하고 플러그인 설치는 건너뜀.
+# 테스트/CI·자동동기화용 deploy-only: payload(훅·settings·CLAUDE.md·ultracode.json)만 배치하고
+# 머신상태(셸 래퍼·플러그인·PATH 등)는 건너뜀 — 멱등·부작용 없음(config-sync 가 매 변경마다 호출).
+# ↓ 래퍼 설치는 셸 rc 를 건드리므로 반드시 이 가드 '뒤'에 둔다(install.ps1 과 대칭; deploy-only 계약 준수).
 if [ "${CLAUDE_INSTALL_DEPLOY_ONLY:-}" = "1" ]; then
-  echo "  i deploy-only — plugin install skipped"
+  echo "  i deploy-only — shell wrapper/plugin install skipped"
   exit 0
 fi
+
+# `claude` → ultracode 자동: 위에서 정의한 래퍼 설치 (Unix 경로; Windows 는 위 분기에서 처리됨).
+install_bash_wrapper
 
 # 자동업데이트 항상 ON 보장(2/2): 전역 config(~/.claude.json)의 레거시 비활성(autoUpdates:false)을 치유.
 # 이 버전은 자동업데이트 on/off 를 전역 config 의 autoUpdates 에서 읽음(settings.json 아님).

@@ -93,6 +93,8 @@ function Get-Dict($d, $k) {
 $settingsPath = Join-Path $dst 'settings.json'
 if (Test-Path $settingsPath) {
     Copy-Item $settingsPath "$settingsPath.bak.$([int](Get-Date -UFormat %s))" -Force
+    # 백업 누적 방지(config-sync 가 매 변경마다 deploy 하므로): 최근 5개만 유지
+    Get-ChildItem "$settingsPath.bak.*" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -Skip 5 | Remove-Item -Force -ErrorAction SilentlyContinue
     $raw = Get-Content $settingsPath -Raw
     if ([string]::IsNullOrWhiteSpace($raw)) { $s = @{} } else { $s = $ser.DeserializeObject($raw) }
 } else {

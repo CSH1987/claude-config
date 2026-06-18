@@ -92,7 +92,7 @@ git -C "$env:USERPROFILE\claude-config" pull; powershell -ExecutionPolicy Bypass
 
 로컬에만 쌓여 드리프트되는 문제를 없애기 위해, `config-sync` 훅이 이 레포를 GitHub 와 자동 동기화합니다(설정-전용).
 
-- **SessionStart → `git pull --rebase --autostash`**: 매 세션 시작 시 다른 머신의 변경을 자동 수신.
+- **SessionStart → `git pull` + (변경 시) 자동 반영**: 매 세션 시작 시 다른 머신의 변경을 자동 수신하고, **새 커밋이 당겨졌으면 `deploy-only` install 을 자동 실행해 `~/.claude` 에 반영**(settings·CLAUDE.md·hooks·ultracode.json). 적용은 **다음 세션부터**(settings·CLAUDE.md 는 세션 시작 시 로드). 느린 네트워크엔 `git lowSpeed`(20초)+ (Unix)`timeout` 으로 세션시작 행 방지. → **다른 머신·새 사용자도 한 번 부트스트랩만 하면 이후 세션마다 알아서 최신.**
 - **SessionEnd → commit + push**: 변경분이 있으면 `auto-sync: <host> <시각>` 으로 커밋·푸시.
 - **세션을 절대 막지 않음**: git 미설치·오프라인·충돌 시 조용히 스킵(충돌은 rebase abort). 끄려면 `CLAUDE_CONFIG_NO_SYNC=1`.
 - **안전**: 비밀은 레포에 없고(`gh auth token` 런타임 주입) `.omc/` 는 gitignore 라 `git add -A` 가 안전.
@@ -101,6 +101,8 @@ git -C "$env:USERPROFILE\claude-config" pull; powershell -ExecutionPolicy Bypass
 > **플랫폼 차이**: Mac/Linux 는 `~/.claude/*` 가 레포로 **심링크**라 `/config` 등 실시간 편집까지 자동 동기화됩니다.
 > Windows 는 **복사본**이라 레포 자체 편집은 동기화되지만, `~/.claude` 실시간 편집은 `install.ps1` 재실행으로 반영하세요
 > (머신별 절대경로가 박힌 `settings.json` 은 의도적으로 올리지 않습니다).
+
+> **⚠️ 보안 모델 (자동 실행 — 꼭 이해하세요)**: 위 "변경 시 자동 반영"은 **공개 레포(`CSH1987/claude-config`)의 코드를 매 세션 자동으로 pull·실행**한다는 뜻입니다. 즉 **보안 경계 = 당신의 GitHub 계정**입니다. `main` 에 악성 커밋이 들어가면(계정 탈취·토큰 유출 등) 동기화된 **모든 머신**에서 다음 세션에 그 코드가 실행됩니다. 완화: **① GitHub 계정 2FA 필수, ② 레포에 토큰·비밀 절대 커밋 금지(이미 `gh auth token` 런타임 주입), ③ `main` 브랜치 보호 권장.** dotfiles 류의 일반적·수용 가능한 패턴이지만 **의식적으로 수용한 위험**이어야 합니다. 더 엄격히 하려면 `CLAUDE_CONFIG_VERIFY_COMMIT=1` 같은 서명 검증 게이팅(옵트인 — 모든 커밋 GPG 서명 필요)을 추가할 수 있습니다.
 
 ### install 이 머신에 바꾸는 것
 - **Windows**: `~/.pyshim` 생성 후 USER PATH 앞에 추가(hookify 의 python3), ExecutionPolicy(CurrentUser)를 필요시 `RemoteSigned` 로, `claude` 오버라이드를 Windows PowerShell 5.1 + (있으면) pwsh 7 프로필 양쪽에 기록.
