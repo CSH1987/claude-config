@@ -91,5 +91,7 @@
     }
   },
   "effortLevel": "xhigh",
+  "autoUpdatesChannel": "latest",
+  "skipWorkflowUsageWarning": true,
   "theme": "dark"
 }
