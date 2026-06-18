@@ -188,6 +188,46 @@ git -C $noup -c user.email='t@t' -c user.name='t' commit -qm init 2>&1 | Out-Nul
 $csNoup = Invoke-Child $cs @('-Mode','start','-Repo',$noup)
 Check 'config-sync no-upstream exits 0'     { $csNoup.Code -eq 0 }
 
+# D5b auto-deploy: config-sync start 가 새 커밋 pull 시 deploy-only install 을 자동 실행 (변경 시에만)
+$depRemote = Join-Path $SbRoot 'dep-remote.git'
+$depA = Join-Path $SbRoot 'dep-a'; $depB = Join-Path $SbRoot 'dep-b'
+foreach ($p in @($depRemote,$depA,$depB)) { if (Test-Path $p) { Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue } }
+git init --bare --quiet $depRemote
+git clone --quiet $depRemote $depA 2>&1 | Out-Null
+# 가짜 install.ps1: deploy-only 로 호출되면 fake HOME 에 마커+env 기록(진짜 install 은 무겁고 부작용 → 계약만 검증)
+$fakeInstall = @'
+param()
+$m = Join-Path $env:USERPROFILE '.claude\DEPLOY_RAN'
+New-Item -ItemType Directory -Force (Split-Path $m) | Out-Null
+Set-Content $m "deploy=$env:CLAUDE_INSTALL_DEPLOY_ONLY"
+'@
+Set-Content (Join-Path $depA 'install.ps1') $fakeInstall
+Set-Content (Join-Path $depA 'a.txt') 'one' -NoNewline
+git -C $depA add -A 2>&1 | Out-Null
+git -C $depA -c user.email='t@t' -c user.name='t' commit -qm init 2>&1 | Out-Null
+git -C $depA push -q -u origin HEAD 2>&1 | Out-Null
+git clone --quiet $depRemote $depB 2>&1 | Out-Null   # depB = '다른 머신' (init 시점, 가짜 install 포함)
+# depA 에서 새 커밋 push → depB 는 한 커밋 뒤처짐
+Set-Content (Join-Path $depA 'changed.txt') 'newcommit' -NoNewline
+git -C $depA add -A 2>&1 | Out-Null
+git -C $depA -c user.email='t@t' -c user.name='t' commit -qm change 2>&1 | Out-Null
+git -C $depA push -q 2>&1 | Out-Null
+# NOTE: Reset-Home 을 부르면 $HooksDir 의 config-sync.ps1/work-autosync.ps1 까지 지워져 이후 Phase 가 깨진다.
+# 여기선 배포된 훅을 보존하고 마커만 정리한다(가짜 install 은 USERPROFILE=$Home2 의 .claude 에 마커 생성).
+$depMarker = Join-Path $ClaudeDir 'DEPLOY_RAN'
+Remove-Item $depMarker -Force -ErrorAction SilentlyContinue
+$savedDepUP = $env:USERPROFILE
+$env:USERPROFILE = $Home2
+try { $csDep = Invoke-Child $cs @('-Mode','start','-Repo',$depB) } finally { $env:USERPROFILE = $savedDepUP }
+Check 'auto-deploy: start exits 0'                  { $csDep.Code -eq 0 }
+Check 'auto-deploy: 변경 pull 시 install 자동 실행'  { Test-Path $depMarker }
+Check 'auto-deploy: deploy-only env(=1) 전달'        { (Test-Path $depMarker) -and ((Get-Content $depMarker -Raw).Trim() -eq 'deploy=1') }
+# 변경 없을 때 재실행 → deploy 스킵(멱등; before==after HEAD)
+Remove-Item $depMarker -Force -ErrorAction SilentlyContinue
+$env:USERPROFILE = $Home2
+try { $csDep2 = Invoke-Child $cs @('-Mode','start','-Repo',$depB) } finally { $env:USERPROFILE = $savedDepUP }
+Check 'auto-deploy: 변경 없으면 install 스킵(멱등)'   { -not (Test-Path $depMarker) }
+
 # D6 work-autosync: opt-in gate — skips without the .claude-autosync marker, pushes with it
 $waPs = Join-Path $HooksDir 'work-autosync.ps1'
 $waRemote = Join-Path $SbRoot 'wa-remote.git'
