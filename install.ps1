@@ -296,7 +296,15 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
 }
 
 # 즉시 설치 (실제 실행파일 사용)
-if (Get-Command claude -CommandType Application -ErrorAction SilentlyContinue) {
+# claude 세션 내부에서 install.ps1 을 돌리면, 플러그인 설치가 띄우는 중첩 claude 프로세스의
+# SessionEnd 훅(config-sync push)이 "Hook cancelled" 로 죽어 install 이 exit 1 + stale lock 을 남긴다.
+# 세션 안에서는 '플러그인 설치 단계만' 건너뛴다(플러그인 enable 은 위 settings.json 머지로 이미 반영됨;
+# 파일 배포·머신상태 단계는 그대로 수행). 실제 설치는 새 터미널(비-claude)에서 재실행 시 수행.
+# 강제 실행: CLAUDE_INSTALL_FORCE_PLUGINS=1.
+$inClaudeSession = (($env:CLAUDECODE) -or ($env:CLAUDE_CODE_ENTRYPOINT)) -and ($env:CLAUDE_INSTALL_FORCE_PLUGINS -ne '1')
+if ($inClaudeSession) {
+    Write-Host '  i claude 세션 내부 감지 — 플러그인 설치 단계 건너뜀 (새 터미널에서 install.ps1 재실행 시 설치; 강제: CLAUDE_INSTALL_FORCE_PLUGINS=1)'
+} elseif (Get-Command claude -CommandType Application -ErrorAction SilentlyContinue) {
     claude plugin marketplace add revfactory/harness  *> $null
     claude plugin install harness@harness-marketplace *> $null
     Write-Host '  ✓ harness installed'
