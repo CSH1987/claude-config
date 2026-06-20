@@ -73,12 +73,13 @@ esac
 # 훅 링크 (harness 자동 + effort 리마인더 + 설정 자동 동기화)
 ln -sfn "$REPO_DIR/claude/hooks/ensure-harness.sh"   "$DST/hooks/ensure-harness.sh"
 ln -sfn "$REPO_DIR/claude/hooks/effort-reminder.sh"  "$DST/hooks/effort-reminder.sh"
+ln -sfn "$REPO_DIR/claude/hooks/memory-inject.sh"    "$DST/hooks/memory-inject.sh"
 ln -sfn "$REPO_DIR/claude/hooks/effort-reminder.txt" "$DST/hooks/effort-reminder.txt"
 ln -sfn "$REPO_DIR/claude/hooks/config-sync.sh"      "$DST/hooks/config-sync.sh"
 ln -sfn "$REPO_DIR/claude/hooks/work-autosync.sh"    "$DST/hooks/work-autosync.sh"
 ln -sfn "$REPO_DIR/claude/hooks/guardrails.sh"       "$DST/hooks/guardrails.sh"
 ln -sfn "$REPO_DIR/claude/hooks/guardrails.py"       "$DST/hooks/guardrails.py"
-chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/guardrails.sh"
+chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/memory-inject.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/guardrails.sh"
 printf '%s' "$REPO_DIR" > "$DST/.config-sync-path"   # config-sync 가 레포 위치를 찾도록
 echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, guardrails)"
 
@@ -198,6 +199,12 @@ for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
 done
 _md="${CLAUDE_MEMORY_DIR:-$HOME/claude-memory}"
 mkdir -p "$_md/profile" "$_md/decisions" "$_md/omc-state"
+# profile 시드 — 부재 시에만(빈 스캐폴드, bool 기본값 없음 → A1 hook cold-start 무주입 유지).
+_profile="$_md/profile/user-profile.json"
+if [ ! -e "$_profile" ]; then
+  printf '%s\n' '{"schema_version":1,"updated_at":"","updated_by":"","identity":{"display_name":"","handles":{},"contact_domain":"","locale":"","timezone":""},"preferences":{"response_language":"","tone":"","effort_default":"","code_comment_language":"","units":""},"roles":[],"working_style":{"preferred_stacks":[],"preferred_tools":[]},"constraints":{"do_not":[],"sensitive_topics":[],"no_proactive_mentions":[]},"projects":[],"anchors":[]}' > "$_profile"
+  echo "  ✓ profile seed created ($_profile)"
+fi
 
 # 자동업데이트 항상 ON 보장(2/2): 전역 config(~/.claude.json)의 레거시 비활성(autoUpdates:false)을 치유.
 # 이 버전은 자동업데이트 on/off 를 전역 config 의 autoUpdates 에서 읽음(settings.json 아님).

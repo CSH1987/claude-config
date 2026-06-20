@@ -11,6 +11,7 @@ New-Item -ItemType Directory -Force -Path $hooks | Out-Null
 # 훅 복사 (Windows는 심볼릭 링크가 관리자 권한을 요구하므로 복사 방식)
 Copy-Item (Join-Path $repoDir 'claude\hooks\ensure-harness.ps1')  (Join-Path $hooks 'ensure-harness.ps1')  -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\effort-reminder.ps1') (Join-Path $hooks 'effort-reminder.ps1') -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\memory-inject.ps1')   (Join-Path $hooks 'memory-inject.ps1')   -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\effort-reminder.txt') (Join-Path $hooks 'effort-reminder.txt') -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\config-sync.ps1')     (Join-Path $hooks 'config-sync.ps1')     -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\work-autosync.ps1')   (Join-Path $hooks 'work-autosync.ps1')   -Force
@@ -153,6 +154,7 @@ $managedHooks = [ordered]@{
     SessionStart = @(
         (New-PsHook 'ensure-harness.ps1'  ''),
         (New-PsHook 'effort-reminder.ps1' ''),
+        (New-PsHook 'memory-inject.ps1'   ''),
         (New-PsHook 'config-sync.ps1'     " -Mode start -Repo `"$repoDir`""),
         (New-PsHook 'work-autosync.ps1'   ' -Mode start')
     )
@@ -171,7 +173,7 @@ foreach ($evt in $managedHooks.Keys) { foreach ($c in $managedHooks[$evt]) { $al
 # → 과거 bash-form 훅(`bash "$HOME/.claude/hooks/config-sync.sh"`)이 박힌 머신도 재실행으로 자가 치유.
 #   딱 3개 관리 파일명으로만 한정 + 호출 위치(-File "..." / bash "...")에 앵커 →
 #   사용자 자신의 bash 훅이나, 관리 경로를 인자/문구로 "언급만" 하는 훅은 보존(과잉 제거 방지).
-$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|config-sync|work-autosync|guardrails)\.(ps1|sh)\b'
+$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|guardrails)\.(ps1|sh)\b'
 $hk = Get-Dict $s 'hooks'
 foreach ($evt in $managedHooks.Keys) {
     $existing = @(); if ($hk[$evt]) { $existing = @($hk[$evt]) }
@@ -221,6 +223,13 @@ if (-not [Environment]::GetEnvironmentVariable('OMC_STATE_DIR', 'User')) {
 }
 foreach ($d in @($memDir, (Join-Path $memDir 'profile'), (Join-Path $memDir 'decisions'), $omcStateDir)) {
     if (-not (Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
+}
+# profile 시드 — 부재 시에만(빈 스캐폴드, bool 기본값 없음 → A1 hook 의 cold-start 무주입 계약 유지).
+$profileJson = Join-Path $memDir 'profile\user-profile.json'
+if (-not (Test-Path $profileJson)) {
+    $seed = '{"schema_version":1,"updated_at":"","updated_by":"","identity":{"display_name":"","handles":{},"contact_domain":"","locale":"","timezone":""},"preferences":{"response_language":"","tone":"","effort_default":"","code_comment_language":"","units":""},"roles":[],"working_style":{"preferred_stacks":[],"preferred_tools":[]},"constraints":{"do_not":[],"sensitive_topics":[],"no_proactive_mentions":[]},"projects":[],"anchors":[]}'
+    [System.IO.File]::WriteAllText($profileJson, $seed, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "  ✓ profile seed created ($profileJson)"
 }
 
 # 자동업데이트 항상 ON 보장(2/2): 전역 config(~/.claude.json)의 레거시 비활성(autoUpdates:false)을 치유.
