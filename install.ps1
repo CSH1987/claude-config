@@ -20,6 +20,13 @@ Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.py')       (Join-Path $ho
 [System.IO.File]::WriteAllText((Join-Path $dst '.config-sync-path'), $repoDir, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, guardrails)'
 
+# 평생 기억저장소 경로 resolver(memdir) 복사 — 모든 hook·skill 이 호출하는 단일 진실원(경로만, 데이터 없음).
+$lib = Join-Path $dst 'lib'
+New-Item -ItemType Directory -Force -Path $lib | Out-Null
+Copy-Item (Join-Path $repoDir 'claude\lib\memdir.ps1') (Join-Path $lib 'memdir.ps1') -Force
+Copy-Item (Join-Path $repoDir 'claude\lib\memdir.sh')  (Join-Path $lib 'memdir.sh')  -Force
+Write-Host '  ✓ lib copied (memdir resolver)'
+
 # ultracode 설정 파일(--settings 로 넘길 용도) 복사
 Copy-Item (Join-Path $repoDir 'claude\ultracode.json') (Join-Path $dst 'ultracode.json') -Force
 Write-Host '  ✓ ultracode.json copied'
@@ -196,6 +203,24 @@ Write-Host '  ✓ settings merged (기존 보존, 백업됨)'
 if ($env:CLAUDE_INSTALL_DEPLOY_ONLY -eq '1') {
     Write-Host '  i deploy-only — machine-state steps skipped (PATH/ExecutionPolicy/profile/plugins)'
     return
+}
+
+# 평생 기억저장소 env 영구설정 (결정 D1) — 미설정 시에만(사용자 선택 보존). User 스코프 = admin 불필요(D4).
+# resolver(memdir.ps1)와 동일 규칙: CLAUDE_MEMORY_DIR > 기본 $USERPROFILE\claude-memory; OMC_STATE_DIR=<memdir>\omc-state.
+# OMC 는 process.env.OMC_STATE_DIR 를 읽어 성장데이터를 단일 트리로 모은다(discovery GO 로 검증됨). 적용은 새 세션부터.
+$memDir = [Environment]::GetEnvironmentVariable('CLAUDE_MEMORY_DIR', 'User')
+if (-not $memDir) {
+    $memDir = Join-Path $env:USERPROFILE 'claude-memory'
+    [Environment]::SetEnvironmentVariable('CLAUDE_MEMORY_DIR', $memDir, 'User')
+    Write-Host "  ✓ CLAUDE_MEMORY_DIR(User) → $memDir (new sessions)"
+}
+$omcStateDir = Join-Path $memDir 'omc-state'
+if (-not [Environment]::GetEnvironmentVariable('OMC_STATE_DIR', 'User')) {
+    [Environment]::SetEnvironmentVariable('OMC_STATE_DIR', $omcStateDir, 'User')
+    Write-Host "  ✓ OMC_STATE_DIR(User) → $omcStateDir (new sessions)"
+}
+foreach ($d in @($memDir, (Join-Path $memDir 'profile'), (Join-Path $memDir 'decisions'), $omcStateDir)) {
+    if (-not (Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
 }
 
 # 자동업데이트 항상 ON 보장(2/2): 전역 config(~/.claude.json)의 레거시 비활성(autoUpdates:false)을 치유.

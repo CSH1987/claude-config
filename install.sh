@@ -86,6 +86,13 @@ echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-aut
 ln -sfn "$REPO_DIR/claude/ultracode.json" "$DST/ultracode.json"
 echo "  ✓ ultracode.json linked"
 
+# 평생 기억저장소 경로 resolver(memdir) — 모든 hook·skill 이 호출하는 단일 진실원(경로만, 데이터 없음).
+mkdir -p "$DST/lib"
+ln -sfn "$REPO_DIR/claude/lib/memdir.sh"  "$DST/lib/memdir.sh"
+ln -sfn "$REPO_DIR/claude/lib/memdir.ps1" "$DST/lib/memdir.ps1"
+chmod +x "$REPO_DIR/claude/lib/memdir.sh"
+echo "  ✓ lib linked (memdir resolver)"
+
 # CLAUDE.md (전역 세션 기본값): 없으면/심링크면 링크(업데이트 자동 반영),
 # 실제 파일이면 claude-config 관리 블록을 마커 사이에 삽입/갱신(마커 밖 사용자 내용 보존).
 if [ -L "$DST/CLAUDE.md" ] || [ ! -e "$DST/CLAUDE.md" ]; then
@@ -177,6 +184,20 @@ fi
 
 # `claude` → ultracode 자동: 위에서 정의한 래퍼 설치 (Unix 경로; Windows 는 위 분기에서 처리됨).
 install_bash_wrapper
+
+# 평생 기억저장소 env 영구설정 (결정 D1) — 셸 rc 에 export(이미 설정돼 있으면 ${VAR:-default} 로 그 값 보존).
+# OMC 는 process.env.OMC_STATE_DIR 를 읽어 성장데이터를 단일 트리로 모은다. admin 불필요(D4).
+memdir_marker='claude-config:memdir-env'
+for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+  [ -e "$rc" ] || continue
+  grep -qF "$memdir_marker" "$rc" 2>/dev/null && continue
+  printf '\n# %s\n%s\n%s\n' "$memdir_marker" \
+    'export CLAUDE_MEMORY_DIR="${CLAUDE_MEMORY_DIR:-$HOME/claude-memory}"' \
+    'export OMC_STATE_DIR="${OMC_STATE_DIR:-$CLAUDE_MEMORY_DIR/omc-state}"' >> "$rc"
+  echo "  ✓ memdir env → $(basename "$rc")"
+done
+_md="${CLAUDE_MEMORY_DIR:-$HOME/claude-memory}"
+mkdir -p "$_md/profile" "$_md/decisions" "$_md/omc-state"
 
 # 자동업데이트 항상 ON 보장(2/2): 전역 config(~/.claude.json)의 레거시 비활성(autoUpdates:false)을 치유.
 # 이 버전은 자동업데이트 on/off 를 전역 config 의 autoUpdates 에서 읽음(settings.json 아님).
