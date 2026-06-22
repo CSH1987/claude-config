@@ -4,7 +4,7 @@
   It MUST NOT contain real PII, secrets, real names, emails, or tokens.
   Use placeholders only:  <full_name>  user@example.com  <gh_handle>  <machineId>
   Real data lives ONLY under $CLAUDE_MEMORY_DIR (PRIVATE, never committed to this repo).
-  Gate1 allowlist: this file is one of {SCHEMA.md, memory-promotion.md, recall-budget.md}.
+  Gate1 allowlist: this file is one of {SCHEMA.md, memory-promotion.md, recall-budget.md, objective-function.md}.
 -->
 
 # Lifelong Memory — Schema & Rules (PUBLIC)
@@ -271,6 +271,11 @@ mode-B but mode-A never touches another machine's shard). One JSON object per li
   "decision_writer": null,
   "pending_age_days": null,
 
+  "outcome": null,
+  "duration_ms": null,
+  "token_cost": null,
+  "user_rating": null,
+
   "counts": { "skills": 0, "wiki": 0, "profile_keys": 0, "digest_files": 0 },
 
   "backup": {
@@ -314,6 +319,10 @@ mode-B but mode-A never touches another machine's shard). One JSON object per li
 | `degraded_to_proxy` | bool | A2 measured by cold-start proxy only (not the real success condition). |
 | `decision_writer` | string\|null | shard writer for a `decision_append` event (0-C sharding). |
 | `pending_age_days` | int\|null | age of the oldest `_pending/` item (drives `reconcile-stale`; 0-G3). |
+| `outcome` | enum\|null | (T4 데이터화 확장·선택) `success` \| `fail` \| `partial` — 작업 산출물 결과. |
+| `duration_ms` | int\|null | (선택) 작업/세션 소요 시간(ms). |
+| `token_cost` | int\|null | (선택) 토큰 비용(알 때). |
+| `user_rating` | int\|null | (선택) 1–5 사용자 품질 평가(`claude-rate`). 목적함수 입력(objective-function.md). |
 | `counts.skills` | int | count of durable skills. |
 | `counts.wiki` | int | count of wiki nodes. |
 | `counts.profile_keys` | int | count of profile keys. |

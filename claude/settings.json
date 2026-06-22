@@ -50,6 +50,22 @@
             "command": "bash \"$HOME/.claude/hooks/work-autosync.sh\" start"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/reconcile-check.sh\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/morning-brief.sh\""
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -66,6 +82,14 @@
           {
             "type": "command",
             "command": "bash \"$HOME/.claude/hooks/work-autosync.sh\" end"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/session-events.sh\""
           }
         ]
       }

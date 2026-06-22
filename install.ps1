@@ -15,18 +15,37 @@ Copy-Item (Join-Path $repoDir 'claude\hooks\memory-inject.ps1')   (Join-Path $ho
 Copy-Item (Join-Path $repoDir 'claude\hooks\effort-reminder.txt') (Join-Path $hooks 'effort-reminder.txt') -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\config-sync.ps1')     (Join-Path $hooks 'config-sync.ps1')     -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\work-autosync.ps1')   (Join-Path $hooks 'work-autosync.ps1')   -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\session-events.ps1')  (Join-Path $hooks 'session-events.ps1')  -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\reconcile-check.ps1') (Join-Path $hooks 'reconcile-check.ps1') -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\morning-brief.ps1')   (Join-Path $hooks 'morning-brief.ps1')   -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.ps1')      (Join-Path $hooks 'guardrails.ps1')      -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.py')       (Join-Path $hooks 'guardrails.py')       -Force
 # config-sync 가 레포 위치를 찾도록 기록 (BOM 없이)
 [System.IO.File]::WriteAllText((Join-Path $dst '.config-sync-path'), $repoDir, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, guardrails)'
+Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, guardrails)'
 
 # 평생 기억저장소 경로 resolver(memdir) 복사 — 모든 hook·skill 이 호출하는 단일 진실원(경로만, 데이터 없음).
 $lib = Join-Path $dst 'lib'
 New-Item -ItemType Directory -Force -Path $lib | Out-Null
 Copy-Item (Join-Path $repoDir 'claude\lib\memdir.ps1') (Join-Path $lib 'memdir.ps1') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\memdir.sh')  (Join-Path $lib 'memdir.sh')  -Force
-Write-Host '  ✓ lib copied (memdir resolver)'
+Copy-Item (Join-Path $repoDir 'claude\lib\events.ps1')  (Join-Path $lib 'events.ps1')  -Force
+Copy-Item (Join-Path $repoDir 'claude\lib\events.sh')   (Join-Path $lib 'events.sh')   -Force
+Copy-Item (Join-Path $repoDir 'claude\lib\pending.ps1') (Join-Path $lib 'pending.ps1') -Force
+Copy-Item (Join-Path $repoDir 'claude\lib\pending.sh')  (Join-Path $lib 'pending.sh')  -Force
+Copy-Item (Join-Path $repoDir 'claude\lib\metrics.ps1') (Join-Path $lib 'metrics.ps1') -Force
+Copy-Item (Join-Path $repoDir 'claude\lib\metrics.sh')  (Join-Path $lib 'metrics.sh')  -Force
+Copy-Item (Join-Path $repoDir 'claude\lib\metrics.py')  (Join-Path $lib 'metrics.py')  -Force
+Copy-Item (Join-Path $repoDir 'claude\lib\brief.py')     (Join-Path $lib 'brief.py')     -Force
+Copy-Item (Join-Path $repoDir 'claude\lib\dashboard.py') (Join-Path $lib 'dashboard.py') -Force
+Write-Host '  ✓ lib copied (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard)'
+
+# leak-guard (M1): route this repo's git hooks to versioned claude/githooks (pre-commit/pre-push).
+# Repo-local; blocks PII/secrets in config-sync's auto-commit/push to the PUBLIC repo. config-sync 본문 무수정.
+if (Test-Path (Join-Path $repoDir 'claude\githooks')) {
+    & git -C $repoDir config core.hooksPath claude/githooks 2>$null
+    Write-Host '  ✓ leak-guard active (core.hooksPath=claude/githooks; off: CLAUDE_LEAKGUARD_OFF=1)'
+}
 
 # ultracode 설정 파일(--settings 로 넘길 용도) 복사
 Copy-Item (Join-Path $repoDir 'claude\ultracode.json') (Join-Path $dst 'ultracode.json') -Force
@@ -156,11 +175,14 @@ $managedHooks = [ordered]@{
         (New-PsHook 'effort-reminder.ps1' ''),
         (New-PsHook 'memory-inject.ps1'   ''),
         (New-PsHook 'config-sync.ps1'     " -Mode start -Repo `"$repoDir`""),
-        (New-PsHook 'work-autosync.ps1'   ' -Mode start')
+        (New-PsHook 'work-autosync.ps1'   ' -Mode start'),
+        (New-PsHook 'reconcile-check.ps1' ''),
+        (New-PsHook 'morning-brief.ps1'   '')
     )
     SessionEnd = @(
         (New-PsHook 'config-sync.ps1'     " -Mode end -Repo `"$repoDir`""),
-        (New-PsHook 'work-autosync.ps1'   ' -Mode end')
+        (New-PsHook 'work-autosync.ps1'   ' -Mode end'),
+        (New-PsHook 'session-events.ps1'  '')
     )
     PreToolUse = @(
         (New-PsHook 'guardrails.ps1'      '')
@@ -173,7 +195,7 @@ foreach ($evt in $managedHooks.Keys) { foreach ($c in $managedHooks[$evt]) { $al
 # → 과거 bash-form 훅(`bash "$HOME/.claude/hooks/config-sync.sh"`)이 박힌 머신도 재실행으로 자가 치유.
 #   딱 3개 관리 파일명으로만 한정 + 호출 위치(-File "..." / bash "...")에 앵커 →
 #   사용자 자신의 bash 훅이나, 관리 경로를 인자/문구로 "언급만" 하는 훅은 보존(과잉 제거 방지).
-$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|guardrails)\.(ps1|sh)\b'
+$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|morning-brief|guardrails)\.(ps1|sh)\b'
 $hk = Get-Dict $s 'hooks'
 foreach ($evt in $managedHooks.Keys) {
     $existing = @(); if ($hk[$evt]) { $existing = @($hk[$evt]) }

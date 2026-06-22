@@ -3,3 +3,7 @@
 
 # Claude settings backups created by install scripts
 claude/settings.json.bak.*
+
+# Python bytecode cache (created when metrics.py / hooks run python3 locally) — never commit
+__pycache__/
+*.pyc

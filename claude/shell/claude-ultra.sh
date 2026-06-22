@@ -207,6 +207,27 @@ PY
   printf '\n  %d OK / %d WARN / %d FAIL\n\n' "$ok" "$warn" "$fail"
 }
 
+# claude-config:status — read-only growth dashboard (lifelong-memory snapshot).
+claude-status() {
+  local py="$HOME/.claude/lib/dashboard.py"
+  [ -f "$py" ] || { echo "dashboard not installed - run claude-update"; return 1; }
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  local mem="${CLAUDE_MEMORY_DIR:-}"
+  if [ -z "$mem" ] && [ -f "$HOME/.claude/lib/memdir.sh" ]; then
+    eval "$(bash "$HOME/.claude/lib/memdir.sh" --no-ensure --export 2>/dev/null || true)"; mem="${CLAUDE_MEMORY_DIR:-}"
+  fi
+  [ -n "$mem" ] && command -v cygpath >/dev/null 2>&1 && mem="$(cygpath -u "$mem" 2>/dev/null || printf '%s' "$mem")"
+  python3 "$py" "$mem"
+}
+
+# claude-config:rate — record a 1-5 quality rating of the current output (feeds the objective fn).
+claude-rate() {
+  case "${1:-}" in 1|2|3|4|5) ;; *) echo "usage: claude-rate <1-5>  (현재 산출물 품질 평가 -> metrics)"; return 1 ;; esac
+  local lib="$HOME/.claude/lib/events.sh"
+  [ -f "$lib" ] || { echo "events lib not installed - run claude-update"; return 1; }
+  bash "$lib" --type task --set "user_rating=$1" && echo "  + rated $1/5 (metrics 의 user_rating_avg 에 반영)"
+}
+
 # claude-config:help — cheatsheet of commands, modes, and kill-switches.
 claude-help() {
   cat <<'EOF'
@@ -217,6 +238,8 @@ claude-config — commands & modes
   claude-review     enable Claude auto code-review (GitHub Action) on the current repo
   claude-update     pull latest config + re-run installer
   claude-doctor     health-check this machine's setup
+  claude-status     growth dashboard (memory/decisions/pending/metrics snapshot)
+  claude-rate <1-5> rate current output quality (feeds growth metrics)
   claude-help       this cheatsheet
 
   work-autosync (opt-in project backup): add a .claude-autosync marker at the repo root.

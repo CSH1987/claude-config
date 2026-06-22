@@ -1,0 +1,32 @@
+#!/usr/bin/env sh
+# claude-config leak-guard — pre-push (defense-in-depth behind pre-commit).
+#   Re-scans the ADDED lines of the commits being pushed. Fail-closed: non-zero aborts the push
+#   (config-sync's `git push ... || true` then leaves the commit local — PII never reaches the
+#   PUBLIC remote). Best-effort: on any range-resolution trouble it does not falsely block.
+#   Kill-switch: CLAUDE_LEAKGUARD_OFF=1.
+set -u
+[ "${CLAUDE_LEAKGUARD_OFF:-}" = "1" ] && exit 0
+d="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
+[ -n "$d" ] || exit 0
+
+status=0
+# git's empty-tree object — base for scanning ALL content of a new ref / first push.
+EMPTY="$(git hash-object -t tree /dev/null 2>/dev/null || echo 4b825dc642cb6eb9a060e54bf8d69288fbee4904)"
+# git feeds "<local ref> <local sha> <remote ref> <remote sha>" per pushed ref on stdin.
+while read -r lref lsha rref rsha; do
+  [ -n "${lsha:-}" ] || continue
+  case "$lsha" in *[!0]*) ;; *) continue ;; esac          # all-zero local sha = deletion -> skip
+  case "${rsha:-}" in
+    *[!0]*) range="$rsha..$lsha" ;;                         # existing ref: scan only the new range
+    *)      range="$EMPTY..$lsha" ;;                        # new ref / first push: empty-tree -> tip (ALL content)
+  esac
+  diff="$(git diff --unified=0 --no-color "$range" 2>/dev/null | grep '^+' | grep -v '^+++')"
+  [ -n "$diff" ] || continue
+  printf '%s' "$diff" | sh "$d/leakscan.sh" || status=1
+done
+
+if [ "$status" != 0 ]; then
+  printf 'leak-guard: 푸시 중단 — 푸시 대상 커밋에 PII/secret. 수정 후 재시도. 우회(위험): CLAUDE_LEAKGUARD_OFF=1\n' >&2
+  exit 1
+fi
+exit 0

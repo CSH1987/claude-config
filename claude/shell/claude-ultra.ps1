@@ -228,6 +228,38 @@ function claude-doctor {
     Write-Host ("`n  {0} OK / {1} WARN / {2} FAIL`n" -f @($rows | Where-Object { $_.s -eq 'OK' }).Count, @($rows | Where-Object { $_.s -eq 'WARN' }).Count, @($rows | Where-Object { $_.s -eq 'FAIL' }).Count) -ForegroundColor Cyan
 }
 
+# claude-config:status — read-only growth dashboard (lifelong-memory snapshot).
+function claude-status {
+    $py = Join-Path $env:USERPROFILE '.claude\lib\dashboard.py'
+    if (-not (Test-Path $py)) { Write-Error 'dashboard not installed - run claude-update'; return }
+    $py3 = (Get-Command python3 -ErrorAction SilentlyContinue)
+    if (-not $py3) { Write-Error 'python3 not found'; return }
+    $mem = $env:CLAUDE_MEMORY_DIR
+    if (-not $mem) {
+        $resolver = Join-Path $env:USERPROFILE '.claude\lib\memdir.ps1'
+        if (Test-Path $resolver) {
+            $lines = & powershell -NoProfile -ExecutionPolicy Bypass -File $resolver -NoEnsure -Export 2>$null
+            foreach ($ln in @($lines)) { if ($ln -match "^\s*\`$env:CLAUDE_MEMORY_DIR\s*=\s*'(.*)'\s*$") { $mem = $Matches[1] } }
+        }
+    }
+    if (-not $mem) { Write-Error 'memory dir not resolved'; return }
+    & $py3.Source $py $mem
+}
+
+# claude-config:rate — record a 1-5 quality rating of the current output (feeds the objective fn).
+#   events.ps1 is run as a SEPARATE process (its 'exit 0' must not close the user's shell);
+#   the override is passed via $env:EV_OVERRIDES (events.ps1 reads it).
+function claude-rate {
+    param([int]$Score)
+    if ($Score -lt 1 -or $Score -gt 5) { Write-Host 'usage: claude-rate <1-5>  (현재 산출물 품질 평가 -> metrics)'; return }
+    $lib = Join-Path $env:USERPROFILE '.claude\lib\events.ps1'
+    if (-not (Test-Path $lib)) { Write-Error 'events lib not installed - run claude-update'; return }
+    $env:EV_OVERRIDES = "user_rating=$Score"
+    try { & powershell -NoProfile -ExecutionPolicy Bypass -File $lib -Type task | Out-Null }
+    finally { Remove-Item Env:\EV_OVERRIDES -ErrorAction SilentlyContinue }
+    Write-Host "  + rated $Score/5 (metrics 의 user_rating_avg 에 반영)"
+}
+
 # claude-config:help — cheatsheet of commands, modes, and kill-switches.
 function claude-help {
     Write-Host @'
@@ -238,6 +270,8 @@ claude-config — commands & modes
   claude-review     enable Claude auto code-review (GitHub Action) on the current repo
   claude-update     pull latest config + re-run installer
   claude-doctor     health-check this machine's setup
+  claude-status     growth dashboard (memory/decisions/pending/metrics snapshot)
+  claude-rate <1-5> rate current output quality (feeds growth metrics)
   claude-help       this cheatsheet
 
   work-autosync (opt-in project backup): add a .claude-autosync marker at the repo root.

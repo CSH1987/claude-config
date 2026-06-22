@@ -1,5 +1,7 @@
 # claude-config — Claude Code 기본값 자동 적용 (Harness + 최고 강도)
 
+> 🆘 **처음이거나 다 잊으셨나요? → [RECOVERY.md](./RECOVERY.md) (1페이지·쉬운 안내)부터 보세요.**
+
 이 머신과 **앞으로의 모든 새 머신(Mac · Windows · Linux)**에서 Claude Code(CLI)에:
 - **플러그인** 자동 설치·복구: `harness` + `oh-my-claudecode`(`/deep-interview`, `/ralph` 등)
 - **effortLevel=xhigh** 영구 적용 (최고 강도 추론)

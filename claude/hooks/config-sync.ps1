@@ -23,6 +23,10 @@ if (-not (Test-Path (Join-Path $Repo '.git'))) { exit 0 }
 $env:GIT_TERMINAL_PROMPT = "0"   # 자격증명 없으면 행 대신 즉시 실패
 Push-Location $Repo
 try {
+    # leak-guard self-heal (security): route this repo's hooks to the versioned guard before any
+    # commit/push, even on a fresh clone where install hasn't run yet (core.hooksPath is .git-local
+    # and not carried by clone). Idempotent. 가드 '활성화'일 뿐 가드 로직은 githooks 에 있음(본문 무수정 유지).
+    if (Test-Path (Join-Path $Repo 'claude\githooks')) { git config core.hooksPath claude/githooks *> $null }
     git rev-parse --abbrev-ref --symbolic-full-name '@{u}' *> $null
     if ($LASTEXITCODE -ne 0) { return }
 

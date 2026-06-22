@@ -1,0 +1,26 @@
+#!/usr/bin/env sh
+# claude-config leak-guard — pre-commit (v9 gate2a/2b/3). PRIMARY guard.
+#   Blocks committing PII/secrets into this PUBLIC repo. Fail-closed: non-zero exit aborts the
+#   commit (git native), so config-sync's `git commit ... || true` simply leaves changes
+#   uncommitted (and thus unpushed) — PII never reaches PUBLIC. config-sync.sh 본문 무수정.
+#   Kill-switch: CLAUDE_LEAKGUARD_OFF=1.
+set -u
+[ "${CLAUDE_LEAKGUARD_OFF:-}" = "1" ] && exit 0
+d="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
+[ -n "$d" ] || exit 0
+
+# gate3: PII-DATA path signatures staged into this PUBLIC repo (data shapes only, not code).
+bad="$(git diff --cached --name-only 2>/dev/null \
+  | grep -E '(^|/)user-profile\.json$|(^|/)events/[^/]*\.jsonl$|(^|/)decisions/.*\.md$|(^|/)\.leakwords$|\.private\.' || true)"
+if [ -n "$bad" ]; then
+  printf 'leak-guard: BLOCK — PII-data 경로가 PUBLIC 에 스테이징됨:\n%s\n  (PRIVATE 저장소 데이터는 claude-config 에 두지 않습니다.)\n' "$bad" >&2
+  exit 1
+fi
+
+# gate2a/2b: scan ADDED lines of the staged diff (content scan).
+git diff --cached --unified=0 --no-color 2>/dev/null | grep '^+' | grep -v '^+++' | sh "$d/leakscan.sh"
+if [ "$?" != 0 ]; then
+  printf 'leak-guard: 커밋 중단 — 스테이징 diff 에 PII/secret. 수정 후 재커밋. 우회(위험): CLAUDE_LEAKGUARD_OFF=1\n' >&2
+  exit 1
+fi
+exit 0

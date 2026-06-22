@@ -77,11 +77,23 @@ ln -sfn "$REPO_DIR/claude/hooks/memory-inject.sh"    "$DST/hooks/memory-inject.s
 ln -sfn "$REPO_DIR/claude/hooks/effort-reminder.txt" "$DST/hooks/effort-reminder.txt"
 ln -sfn "$REPO_DIR/claude/hooks/config-sync.sh"      "$DST/hooks/config-sync.sh"
 ln -sfn "$REPO_DIR/claude/hooks/work-autosync.sh"    "$DST/hooks/work-autosync.sh"
+ln -sfn "$REPO_DIR/claude/hooks/session-events.sh"   "$DST/hooks/session-events.sh"
+ln -sfn "$REPO_DIR/claude/hooks/reconcile-check.sh"  "$DST/hooks/reconcile-check.sh"
+ln -sfn "$REPO_DIR/claude/hooks/morning-brief.sh"    "$DST/hooks/morning-brief.sh"
 ln -sfn "$REPO_DIR/claude/hooks/guardrails.sh"       "$DST/hooks/guardrails.sh"
 ln -sfn "$REPO_DIR/claude/hooks/guardrails.py"       "$DST/hooks/guardrails.py"
-chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/memory-inject.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/guardrails.sh"
+chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/memory-inject.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/session-events.sh" "$REPO_DIR/claude/hooks/reconcile-check.sh" "$REPO_DIR/claude/hooks/morning-brief.sh" "$REPO_DIR/claude/hooks/guardrails.sh"
 printf '%s' "$REPO_DIR" > "$DST/.config-sync-path"   # config-sync 가 레포 위치를 찾도록
-echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, guardrails)"
+echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, morning-brief, guardrails)"
+
+# leak-guard (M1): route this repo's git hooks to the versioned claude/githooks (pre-commit/pre-push).
+# Repo-local config; blocks PII/secrets in config-sync's auto-commit/push to the PUBLIC repo. config-sync 본문 무수정.
+if [ -d "$REPO_DIR/claude/githooks" ]; then
+  chmod +x "$REPO_DIR/claude/githooks/pre-commit" "$REPO_DIR/claude/githooks/pre-push" "$REPO_DIR/claude/githooks/leakscan.sh" 2>/dev/null || true
+  if git -C "$REPO_DIR" config core.hooksPath claude/githooks 2>/dev/null; then
+    echo "  ✓ leak-guard active (core.hooksPath=claude/githooks; off: CLAUDE_LEAKGUARD_OFF=1)"
+  fi
+fi
 
 # ultracode 설정 파일(--settings 로 넘길 용도) — 항상 최신본 링크
 ln -sfn "$REPO_DIR/claude/ultracode.json" "$DST/ultracode.json"
@@ -89,10 +101,19 @@ echo "  ✓ ultracode.json linked"
 
 # 평생 기억저장소 경로 resolver(memdir) — 모든 hook·skill 이 호출하는 단일 진실원(경로만, 데이터 없음).
 mkdir -p "$DST/lib"
-ln -sfn "$REPO_DIR/claude/lib/memdir.sh"  "$DST/lib/memdir.sh"
-ln -sfn "$REPO_DIR/claude/lib/memdir.ps1" "$DST/lib/memdir.ps1"
-chmod +x "$REPO_DIR/claude/lib/memdir.sh"
-echo "  ✓ lib linked (memdir resolver)"
+ln -sfn "$REPO_DIR/claude/lib/memdir.sh"   "$DST/lib/memdir.sh"
+ln -sfn "$REPO_DIR/claude/lib/memdir.ps1"  "$DST/lib/memdir.ps1"
+ln -sfn "$REPO_DIR/claude/lib/events.sh"   "$DST/lib/events.sh"
+ln -sfn "$REPO_DIR/claude/lib/events.ps1"  "$DST/lib/events.ps1"
+ln -sfn "$REPO_DIR/claude/lib/pending.sh"  "$DST/lib/pending.sh"
+ln -sfn "$REPO_DIR/claude/lib/pending.ps1" "$DST/lib/pending.ps1"
+ln -sfn "$REPO_DIR/claude/lib/metrics.sh"  "$DST/lib/metrics.sh"
+ln -sfn "$REPO_DIR/claude/lib/metrics.ps1" "$DST/lib/metrics.ps1"
+ln -sfn "$REPO_DIR/claude/lib/metrics.py"  "$DST/lib/metrics.py"
+ln -sfn "$REPO_DIR/claude/lib/brief.py"     "$DST/lib/brief.py"
+ln -sfn "$REPO_DIR/claude/lib/dashboard.py" "$DST/lib/dashboard.py"
+chmod +x "$REPO_DIR/claude/lib/memdir.sh" "$REPO_DIR/claude/lib/events.sh" "$REPO_DIR/claude/lib/pending.sh" "$REPO_DIR/claude/lib/metrics.sh"
+echo "  ✓ lib linked (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard)"
 
 # CLAUDE.md (전역 세션 기본값): 없으면/심링크면 링크(업데이트 자동 반영),
 # 실제 파일이면 claude-config 관리 블록을 마커 사이에 삽입/갱신(마커 밖 사용자 내용 보존).

@@ -23,6 +23,12 @@ fi
 command -v git >/dev/null 2>&1 || exit 0
 [ -d "$repo/.git" ] || exit 0
 cd "$repo" 2>/dev/null || exit 0
+
+# leak-guard self-heal (security): route hooks to the versioned guard BEFORE the upstream gate,
+# so a fresh clone / no-upstream repo still activates the guard (core.hooksPath is .git-local and
+# not carried by clone). Idempotent; 가드 '활성화'일 뿐 가드 로직은 githooks 에 있음(본문 무수정 유지).
+[ -d "$repo/claude/githooks" ] && git config core.hooksPath claude/githooks 2>/dev/null || true
+
 git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1 || exit 0
 
 export GIT_TERMINAL_PROMPT=0   # 자격증명 없으면 행 대신 즉시 실패

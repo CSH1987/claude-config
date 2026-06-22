@@ -9,3 +9,6 @@
 
 # PowerShell 은 Windows 관례상 CRLF 유지 (기능엔 무관)
 *.ps1  text eol=crlf
+
+# git hooks(leak-guard): POSIX sh + python, 반드시 LF (CRLF 면 sh shebang 깨짐). 확장자 없는 pre-commit/pre-push 포함.
+claude/githooks/* text eol=lf
