@@ -66,6 +66,14 @@
             "command": "bash \"$HOME/.claude/hooks/morning-brief.sh\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/memory-sync.sh\" start"
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -90,6 +98,14 @@
           {
             "type": "command",
             "command": "bash \"$HOME/.claude/hooks/session-events.sh\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/memory-sync.sh\" end"
           }
         ]
       }

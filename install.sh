@@ -80,11 +80,12 @@ ln -sfn "$REPO_DIR/claude/hooks/work-autosync.sh"    "$DST/hooks/work-autosync.s
 ln -sfn "$REPO_DIR/claude/hooks/session-events.sh"   "$DST/hooks/session-events.sh"
 ln -sfn "$REPO_DIR/claude/hooks/reconcile-check.sh"  "$DST/hooks/reconcile-check.sh"
 ln -sfn "$REPO_DIR/claude/hooks/morning-brief.sh"    "$DST/hooks/morning-brief.sh"
+ln -sfn "$REPO_DIR/claude/hooks/memory-sync.sh"      "$DST/hooks/memory-sync.sh"
 ln -sfn "$REPO_DIR/claude/hooks/guardrails.sh"       "$DST/hooks/guardrails.sh"
 ln -sfn "$REPO_DIR/claude/hooks/guardrails.py"       "$DST/hooks/guardrails.py"
-chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/memory-inject.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/session-events.sh" "$REPO_DIR/claude/hooks/reconcile-check.sh" "$REPO_DIR/claude/hooks/morning-brief.sh" "$REPO_DIR/claude/hooks/guardrails.sh"
+chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/memory-inject.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/session-events.sh" "$REPO_DIR/claude/hooks/reconcile-check.sh" "$REPO_DIR/claude/hooks/morning-brief.sh" "$REPO_DIR/claude/hooks/memory-sync.sh" "$REPO_DIR/claude/hooks/guardrails.sh"
 printf '%s' "$REPO_DIR" > "$DST/.config-sync-path"   # config-sync 가 레포 위치를 찾도록
-echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, morning-brief, guardrails)"
+echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, morning-brief, memory-sync, guardrails)"
 
 # leak-guard (M1): route this repo's git hooks to the versioned claude/githooks (pre-commit/pre-push).
 # Repo-local config; blocks PII/secrets in config-sync's auto-commit/push to the PUBLIC repo. config-sync 본문 무수정.
@@ -112,8 +113,16 @@ ln -sfn "$REPO_DIR/claude/lib/metrics.ps1" "$DST/lib/metrics.ps1"
 ln -sfn "$REPO_DIR/claude/lib/metrics.py"  "$DST/lib/metrics.py"
 ln -sfn "$REPO_DIR/claude/lib/brief.py"     "$DST/lib/brief.py"
 ln -sfn "$REPO_DIR/claude/lib/dashboard.py" "$DST/lib/dashboard.py"
+ln -sfn "$REPO_DIR/claude/lib/seed-leakwords.py" "$DST/lib/seed-leakwords.py"
 chmod +x "$REPO_DIR/claude/lib/memdir.sh" "$REPO_DIR/claude/lib/events.sh" "$REPO_DIR/claude/lib/pending.sh" "$REPO_DIR/claude/lib/metrics.sh"
-echo "  ✓ lib linked (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard)"
+echo "  ✓ lib linked (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder)"
+
+# .leakwords 자동시드 (v9 0-D2): profile 식별토큰 → gate2b(bare 실명) 활성화. profile 빔이면 no-op.
+if command -v python3 >/dev/null 2>&1; then
+  _md="${CLAUDE_MEMORY_DIR:-}"
+  if [ -z "$_md" ] && [ -f "$DST/lib/memdir.sh" ]; then eval "$(bash "$DST/lib/memdir.sh" --no-ensure --export 2>/dev/null || true)"; _md="${CLAUDE_MEMORY_DIR:-}"; fi
+  [ -n "$_md" ] && python3 "$REPO_DIR/claude/lib/seed-leakwords.py" "$_md" >/dev/null 2>&1 || true
+fi
 
 # CLAUDE.md (전역 세션 기본값): 없으면/심링크면 링크(업데이트 자동 반영),
 # 실제 파일이면 claude-config 관리 블록을 마커 사이에 삽입/갱신(마커 밖 사용자 내용 보존).
