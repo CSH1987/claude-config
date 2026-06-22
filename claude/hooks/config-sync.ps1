@@ -77,7 +77,7 @@ try {
             $dirty = (git status --porcelain) 2>$null
             if ($dirty) {
                 git add -A *> $null
-                git commit -m ("auto-sync: $env:COMPUTERNAME " + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) *> $null
+                git commit -m ("auto-sync: " + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) *> $null
             }
             Invoke-Pull
             git push --quiet *> $null

@@ -23,7 +23,7 @@ Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.ps1')      (Join-Path $ho
 Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.py')       (Join-Path $hooks 'guardrails.py')       -Force
 # config-sync 가 레포 위치를 찾도록 기록 (BOM 없이)
 [System.IO.File]::WriteAllText((Join-Path $dst '.config-sync-path'), $repoDir, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, guardrails)'
+Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, morning-brief, memory-sync, guardrails)'
 
 # 평생 기억저장소 경로 resolver(memdir) 복사 — 모든 hook·skill 이 호출하는 단일 진실원(경로만, 데이터 없음).
 $lib = Join-Path $dst 'lib'

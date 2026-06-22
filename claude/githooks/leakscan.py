@@ -17,6 +17,19 @@ def nfc(s):
         return s
 
 
+def _nid(s):
+    # evasion-resistant identity normalization (gate2b): NFC + lowercase + strip zero-width/bidi
+    # + collapse separators (space/hyphen/underscore/dot) so 'John  Doe' / 'John-Doe' /
+    # zero-width-inserted names match their .leakwords token. (review D2)
+    try:
+        s = unicodedata.normalize('NFC', s).lower()
+    except Exception:
+        s = s.lower()
+    s = re.sub(r'[\u00ad\u200b-\u200f\u2060\u2066-\u2069\u202a-\u202e\ufeff]', '', s)  # zero-width/soft-hyphen/bidi (ASCII-escaped)
+    s = re.sub(r'[\s\-_.]+', '', s)
+    return s
+
+
 def main():
     if os.environ.get('CLAUDE_LEAKGUARD_OFF') == '1':
         return 0
@@ -99,13 +112,14 @@ def main():
     lw = os.path.join(mem, '.leakwords') if mem else ''
     if lw and os.path.isfile(lw) and os.path.getsize(lw) > 0:
         low = nfc(text).lower()
+        nlow = _nid(text)
         try:
             with open(lw, encoding='utf-8') as f:
                 for line in f:
                     tok = nfc(line.strip())
                     if not tok or tok.startswith('#') or len(tok) < 3:
                         continue
-                    if tok.lower() in low:
+                    if tok.lower() in low or _nid(tok) in nlow:
                         block('identity-token (.leakwords match): <redacted>')
         except Exception:
             pass

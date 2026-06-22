@@ -61,7 +61,7 @@ case "$mode" in
         echo "claude-config work-autosync: NOT pushing secret-looking files: $(printf '%s ' $secrets)- add them to .gitignore" >&2
       fi
       if ! git diff --cached --quiet; then
-        git commit -m "autosync: $(hostname 2>/dev/null || echo unknown) $(date '+%Y-%m-%d %H:%M:%S')" >/dev/null 2>&1 || true
+        git commit -m "autosync: $(date '+%Y-%m-%d %H:%M:%S')" >/dev/null 2>&1 || true
       fi
     fi
     pull

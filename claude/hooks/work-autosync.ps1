@@ -59,7 +59,7 @@ try {
                 }
                 git diff --cached --quiet
                 if ($LASTEXITCODE -ne 0) {
-                    git commit -m ("autosync: $env:COMPUTERNAME " + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) *> $null
+                    git commit -m ("autosync: " + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) *> $null
                 }
             }
             Invoke-Pull

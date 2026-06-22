@@ -77,7 +77,7 @@ case "$mode" in
   end)
     if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
       git add -A >/dev/null 2>&1 || true
-      git commit -m "auto-sync: $(hostname 2>/dev/null || echo unknown) $(date '+%Y-%m-%d %H:%M:%S')" >/dev/null 2>&1 || true
+      git commit -m "auto-sync: $(date '+%Y-%m-%d %H:%M:%S')" >/dev/null 2>&1 || true
     fi
     pull
     $TO git push --quiet >/dev/null 2>&1 || true
