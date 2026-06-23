@@ -91,11 +91,23 @@ Two heuristics are filled **deterministically** by hooks into the events shard
 (`events/<machineId>.jsonl`); `metrics.md` is a **mode-A-only derive** from those shards.
 
 ### `rework` (quality proxy)
-- **Definition (v9 0-J):** a PostToolUse/Stop hook sets `rework=true` when a **file + symbol
-  diff** shows the same file/symbol being re-edited to undo or redo prior work within a
+- **Definition (v9 0-J, target):** a PostToolUse/Stop hook sets `rework=true` when a **file +
+  symbol diff** shows the same file/symbol being re-edited to undo or redo prior work within a
   window. `rework_anchor` records the anchored unit.
-- Deterministic: it is a diff comparison, not a model judgment. It is **not** marketed as
-  semantically perfect (M5 honesty) — its validity is gated by §5 precision/recall.
+- **Implementation status (v1 — `edit-track`/`stop-metrics` hooks):** the shipped v1 is a
+  **file-level cross-session proxy**, intentionally weaker than the target above. It sets
+  `rework=true` when a file path edited in the current session was previously edited by a
+  *different* session (tracked in `$OMC_STATE_DIR/edit-history.json`, path→last_session). It has
+  **no symbol granularity, no diff comparison, and no time window** — so pure forward-progress
+  (continuing work on a file across sessions/days) and high-churn shared files (e.g. settings)
+  also flag. `rework_anchor` carries a `file:` prefix to mark this file-level scope so consumers
+  can tell the weak signal apart. This is an honest under-implementation (M5): the signal stays
+  **gate-suspended** (§5) until a labeled set validates/tightens it.
+- **Roadmap (v2):** add a time window + symbol/diff (closing the gap to the target definition),
+  and add state GC for `edit-history.json` / orphan `edit-track/` shards (currently unbounded —
+  a local, git-ignored `omc-state` cost, not a correctness risk).
+- Deterministic: v1 is an id/path-equality comparison, not a model judgment. It is **not**
+  marketed as semantically perfect (M5 honesty) — its validity is gated by §5 precision/recall.
 
 ### `recall_hit` (recall effectiveness)
 - **Definition (v9 0-J):** set `recall_hit=true` when a later turn **references an

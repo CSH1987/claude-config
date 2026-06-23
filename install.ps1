@@ -21,9 +21,11 @@ Copy-Item (Join-Path $repoDir 'claude\hooks\morning-brief.ps1')   (Join-Path $ho
 Copy-Item (Join-Path $repoDir 'claude\hooks\memory-sync.ps1')     (Join-Path $hooks 'memory-sync.ps1')     -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.ps1')      (Join-Path $hooks 'guardrails.ps1')      -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.py')       (Join-Path $hooks 'guardrails.py')       -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\edit-track.ps1')      (Join-Path $hooks 'edit-track.ps1')      -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\stop-metrics.ps1')    (Join-Path $hooks 'stop-metrics.ps1')    -Force
 # config-sync 가 레포 위치를 찾도록 기록 (BOM 없이)
 [System.IO.File]::WriteAllText((Join-Path $dst '.config-sync-path'), $repoDir, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, morning-brief, memory-sync, guardrails)'
+Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, morning-brief, memory-sync, guardrails, edit-track, stop-metrics)'
 
 # 평생 기억저장소 경로 resolver(memdir) 복사 — 모든 hook·skill 이 호출하는 단일 진실원(경로만, 데이터 없음).
 $lib = Join-Path $dst 'lib'
@@ -204,6 +206,12 @@ $managedHooks = [ordered]@{
     PreToolUse = @(
         (New-PsHook 'guardrails.ps1'      '')
     )
+    PostToolUse = @(
+        (New-PsHook 'edit-track.ps1'      '')
+    )
+    Stop = @(
+        (New-PsHook 'stop-metrics.ps1'    '')
+    )
 }
 # 우리가 관리하는 모든 명령(이벤트 불문) — 기존 그룹에서 우리 것만 제거(자가 치유)
 $allManaged = @{}
@@ -212,7 +220,7 @@ foreach ($evt in $managedHooks.Keys) { foreach ($c in $managedHooks[$evt]) { $al
 # → 과거 bash-form 훅(`bash "$HOME/.claude/hooks/config-sync.sh"`)이 박힌 머신도 재실행으로 자가 치유.
 #   딱 3개 관리 파일명으로만 한정 + 호출 위치(-File "..." / bash "...")에 앵커 →
 #   사용자 자신의 bash 훅이나, 관리 경로를 인자/문구로 "언급만" 하는 훅은 보존(과잉 제거 방지).
-$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|morning-brief|memory-sync|guardrails)\.(ps1|sh)\b'
+$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|morning-brief|memory-sync|guardrails|edit-track|stop-metrics)\.(ps1|sh)\b'
 $hk = Get-Dict $s 'hooks'
 foreach ($evt in $managedHooks.Keys) {
     $existing = @(); if ($hk[$evt]) { $existing = @($hk[$evt]) }
@@ -262,6 +270,14 @@ if (-not [Environment]::GetEnvironmentVariable('OMC_STATE_DIR', 'User')) {
 }
 foreach ($d in @($memDir, (Join-Path $memDir 'profile'), (Join-Path $memDir 'decisions'), $omcStateDir)) {
     if (-not (Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
+}
+# 샤드 동시쓰기 충돌 라인보존: PRIVATE 스토어의 events/_sync-log jsonl 은 merge=union (SCHEMA.md §0/§3, plan v9).
+# 부재 시에만 시드(사용자 수정 보존). PUBLIC claude-config 가 아니라 PRIVATE 스토어 루트($memDir)에 둔다.
+$memGitAttr = Join-Path $memDir '.gitattributes'
+if (-not (Test-Path $memGitAttr)) {
+    $gaBody = "events/*.jsonl    merge=union`n_sync-log/*.jsonl merge=union`n"
+    [System.IO.File]::WriteAllText($memGitAttr, $gaBody, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "  ✓ claude-memory .gitattributes seeded (events/_sync-log merge=union)"
 }
 # profile 시드 — 부재 시에만(빈 스캐폴드, bool 기본값 없음 → A1 hook 의 cold-start 무주입 계약 유지).
 $profileJson = Join-Path $memDir 'profile\user-profile.json'

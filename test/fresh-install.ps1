@@ -69,7 +69,7 @@ Phase 'A. Fresh install (clean HOME, deploy-only)'
 Reset-Home
 $r = Run-Install
 Check 'install.ps1 exits 0'                 { $r.Code -eq 0 }
-Check 'hooks copied (4 files)'              { (Test-Path (Join-Path $HooksDir 'ensure-harness.ps1')) -and (Test-Path (Join-Path $HooksDir 'effort-reminder.ps1')) -and (Test-Path (Join-Path $HooksDir 'effort-reminder.txt')) -and (Test-Path (Join-Path $HooksDir 'config-sync.ps1')) }
+Check 'hooks copied (all managed files present)' { $need = @('ensure-harness.ps1','effort-reminder.ps1','memory-inject.ps1','effort-reminder.txt','config-sync.ps1','work-autosync.ps1','session-events.ps1','reconcile-check.ps1','morning-brief.ps1','memory-sync.ps1','guardrails.ps1','guardrails.py','edit-track.ps1','stop-metrics.ps1'); @($need | Where-Object { -not (Test-Path (Join-Path $HooksDir $_)) }).Count -eq 0 }
 Check 'ultracode.json deployed = {"ultracode":true}' { ((Get-Content (Join-Path $ClaudeDir 'ultracode.json') -Raw | ConvertFrom-Json).ultracode) -eq $true }
 Check '.config-sync-path points at repo'   { ((Get-Content (Join-Path $ClaudeDir '.config-sync-path') -Raw).Trim()) -eq $Repo }
 Check 'CLAUDE.md has claude-config block'    { (Get-Content (Join-Path $ClaudeDir 'CLAUDE.md') -Raw) -match 'claude-config:claude-md:start' }
@@ -81,13 +81,20 @@ Check 'enabledPlugins: vercel NOT in default set' { $s.enabledPlugins.PSObject.P
 Check 'marketplaces: harness + omc'         { $s.extraKnownMarketplaces.'harness-marketplace' -and $s.extraKnownMarketplaces.omc }
 $ss = Get-Cmds $s 'SessionStart'
 $se = Get-Cmds $s 'SessionEnd'
-Check 'SessionStart has exactly 4 hooks'    { $ss.Count -eq 4 }
-Check 'SessionEnd has exactly 2 hooks'      { $se.Count -eq 2 }
-Check 'SessionStart = ensure+effort+config+autosync' { ($ss -match 'ensure-harness\.ps1').Count -eq 1 -and ($ss -match 'effort-reminder\.ps1').Count -eq 1 -and ($ss -match 'config-sync\.ps1').Count -eq 1 -and ($ss -match 'work-autosync\.ps1').Count -eq 1 }
+Check 'SessionStart has exactly 8 hooks'    { $ss.Count -eq 8 }
+Check 'SessionEnd has exactly 4 hooks'      { $se.Count -eq 4 }
+Check 'SessionStart = ensure+effort+memory-inject+config+autosync+reconcile+morning+memory-sync' { ($ss -match 'ensure-harness\.ps1').Count -eq 1 -and ($ss -match 'effort-reminder\.ps1').Count -eq 1 -and ($ss -match 'memory-inject\.ps1').Count -eq 1 -and ($ss -match 'config-sync\.ps1').Count -eq 1 -and ($ss -match 'work-autosync\.ps1').Count -eq 1 -and ($ss -match 'reconcile-check\.ps1').Count -eq 1 -and ($ss -match 'morning-brief\.ps1').Count -eq 1 -and ($ss -match 'memory-sync\.ps1').Count -eq 1 }
+Check 'SessionEnd = config+autosync+session-events+memory-sync' { ($se -match 'config-sync\.ps1').Count -eq 1 -and ($se -match 'work-autosync\.ps1').Count -eq 1 -and ($se -match 'session-events\.ps1').Count -eq 1 -and ($se -match 'memory-sync\.ps1').Count -eq 1 }
 $pt = Get-Cmds $s 'PreToolUse'
 Check 'PreToolUse has exactly 1 hook (guardrails)' { $pt.Count -eq 1 -and (@($pt -match 'guardrails\.ps1').Count -eq 1) }
 Check 'PreToolUse hook is powershell -File'        { @($pt | Where-Object { $_ -notmatch '^powershell ' }).Count -eq 0 }
 Check 'guardrails.ps1 + guardrails.py deployed'    { (Test-Path (Join-Path $HooksDir 'guardrails.ps1')) -and (Test-Path (Join-Path $HooksDir 'guardrails.py')) }
+$po = Get-Cmds $s 'PostToolUse'
+$st = Get-Cmds $s 'Stop'
+Check 'PostToolUse has exactly 1 hook (edit-track)' { $po.Count -eq 1 -and (@($po -match 'edit-track\.ps1').Count -eq 1) }
+Check 'Stop has exactly 1 hook (stop-metrics)'      { $st.Count -eq 1 -and (@($st -match 'stop-metrics\.ps1').Count -eq 1) }
+Check 'PostToolUse + Stop are powershell -File'     { @(($po + $st) | Where-Object { $_ -notmatch '^powershell ' }).Count -eq 0 }
+Check 'edit-track.ps1 + stop-metrics.ps1 deployed'  { (Test-Path (Join-Path $HooksDir 'edit-track.ps1')) -and (Test-Path (Join-Path $HooksDir 'stop-metrics.ps1')) }
 Check 'all hooks use powershell -File'       { ($ss + $se | Where-Object { $_ -notmatch '^powershell ' }).Count -eq 0 }
 Check 'NO bash-form hook on Windows'        { ($ss + $se | Where-Object { $_ -match '(^|\s)bash\b' }).Count -eq 0 }
 Check 'hook paths point into fake HOME'     { ($ss + $se | Where-Object { $_ -notmatch [regex]::Escape($HooksDir) }).Count -eq 0 }
@@ -98,8 +105,10 @@ Phase 'B. Idempotency (run install again)'
 $r2 = Run-Install
 $s2 = Read-Settings
 Check 'second install exits 0'              { $r2.Code -eq 0 }
-Check 'still exactly 4 SessionStart hooks'  { (Get-Cmds $s2 'SessionStart').Count -eq 4 }
-Check 'still exactly 2 SessionEnd hooks'    { (Get-Cmds $s2 'SessionEnd').Count -eq 2 }
+Check 'still exactly 8 SessionStart hooks'  { (Get-Cmds $s2 'SessionStart').Count -eq 8 }
+Check 'still exactly 4 SessionEnd hooks'    { (Get-Cmds $s2 'SessionEnd').Count -eq 4 }
+Check 'still exactly 1 PostToolUse hook'    { (Get-Cmds $s2 'PostToolUse').Count -eq 1 }
+Check 'still exactly 1 Stop hook'           { (Get-Cmds $s2 'Stop').Count -eq 1 }
 Check 'still valid JSON after re-run'       { $s2 -ne $null }
 Check 'CLAUDE.md block not duplicated'      { ([regex]::Matches((Get-Content (Join-Path $ClaudeDir 'CLAUDE.md') -Raw),'claude-config:claude-md:start \(')).Count -eq 1 }
 
@@ -122,7 +131,7 @@ $s3 = Read-Settings
 Check 'custom top-level key preserved'      { $s3.myCustomKey -eq 123 }
 Check 'unrelated UserPromptSubmit preserved' { (Get-Cmds $s3 'UserPromptSubmit') -contains 'echo ups-hook' }
 Check 'custom SessionStart hook preserved'  { (Get-Cmds $s3 'SessionStart') -contains 'echo custom-user-hook' }
-Check 'managed hooks appended (4 + 1 user)' { (Get-Cmds $s3 'SessionStart').Count -eq 5 }
+Check 'managed hooks appended (8 + 1 user)' { (Get-Cmds $s3 'SessionStart').Count -eq 9 }
 Check 'effortLevel preserved-or-set'        { $s3.effortLevel -eq 'xhigh' }
 
 # ----------------------------------------------------------------------------
@@ -333,17 +342,17 @@ $null = Run-Install
 $sg = Read-Settings
 $gss = Get-Cmds $sg 'SessionStart'; $gse = Get-Cmds $sg 'SessionEnd'
 # anchored detectors: only a command that actually INVOKES a managed hook file counts
-$invSh  = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|config-sync|work-autosync)\.sh\b'
-$invPs1 = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|config-sync|work-autosync)\.ps1\b'
+$invSh  = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|morning-brief|memory-sync|guardrails)\.sh\b'
+$invPs1 = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|morning-brief|memory-sync|guardrails)\.ps1\b'
 Check 'heal: settings still valid JSON'                  { $sg -ne $null }
 Check 'heal: ZERO invoked bash-form managed hooks remain' { @(($gss+$gse) | Where-Object { $_ -match $invSh }).Count -eq 0 }
-Check 'heal: exactly 4 invoked-ps1 managed in SessionStart' { @($gss | Where-Object { $_ -match $invPs1 }).Count -eq 4 }
-Check 'heal: exactly 2 invoked-ps1 managed in SessionEnd' { @($gse | Where-Object { $_ -match $invPs1 }).Count -eq 2 }
+Check 'heal: exactly 8 invoked-ps1 managed in SessionStart' { @($gss | Where-Object { $_ -match $invPs1 }).Count -eq 8 }
+Check 'heal: exactly 4 invoked-ps1 managed in SessionEnd' { @($gse | Where-Object { $_ -match $invPs1 }).Count -eq 4 }
 Check 'heal: stale ps managed at C:\old evicted'         { @(($gss+$gse) | Where-Object { $_ -match 'C:\\old' }).Count -eq 0 }
 Check 'heal: user OWN bash hook PRESERVED'               { $gss -contains 'bash "$HOME/my-own-hook.sh"' }
 Check 'heal: path-mention hook PRESERVED (no over-evict)' { $gss -contains 'echo "docs: .claude/hooks/config-sync.ps1"' }
 Check 'heal: custom top-level key preserved'             { $sg.myCustomKey -eq 7 }
-Check 'heal: no managed duplication (6 start / 2 end)'   { $gss.Count -eq 6 -and $gse.Count -eq 2 }
+Check 'heal: no managed duplication (10 start / 4 end)'   { $gss.Count -eq 10 -and $gse.Count -eq 4 }
 
 # ----------------------------------------------------------------------------
 Phase 'H. Spaces in HOME path'
@@ -388,6 +397,61 @@ if (-not (Get-Command python3 -ErrorAction SilentlyContinue)) {
   Check 'guardrail: secret edit -> WARN'             { (_verdict '{"tool_name":"Edit","tool_input":{"file_path":"cfg/.env"}}') -eq 'WARN' }
   Check 'guardrail: .env.example edit -> ALLOW'      { (_verdict '{"tool_name":"Edit","tool_input":{"file_path":".env.example"}}') -eq 'ALLOW' }
   Check 'guardrail: malformed -> ALLOW (fail-open)'  { (_verdict 'not valid json') -eq 'ALLOW' }
+}
+
+# ----------------------------------------------------------------------------
+Phase 'L. Growth metrics: edit-track (PostToolUse) + stop-metrics (Stop) file-level rework'
+if (-not (Get-Command python3 -ErrorAction SilentlyContinue)) {
+  Write-Host '  SKIP  python3 not available' -ForegroundColor DarkYellow
+} else {
+  Reset-Home; $null = Run-Install   # deploys edit-track.ps1 / stop-metrics.ps1 / events.ps1 / memdir.ps1
+  $lmem = Join-Path $SbRoot 'lmem'
+  if (Test-Path $lmem) { Remove-Item $lmem -Recurse -Force -ErrorAction SilentlyContinue }
+  New-Item -ItemType Directory -Force -Path $lmem | Out-Null
+  $lomc  = Join-Path $lmem 'omc-state'
+  $etrk  = Join-Path $HooksDir 'edit-track.ps1'
+  $smet  = Join-Path $HooksDir 'stop-metrics.ps1'
+  $evDir = Join-Path $lmem 'events'
+  $trkS1 = Join-Path (Join-Path $lomc 'edit-track') 's1.jsonl'
+  $hist  = Join-Path $lomc 'edit-history.json'
+  $fileX = 'C:/proj/fileX.ps1'; $fileY = 'C:/proj/fileY.ps1'   # forward-slash -> no JSON escaping
+  # Feed a JSON payload to a hook via stdin in a child ps process (memdir/omc isolated to $lmem).
+  function Feed-Hook($file, $json) {
+    $sM = $env:CLAUDE_MEMORY_DIR; $sO = $env:OMC_STATE_DIR
+    $env:CLAUDE_MEMORY_DIR = $lmem; $env:OMC_STATE_DIR = $lomc
+    $tmp = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($tmp, $json, (New-Object System.Text.UTF8Encoding($false)))
+    & cmd /c "powershell -NoProfile -ExecutionPolicy Bypass -File `"$file`" < `"$tmp`"" 2>$null | Out-Null
+    Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+    $env:CLAUDE_MEMORY_DIR = $sM; $env:OMC_STATE_DIR = $sO
+  }
+  function Ev-Lines { $a = @(); Get-ChildItem $evDir -Filter *.jsonl -ErrorAction SilentlyContinue | ForEach-Object { $a += Get-Content $_.FullName }; ,$a }
+  function Rework-Count { @((Ev-Lines) | Where-Object { $_ -match '"rework":true' }).Count }
+  $ed = '{"session_id":"%S","tool_name":"%T","tool_input":{"file_path":"%F"}}'
+  # s1 edits fileX (Edit) + fileY (Write)
+  Feed-Hook $etrk ($ed.Replace('%S','s1').Replace('%T','Edit').Replace('%F',$fileX))
+  Feed-Hook $etrk ($ed.Replace('%S','s1').Replace('%T','Write').Replace('%F',$fileY))
+  Check 'edit-track: s1 track has 2 edits'           { (Test-Path $trkS1) -and (@(Get-Content $trkS1 | Where-Object { $_.Trim() }).Count -eq 2) }
+  Check 'edit-track: ignores non-edit tool (Bash)'   { Feed-Hook $etrk ($ed.Replace('%S','s1').Replace('%T','Bash').Replace('%F',$fileX)); (@(Get-Content $trkS1 | Where-Object { $_.Trim() }).Count -eq 2) }
+  # s1 Stop: first time these files are seen -> NO rework; history seeded; track truncated
+  Feed-Hook $smet '{"session_id":"s1"}'
+  Check 'stop-metrics: first session -> no rework'   { (Rework-Count) -eq 0 }
+  Check 'stop-metrics: s1 track truncated after stop' { (Test-Path $trkS1) -and ((Get-Item $trkS1).Length -eq 0) }
+  Check 'edit-history seeded with both files (s1)'    { (Test-Path $hist) -and ((Get-Content $hist -Raw) -match 'fileX') -and ((Get-Content $hist -Raw) -match 'fileY') }
+  # s2 edits fileX -> a DIFFERENT prior session touched it -> file-level rework
+  Feed-Hook $etrk ($ed.Replace('%S','s2').Replace('%T','Edit').Replace('%F',$fileX))
+  Feed-Hook $smet '{"session_id":"s2"}'
+  Check 'stop-metrics: cross-session rework detected' { (Rework-Count) -eq 1 }
+  Check 'stop-metrics: rework_anchor = file:<fileX>'  { @((Ev-Lines) | Where-Object { ($_ -match '"rework":true') -and ($_ -match 'fileX') }).Count -eq 1 }
+  # s2 re-edits fileX in the SAME session -> history already s2 -> NOT rework (count stays 1)
+  Feed-Hook $etrk ($ed.Replace('%S','s2').Replace('%T','Edit').Replace('%F',$fileX))
+  Feed-Hook $smet '{"session_id":"s2"}'
+  Check 'stop-metrics: same-session re-edit NOT rework' { (Rework-Count) -eq 1 }
+  # kill-switch: CLAUDE_EVENTS_OFF=1 must no-op
+  $sOff = $env:CLAUDE_EVENTS_OFF; $env:CLAUDE_EVENTS_OFF = '1'
+  Feed-Hook $etrk ($ed.Replace('%S','s3').Replace('%T','Edit').Replace('%F',$fileY))
+  $env:CLAUDE_EVENTS_OFF = $sOff
+  Check 'edit-track: CLAUDE_EVENTS_OFF=1 no-op'       { -not (Test-Path (Join-Path (Join-Path $lomc 'edit-track') 's3.jsonl')) }
 }
 
 # ----------------------------------------------------------------------------

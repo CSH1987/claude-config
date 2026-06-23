@@ -306,8 +306,8 @@ mode-B but mode-A never touches another machine's shard). One JSON object per li
 | `type` | enum | `task` \| `recall` \| `skill_invoke` \| `promote` \| `sync` \| `snapshot` \| `actions_run` \| `decision_append`. |
 | `skill_id` | string\|null | skill involved, if any. |
 | `skill_reused` | bool | an existing skill was reused (vs. created). |
-| `rework` | bool | rework detected (file+symbol diff heuristic; A11). |
-| `rework_anchor` | string\|null | anchor-id the rework relates to. |
+| `rework` | bool | rework detected (target: file+symbol diff heuristic; A11). **v1 hooks fill a file-level cross-session proxy only** — see `recall-budget.md` §4 implementation status. |
+| `rework_anchor` | string\|null | anchor-id the rework relates to. v1 uses `file:<path>` to mark file-level scope. |
 | `recall_query` | string\|null | the recall query, if `type=recall`. |
 | `recall_hit` | bool | a prior anchor-id was correctly recalled/linked. |
 | `recall_anchor` | string\|null | anchor-id that was hit. |
