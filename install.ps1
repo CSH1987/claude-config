@@ -47,7 +47,12 @@ $py3sl = (Get-Command python3 -ErrorAction SilentlyContinue)
 if ($py3sl) {
     $mdsl = $env:CLAUDE_MEMORY_DIR
     if (-not $mdsl) { $mdsl = Join-Path $env:USERPROFILE 'claude-memory' }
-    if (Test-Path $mdsl) { & $py3sl.Source (Join-Path $repoDir 'claude\lib\seed-leakwords.py') $mdsl 2>$null | Out-Null }
+    # best-effort: 콜드스타트(빈 프로필)에서 seed-leakwords 가 stderr 경고를 내면 PS5.1 의
+    # $ErrorActionPreference='Stop' + native stderr 가 NativeCommandError(terminating)로 install 을
+    # 중단시킨다(2>$null 로도 못 막음). install.sh 의 `|| true` 와 동등하게 try/catch 로 격리한다.
+    if (Test-Path $mdsl) {
+        try { & $py3sl.Source (Join-Path $repoDir 'claude\lib\seed-leakwords.py') $mdsl 2>$null | Out-Null } catch {}
+    }
 }
 
 # leak-guard (M1): route this repo's git hooks to versioned claude/githooks (pre-commit/pre-push).
