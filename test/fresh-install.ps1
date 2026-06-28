@@ -78,7 +78,7 @@ $s = Read-Settings
 Check 'effortLevel = xhigh'                  { $s.effortLevel -eq 'xhigh' }
 Check 'enabledPlugins: all template plugins merged' { $tmpl = (Get-Content (Join-Path $Repo 'claude/settings.json') -Raw | ConvertFrom-Json).enabledPlugins.PSObject.Properties.Name; $dep = $s.enabledPlugins.PSObject.Properties.Name; $tmpl.Count -ge 1 -and (@($tmpl | Where-Object { $_ -notin $dep }).Count -eq 0) }
 Check 'enabledPlugins: vercel NOT in default set' { $s.enabledPlugins.PSObject.Properties.Name -notcontains 'vercel@claude-plugins-official' }
-Check 'marketplaces: harness + omc'         { $s.extraKnownMarketplaces.'harness-marketplace' -and $s.extraKnownMarketplaces.omc }
+Check 'marketplaces: harness + omc + gptaku' { $s.extraKnownMarketplaces.'harness-marketplace' -and $s.extraKnownMarketplaces.omc -and $s.extraKnownMarketplaces.'gptaku-plugins' }
 $ss = Get-Cmds $s 'SessionStart'
 $se = Get-Cmds $s 'SessionEnd'
 Check 'SessionStart has exactly 8 hooks'    { $ss.Count -eq 8 }

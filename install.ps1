@@ -149,6 +149,7 @@ if ($s -isnot [System.Collections.IDictionary]) { $s = @{} }
 # 마켓플레이스 — 기존 보존, 항목만 추가/갱신 (harness, omc=oh-my-claudecode)
 (Get-Dict $s 'extraKnownMarketplaces')['harness-marketplace'] = @{ source = @{ source = 'github'; repo = 'revfactory/harness' } }
 (Get-Dict $s 'extraKnownMarketplaces')['omc'] = @{ source = @{ source = 'github'; repo = 'Yeachan-Heo/oh-my-claudecode' } }
+(Get-Dict $s 'extraKnownMarketplaces')['gptaku-plugins'] = @{ source = @{ source = 'github'; repo = 'fivetaku/gptaku_plugins' } }
 # 플러그인 — 기존 보존, base(harness, omc) + 작업 기반 보강 플러그인 추가
 (Get-Dict $s 'enabledPlugins')['harness@harness-marketplace'] = $true
 (Get-Dict $s 'enabledPlugins')['oh-my-claudecode@omc'] = $true
@@ -158,6 +159,8 @@ $officialPlugins = @(
     'mcp-server-dev', 'frontend-design', 'playwright', 'context7', 'github'
 )
 foreach ($p in $officialPlugins) { (Get-Dict $s 'enabledPlugins')["$p@claude-plugins-official"] = $true }
+# insane-search (gptaku-plugins 마켓) — 차단된 공개 사이트 자동 우회 리더. base 와 별도 마켓이라 official 루프 밖에서 추가.
+(Get-Dict $s 'enabledPlugins')['insane-search@gptaku-plugins'] = $true
 # effort 기본값 — 영구화되는 유일한 부분(xhigh). 없을 때만 설정해 사용자 선택 보존.
 # (.ContainsKey 는 Hashtable·Generic Dictionary 모두 지원; .Contains 는 제네릭 Dictionary 에 없음)
 if (-not $s.ContainsKey('effortLevel')) { $s['effortLevel'] = 'xhigh' }
@@ -402,8 +405,11 @@ if ($inClaudeSession) {
     Write-Host '  ✓ oh-my-claudecode installed (/deep-interview, /ralph)'
     foreach ($p in $officialPlugins) { claude plugin install "$p@claude-plugins-official" *> $null }
     Write-Host '  ✓ official plugins installed (hookify, security-guidance, skill-creator, plugin-dev, mcp-server-dev, frontend-design, playwright, context7, github)'
+    claude plugin marketplace add fivetaku/gptaku_plugins *> $null
+    claude plugin install insane-search@gptaku-plugins    *> $null
+    Write-Host '  ✓ insane-search installed (차단된 공개 사이트 자동 우회 리더)'
     Write-Host '  i  github MCP needs env GITHUB_PERSONAL_ACCESS_TOKEN (set per machine; never commit)'
-    claude plugin list 2>$null | Select-String -Pattern 'harness|oh-my-claudecode|hookify|security-guidance|skill-creator|plugin-dev|mcp-server-dev|frontend-design|playwright|context7|github|Status'
+    claude plugin list 2>$null | Select-String -Pattern 'harness|oh-my-claudecode|hookify|security-guidance|skill-creator|plugin-dev|mcp-server-dev|frontend-design|playwright|context7|github|insane-search|Status'
 } else {
     Write-Host '  ℹ claude 미설치 — 다음 세션 훅이 설치'
 }

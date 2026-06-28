@@ -3,7 +3,7 @@
 > 🆘 **처음이거나 다 잊으셨나요? → [RECOVERY.md](./RECOVERY.md) (1페이지·쉬운 안내)부터 보세요.**
 
 이 머신과 **앞으로의 모든 새 머신(Mac · Windows · Linux)**에서 Claude Code(CLI)에:
-- **플러그인** 자동 설치·복구: `harness` + `oh-my-claudecode`(`/deep-interview`, `/ralph` 등)
+- **플러그인** 자동 설치·복구: `harness` + `oh-my-claudecode`(`/deep-interview`, `/ralph` 등) + `insane-search`(차단된 공개 사이트 자동 우회 리더)
 - **effortLevel=xhigh** 영구 적용 (최고 강도 추론)
 - **`claude` 명령을 ultracode 로 자동 실행** (셸 함수 오버라이드) + ultracode/ultraplan 리마인더
 

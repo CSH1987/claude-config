@@ -307,8 +307,11 @@ elif command -v claude >/dev/null 2>&1; then
     claude plugin install "$p@claude-plugins-official" >/dev/null 2>&1 || true
   done
   echo "  ✓ official plugins installed (hookify, security-guidance, skill-creator, plugin-dev, mcp-server-dev, frontend-design, playwright, context7, github)"
+  claude plugin marketplace add fivetaku/gptaku_plugins >/dev/null 2>&1 || true
+  claude plugin install insane-search@gptaku-plugins    >/dev/null 2>&1 || true
+  echo "  ✓ insane-search installed (차단된 공개 사이트 자동 우회 리더)"
   echo "  i  github MCP needs env GITHUB_PERSONAL_ACCESS_TOKEN (set per machine; never commit)"
-  claude plugin list 2>/dev/null | grep -E "harness|oh-my-claudecode|hookify|security-guidance|skill-creator|plugin-dev|mcp-server-dev|frontend-design|playwright|context7|github|Status" || true
+  claude plugin list 2>/dev/null | grep -E "harness|oh-my-claudecode|hookify|security-guidance|skill-creator|plugin-dev|mcp-server-dev|frontend-design|playwright|context7|github|insane-search|Status" || true
 else
   echo "  ℹ claude 미설치 — 다음 세션 훅이 설치"
 fi

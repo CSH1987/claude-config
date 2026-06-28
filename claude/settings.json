@@ -142,7 +142,8 @@
     "frontend-design@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
-    "github@claude-plugins-official": true
+    "github@claude-plugins-official": true,
+    "insane-search@gptaku-plugins": true
   },
   "extraKnownMarketplaces": {
     "harness-marketplace": {
@@ -155,6 +156,12 @@
       "source": {
         "source": "github",
         "repo": "Yeachan-Heo/oh-my-claudecode"
+      }
+    },
+    "gptaku-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "fivetaku/gptaku_plugins"
       }
     }
   },
