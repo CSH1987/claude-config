@@ -11,6 +11,9 @@ param(
   [string]$SbRoot = (Join-Path $env:TEMP 'claude-config-fresh-test')      # scratch sandbox (fake HOMEs, throwaway repos)
 )
 $ErrorActionPreference = 'Continue'
+# model-watch isolation: nested claude children spawned during phases could fire the
+# model-watch hook whose DETACHED probe races later git phases. Kill it for all children.
+$env:CLAUDE_MODEL_WATCH_OFF = '1'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 New-Item -ItemType Directory -Force -Path $SbRoot | Out-Null
 

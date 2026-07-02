@@ -30,6 +30,14 @@ import subprocess
 import sys
 import time
 
+# Hook stdout is consumed by Claude Code as UTF-8; a cp949 Windows console default
+# would raise UnicodeEncodeError on Korean/dash characters and silently kill notices.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 HOME = os.path.expanduser("~")
 CLAUDE_DIR = os.path.join(HOME, ".claude")
 SETTINGS = os.path.join(CLAUDE_DIR, "settings.json")
@@ -40,12 +48,15 @@ PIN = os.path.join(WATCH_DIR, "pin")
 CLAUDE_TIMEOUT = 240  # seconds per headless call (detached, so generous is fine)
 
 DETECT_PROMPT = (
-    "Automation query (no human is reading prose). Your system prompt's environment "
-    "section states which Claude models are the most recent. Respond with ONLY one "
-    'line of JSON: {"top_model_id": "<id>"} where <id> is the exact model ID of the '
-    "most capable (frontier) generally-available Claude model. Do not use code "
-    "fences. Do not add any other text."
+    "Automation query (no human reads prose). Your system prompt environment "
+    'section contains a line beginning "The most recent Claude models are" '
+    "followed by model names and their exact model IDs. Output ONLY one line of "
+    'JSON: {"model_ids_in_order": ["<id>", "..."], "most_capable_id": "<id>"} '
+    "where model_ids_in_order lists ALL model IDs from that line in the exact "
+    "order they appear, and most_capable_id is the one that line presents as the "
+    "newest frontier generation. No code fences. No other text."
 )
+ID_RE = r"claude-[a-z0-9][a-z0-9.\-]*"
 
 
 def now_iso():
@@ -98,18 +109,27 @@ def base_id(model):
 
 
 def claude_cmdline():
-    """Resolve the claude CLI into an argv prefix (cmd /c wrap for .cmd/.bat shims)."""
-    exe = shutil.which("claude")
-    if not exe:
+    """Resolve the claude CLI into an argv prefix. On Windows, prefer real
+    executables (.exe, then cmd/c-wrapped .cmd shim) - a bare `claude` on PATH may
+    be an extensionless bash script that CreateProcess cannot run (WinError 193)."""
+    if os.name == "nt":
+        exe = shutil.which("claude.exe")
+        if exe:
+            return [exe]
+        for shim in ("claude.cmd", "claude.bat"):
+            exe = shutil.which(shim)
+            if exe:
+                return ["cmd", "/c", exe]
         return None
-    if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
-        return ["cmd", "/c", exe]
-    return [exe]
+    exe = shutil.which("claude")
+    return [exe] if exe else None
 
 
-def run_claude(prefix, args):
-    """Run claude headless. Child env gets CLAUDE_MODEL_WATCH_OFF=1 so nested
-    SessionStart hooks never re-enter this script (no recursion)."""
+def run_claude(prefix, args, prompt):
+    """Run claude headless; the prompt goes via STDIN, never argv - the Windows
+    npm shim needs a `cmd /c` wrap, and cmd.exe mangles argv quotes/</> chars.
+    Child env gets CLAUDE_MODEL_WATCH_OFF=1 so nested SessionStart hooks never
+    re-enter this script (no recursion)."""
     env = dict(os.environ, CLAUDE_MODEL_WATCH_OFF="1")
     cp = subprocess.run(
         prefix + args,
@@ -117,32 +137,55 @@ def run_claude(prefix, args):
         text=True,
         timeout=CLAUDE_TIMEOUT,
         env=env,
+        input=prompt,
     )
     return cp.returncode, (cp.stdout or "") + "\n" + (cp.stderr or "")
 
 
 def detect_top(prefix):
-    """Ask a cheap headless session for the current frontier model id."""
-    try:
-        rc, out = run_claude(prefix, ["-p", "--model", "haiku", DETECT_PROMPT])
-    except Exception:
-        return None
-    if rc != 0:
-        return None
-    m = re.search(r"\{[^{}]*\"top_model_id\"[^{}]*\}", out)
-    if not m:
-        return None
-    try:
-        mid = str(json.loads(m.group(0)).get("top_model_id", "")).strip()
-    except Exception:
-        return None
-    return mid if re.fullmatch(r"claude-[a-z0-9][a-z0-9.\-]*", mid) else None
+    """Ask a headless session for the current frontier model id.
+
+    EXTRACTION, not judgment: models answer "which is most capable" with self-bias
+    (opus judged opus; haiku judged sonnet - both wrong). Extracting the env
+    block's "The most recent Claude models are ..." line verbatim is reliable:
+    Anthropic lists the frontier family FIRST, so list[0] is the answer.
+    Judge = the currently configured model (no --model flag -> today's frontier
+    detects tomorrow's), falling back to the `opus` alias if that call fails
+    (e.g. the configured id was deprecated)."""
+    for model_args in ([], ["--model", "opus"]):
+        try:
+            rc, out = run_claude(prefix, ["-p"] + model_args, DETECT_PROMPT)
+        except Exception:
+            continue
+        if rc != 0:
+            continue
+        m = re.search(r"\{[^{}]*\"model_ids_in_order\"[^{}]*\}", out)
+        if not m:
+            continue
+        try:
+            obj = json.loads(m.group(0))
+        except Exception:
+            continue
+        ids = [
+            str(i).strip()
+            for i in (obj.get("model_ids_in_order") or [])
+            if re.fullmatch(ID_RE, str(i).strip())
+        ]
+        mc = str(obj.get("most_capable_id", "")).strip()
+        if not ids:
+            if re.fullmatch(ID_RE, mc):
+                return mc
+            continue
+        if mc and mc != ids[0]:  # structural order beats soft judgment; keep a trace
+            log_history({"event": "detect_disagreement", "list_first": ids[0], "most_capable": mc})
+        return ids[0]
+    return None
 
 
 def model_valid(prefix, model):
     """A model id is valid iff a real headless call with it succeeds."""
     try:
-        rc, _ = run_claude(prefix, ["-p", "--model", model, "Reply with exactly: ok"])
+        rc, _ = run_claude(prefix, ["-p", "--model", model], "Reply with exactly: ok")
         return rc == 0
     except Exception:
         return False
@@ -232,13 +275,15 @@ def start():
     st = read_state()
     notice = st.pop("notify", None)
     if notice:
-        write_state(st)
+        # print BEFORE persisting the pop - if printing fails, the notice survives
+        # for the next session instead of being silently lost.
         print(
             "[model-watch] 새 최고 모델 감지 — 기본 모델 자동 전환됨: %s → %s. "
             "새 세션부터 적용됩니다(이 세션은 이전 모델일 수 있음). "
             "자동 전환 고정 해제: ~/.claude/model-watch/pin 파일 생성, 끄기: CLAUDE_MODEL_WATCH_OFF=1"
             % (notice.get("from"), notice.get("to"))
         )
+        write_state(st)  # persist the consumed notice only after it was printed
     if st.get("checked") != today():
         st["checked"] = today()  # claim the day BEFORE spawning (multi-session stampede guard)
         write_state(st)
@@ -247,6 +292,8 @@ def start():
 
 def main():
     if os.environ.get("CLAUDE_MODEL_WATCH_OFF") == "1":
+        return 0
+    if os.environ.get("CLAUDE_EVENTS_OFF") == "1":  # repo-wide hook kill switch (parity with sibling hooks)
         return 0
     if os.path.exists(PIN):
         return 0

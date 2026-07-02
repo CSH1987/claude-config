@@ -172,10 +172,21 @@ claude-config/
     ├── shell/
     │   ├── claude-ultra.sh          # `claude` 오버라이드 + claude-newproj/claude-review/update/doctor (bash/zsh)
     │   └── claude-ultra.ps1         # `claude` 오버라이드 + claude-newproj/claude-review/update/doctor (PowerShell)
+    ├── workflows/
+    │   └── expert-debate.js         # 전문가 패널 토론 워크플로 — 독립기획→공유→반박라운드→합의→교훈추출
     └── hooks/
         ├── ensure-harness.sh/.ps1   # SessionStart — harness 자동 설치/복구
         ├── effort-reminder.sh/.ps1  # SessionStart — 매 세션 ultracode/ultraplan 리마인더 주입
         ├── effort-reminder.txt      # 위 리마인더 본문(.sh/.ps1 이 읽음)
         ├── config-sync.sh/.ps1      # SessionStart=pull / SessionEnd=push — 설정 레포 자동 동기화
-        └── work-autosync.sh/.ps1    # 옵트인(.claude-autosync) 작업 프로젝트 자동 백업 (시크릿 fail-closed)
+        ├── work-autosync.sh/.ps1    # 옵트인(.claude-autosync) 작업 프로젝트 자동 백업 (시크릿 fail-closed)
+        └── model-watch.sh/.ps1      # SessionStart — 새 최고(프론티어) 모델 자동 감지·전환 (하루 1회, lib/model-watch.py)
 ```
+
+## 모델 자동 스위칭 (model-watch)
+
+새 최고 모델(예: Opus → Fable 세대 교체)이 나오면 **사람이 `/model` 을 몰라도** 모든 머신이 자동으로 갈아탑니다.
+
+- **감지**: 하루 1회, 세션 시작 시 분리(detached) 프로세스가 `claude -p` 헤드리스(구독 토큰, $0)로 CLI 자신의 환경 정보에서 "가장 최신 모델 목록"을 **추출**(판단이 아니라 추출 — 모델의 자기편향 회피). CLI 자동업데이트가 이 정보를 항상 최신으로 유지.
+- **검증 후 적용**: 후보 ID 를 실제 `--model` 호출로 검증(현재 쓰던 `[1m]` 같은 변형 접미사 우선 유지) 후 `~/.claude/settings.json` 의 `model` 을 원자적으로 갱신. **다음 세션부터 적용**, 다음 세션 시작 시 전환 알림 1회 표시.
+- **안전장치**: 세션 시작을 절대 블로킹하지 않음(fail-open) · 잘못된 ID 는 전환 안 함 · 이력 `~/.claude/model-watch/history.jsonl` · 끄기 `CLAUDE_MODEL_WATCH_OFF=1` · 특정 모델 고정 시 `~/.claude/model-watch/pin` 파일 생성.

@@ -118,6 +118,11 @@ ln -sfn "$REPO_DIR/claude/lib/brief.py"     "$DST/lib/brief.py"
 ln -sfn "$REPO_DIR/claude/lib/model-watch.py" "$DST/lib/model-watch.py"
 ln -sfn "$REPO_DIR/claude/lib/dashboard.py" "$DST/lib/dashboard.py"
 ln -sfn "$REPO_DIR/claude/lib/seed-leakwords.py" "$DST/lib/seed-leakwords.py"
+
+# 워크플로 (Workflow 도구의 named workflow — 모든 머신에서 Workflow({name:'expert-debate'}) 호출 가능)
+mkdir -p "$DST/workflows"
+ln -sfn "$REPO_DIR/claude/workflows/expert-debate.js" "$DST/workflows/expert-debate.js"
+echo "  ✓ workflows linked (expert-debate)"
 chmod +x "$REPO_DIR/claude/lib/memdir.sh" "$REPO_DIR/claude/lib/events.sh" "$REPO_DIR/claude/lib/pending.sh" "$REPO_DIR/claude/lib/metrics.sh"
 echo "  ✓ lib linked (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder)"
 

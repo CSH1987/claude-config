@@ -44,7 +44,13 @@ Copy-Item (Join-Path $repoDir 'claude\lib\brief.py')     (Join-Path $lib 'brief.
 Copy-Item (Join-Path $repoDir 'claude\lib\model-watch.py') (Join-Path $lib 'model-watch.py') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\dashboard.py') (Join-Path $lib 'dashboard.py') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\seed-leakwords.py') (Join-Path $lib 'seed-leakwords.py') -Force
-Write-Host '  ✓ lib copied (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder)'
+Write-Host '  ✓ lib copied (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder, model-watch engine)'
+
+# 워크플로 (Workflow 도구의 named workflow — 모든 머신에서 Workflow({name:'expert-debate'}) 호출 가능)
+$workflows = Join-Path $dst 'workflows'
+New-Item -ItemType Directory -Force -Path $workflows | Out-Null
+Copy-Item (Join-Path $repoDir 'claude\workflows\expert-debate.js') (Join-Path $workflows 'expert-debate.js') -Force
+Write-Host '  ✓ workflows copied (expert-debate)'
 
 # .leakwords 자동시드 (v9 0-D2): profile 식별토큰 → gate2b 활성. profile 빔이면 no-op.
 $py3sl = (Get-Command python3 -ErrorAction SilentlyContinue)
