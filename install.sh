@@ -80,14 +80,15 @@ ln -sfn "$REPO_DIR/claude/hooks/work-autosync.sh"    "$DST/hooks/work-autosync.s
 ln -sfn "$REPO_DIR/claude/hooks/session-events.sh"   "$DST/hooks/session-events.sh"
 ln -sfn "$REPO_DIR/claude/hooks/reconcile-check.sh"  "$DST/hooks/reconcile-check.sh"
 ln -sfn "$REPO_DIR/claude/hooks/morning-brief.sh"    "$DST/hooks/morning-brief.sh"
+ln -sfn "$REPO_DIR/claude/hooks/model-watch.sh"      "$DST/hooks/model-watch.sh"
 ln -sfn "$REPO_DIR/claude/hooks/memory-sync.sh"      "$DST/hooks/memory-sync.sh"
 ln -sfn "$REPO_DIR/claude/hooks/guardrails.sh"       "$DST/hooks/guardrails.sh"
 ln -sfn "$REPO_DIR/claude/hooks/guardrails.py"       "$DST/hooks/guardrails.py"
 ln -sfn "$REPO_DIR/claude/hooks/edit-track.sh"       "$DST/hooks/edit-track.sh"
 ln -sfn "$REPO_DIR/claude/hooks/stop-metrics.sh"     "$DST/hooks/stop-metrics.sh"
-chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/memory-inject.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/session-events.sh" "$REPO_DIR/claude/hooks/reconcile-check.sh" "$REPO_DIR/claude/hooks/morning-brief.sh" "$REPO_DIR/claude/hooks/memory-sync.sh" "$REPO_DIR/claude/hooks/guardrails.sh" "$REPO_DIR/claude/hooks/edit-track.sh" "$REPO_DIR/claude/hooks/stop-metrics.sh"
+chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/memory-inject.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/session-events.sh" "$REPO_DIR/claude/hooks/reconcile-check.sh" "$REPO_DIR/claude/hooks/morning-brief.sh" "$REPO_DIR/claude/hooks/model-watch.sh" "$REPO_DIR/claude/hooks/memory-sync.sh" "$REPO_DIR/claude/hooks/guardrails.sh" "$REPO_DIR/claude/hooks/edit-track.sh" "$REPO_DIR/claude/hooks/stop-metrics.sh"
 printf '%s' "$REPO_DIR" > "$DST/.config-sync-path"   # config-sync 가 레포 위치를 찾도록
-echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, morning-brief, memory-sync, guardrails, edit-track, stop-metrics)"
+echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, model-watch, morning-brief, memory-sync, guardrails, edit-track, stop-metrics)"
 
 # leak-guard (M1): route this repo's git hooks to the versioned claude/githooks (pre-commit/pre-push).
 # Repo-local config; blocks PII/secrets in config-sync's auto-commit/push to the PUBLIC repo. config-sync 본문 무수정.
@@ -114,6 +115,7 @@ ln -sfn "$REPO_DIR/claude/lib/metrics.sh"  "$DST/lib/metrics.sh"
 ln -sfn "$REPO_DIR/claude/lib/metrics.ps1" "$DST/lib/metrics.ps1"
 ln -sfn "$REPO_DIR/claude/lib/metrics.py"  "$DST/lib/metrics.py"
 ln -sfn "$REPO_DIR/claude/lib/brief.py"     "$DST/lib/brief.py"
+ln -sfn "$REPO_DIR/claude/lib/model-watch.py" "$DST/lib/model-watch.py"
 ln -sfn "$REPO_DIR/claude/lib/dashboard.py" "$DST/lib/dashboard.py"
 ln -sfn "$REPO_DIR/claude/lib/seed-leakwords.py" "$DST/lib/seed-leakwords.py"
 chmod +x "$REPO_DIR/claude/lib/memdir.sh" "$REPO_DIR/claude/lib/events.sh" "$REPO_DIR/claude/lib/pending.sh" "$REPO_DIR/claude/lib/metrics.sh"

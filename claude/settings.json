@@ -83,6 +83,14 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/model-watch.sh\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "bash \"$HOME/.claude/hooks/morning-brief.sh\""
           }
         ]
@@ -171,5 +179,6 @@
   },
   "autoUpdatesChannel": "latest",
   "skipWorkflowUsageWarning": true,
-  "theme": "dark"
+  "theme": "dark",
+  "model": "claude-fable-5"
 }

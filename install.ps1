@@ -18,6 +18,7 @@ Copy-Item (Join-Path $repoDir 'claude\hooks\work-autosync.ps1')   (Join-Path $ho
 Copy-Item (Join-Path $repoDir 'claude\hooks\session-events.ps1')  (Join-Path $hooks 'session-events.ps1')  -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\reconcile-check.ps1') (Join-Path $hooks 'reconcile-check.ps1') -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\morning-brief.ps1')   (Join-Path $hooks 'morning-brief.ps1')   -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\model-watch.ps1')     (Join-Path $hooks 'model-watch.ps1')     -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\memory-sync.ps1')     (Join-Path $hooks 'memory-sync.ps1')     -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.ps1')      (Join-Path $hooks 'guardrails.ps1')      -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.py')       (Join-Path $hooks 'guardrails.py')       -Force
@@ -25,7 +26,7 @@ Copy-Item (Join-Path $repoDir 'claude\hooks\edit-track.ps1')      (Join-Path $ho
 Copy-Item (Join-Path $repoDir 'claude\hooks\stop-metrics.ps1')    (Join-Path $hooks 'stop-metrics.ps1')    -Force
 # config-sync 가 레포 위치를 찾도록 기록 (BOM 없이)
 [System.IO.File]::WriteAllText((Join-Path $dst '.config-sync-path'), $repoDir, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, morning-brief, memory-sync, guardrails, edit-track, stop-metrics)'
+Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, model-watch, morning-brief, memory-sync, guardrails, edit-track, stop-metrics)'
 
 # 평생 기억저장소 경로 resolver(memdir) 복사 — 모든 hook·skill 이 호출하는 단일 진실원(경로만, 데이터 없음).
 $lib = Join-Path $dst 'lib'
@@ -40,6 +41,7 @@ Copy-Item (Join-Path $repoDir 'claude\lib\metrics.ps1') (Join-Path $lib 'metrics
 Copy-Item (Join-Path $repoDir 'claude\lib\metrics.sh')  (Join-Path $lib 'metrics.sh')  -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\metrics.py')  (Join-Path $lib 'metrics.py')  -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\brief.py')     (Join-Path $lib 'brief.py')     -Force
+Copy-Item (Join-Path $repoDir 'claude\lib\model-watch.py') (Join-Path $lib 'model-watch.py') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\dashboard.py') (Join-Path $lib 'dashboard.py') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\seed-leakwords.py') (Join-Path $lib 'seed-leakwords.py') -Force
 Write-Host '  ✓ lib copied (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder)'
@@ -197,6 +199,7 @@ $managedHooks = [ordered]@{
         (New-PsHook 'config-sync.ps1'     " -Mode start -Repo `"$repoDir`""),
         (New-PsHook 'work-autosync.ps1'   ' -Mode start'),
         (New-PsHook 'reconcile-check.ps1' ''),
+        (New-PsHook 'model-watch.ps1'     ''),
         (New-PsHook 'morning-brief.ps1'   ''),
         (New-PsHook 'memory-sync.ps1'     ' -Mode start')
     )
@@ -223,7 +226,7 @@ foreach ($evt in $managedHooks.Keys) { foreach ($c in $managedHooks[$evt]) { $al
 # → 과거 bash-form 훅(`bash "$HOME/.claude/hooks/config-sync.sh"`)이 박힌 머신도 재실행으로 자가 치유.
 #   딱 3개 관리 파일명으로만 한정 + 호출 위치(-File "..." / bash "...")에 앵커 →
 #   사용자 자신의 bash 훅이나, 관리 경로를 인자/문구로 "언급만" 하는 훅은 보존(과잉 제거 방지).
-$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|morning-brief|memory-sync|guardrails|edit-track|stop-metrics)\.(ps1|sh)\b'
+$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|model-watch|morning-brief|memory-sync|guardrails|edit-track|stop-metrics)\.(ps1|sh)\b'
 $hk = Get-Dict $s 'hooks'
 foreach ($evt in $managedHooks.Keys) {
     $existing = @(); if ($hk[$evt]) { $existing = @($hk[$evt]) }

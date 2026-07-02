@@ -69,7 +69,7 @@ Phase 'A. Fresh install (clean HOME, deploy-only)'
 Reset-Home
 $r = Run-Install
 Check 'install.ps1 exits 0'                 { $r.Code -eq 0 }
-Check 'hooks copied (all managed files present)' { $need = @('ensure-harness.ps1','effort-reminder.ps1','memory-inject.ps1','effort-reminder.txt','config-sync.ps1','work-autosync.ps1','session-events.ps1','reconcile-check.ps1','morning-brief.ps1','memory-sync.ps1','guardrails.ps1','guardrails.py','edit-track.ps1','stop-metrics.ps1'); @($need | Where-Object { -not (Test-Path (Join-Path $HooksDir $_)) }).Count -eq 0 }
+Check 'hooks copied (all managed files present)' { $need = @('ensure-harness.ps1','effort-reminder.ps1','memory-inject.ps1','effort-reminder.txt','config-sync.ps1','work-autosync.ps1','session-events.ps1','reconcile-check.ps1','model-watch.ps1','morning-brief.ps1','memory-sync.ps1','guardrails.ps1','guardrails.py','edit-track.ps1','stop-metrics.ps1'); @($need | Where-Object { -not (Test-Path (Join-Path $HooksDir $_)) }).Count -eq 0 }
 Check 'ultracode.json deployed = {"ultracode":true}' { ((Get-Content (Join-Path $ClaudeDir 'ultracode.json') -Raw | ConvertFrom-Json).ultracode) -eq $true }
 Check '.config-sync-path points at repo'   { ((Get-Content (Join-Path $ClaudeDir '.config-sync-path') -Raw).Trim()) -eq $Repo }
 Check 'CLAUDE.md has claude-config block'    { (Get-Content (Join-Path $ClaudeDir 'CLAUDE.md') -Raw) -match 'claude-config:claude-md:start' }
@@ -81,9 +81,9 @@ Check 'enabledPlugins: vercel NOT in default set' { $s.enabledPlugins.PSObject.P
 Check 'marketplaces: harness + omc + gptaku' { $s.extraKnownMarketplaces.'harness-marketplace' -and $s.extraKnownMarketplaces.omc -and $s.extraKnownMarketplaces.'gptaku-plugins' }
 $ss = Get-Cmds $s 'SessionStart'
 $se = Get-Cmds $s 'SessionEnd'
-Check 'SessionStart has exactly 8 hooks'    { $ss.Count -eq 8 }
+Check 'SessionStart has exactly 9 hooks'    { $ss.Count -eq 9 }
 Check 'SessionEnd has exactly 4 hooks'      { $se.Count -eq 4 }
-Check 'SessionStart = ensure+effort+memory-inject+config+autosync+reconcile+morning+memory-sync' { ($ss -match 'ensure-harness\.ps1').Count -eq 1 -and ($ss -match 'effort-reminder\.ps1').Count -eq 1 -and ($ss -match 'memory-inject\.ps1').Count -eq 1 -and ($ss -match 'config-sync\.ps1').Count -eq 1 -and ($ss -match 'work-autosync\.ps1').Count -eq 1 -and ($ss -match 'reconcile-check\.ps1').Count -eq 1 -and ($ss -match 'morning-brief\.ps1').Count -eq 1 -and ($ss -match 'memory-sync\.ps1').Count -eq 1 }
+Check 'SessionStart = ensure+effort+memory-inject+config+autosync+reconcile+model-watch+morning+memory-sync' { ($ss -match 'ensure-harness\.ps1').Count -eq 1 -and ($ss -match 'effort-reminder\.ps1').Count -eq 1 -and ($ss -match 'memory-inject\.ps1').Count -eq 1 -and ($ss -match 'config-sync\.ps1').Count -eq 1 -and ($ss -match 'work-autosync\.ps1').Count -eq 1 -and ($ss -match 'reconcile-check\.ps1').Count -eq 1 -and ($ss -match 'model-watch\.ps1').Count -eq 1 -and ($ss -match 'morning-brief\.ps1').Count -eq 1 -and ($ss -match 'memory-sync\.ps1').Count -eq 1 }
 Check 'SessionEnd = config+autosync+session-events+memory-sync' { ($se -match 'config-sync\.ps1').Count -eq 1 -and ($se -match 'work-autosync\.ps1').Count -eq 1 -and ($se -match 'session-events\.ps1').Count -eq 1 -and ($se -match 'memory-sync\.ps1').Count -eq 1 }
 $pt = Get-Cmds $s 'PreToolUse'
 Check 'PreToolUse has exactly 1 hook (guardrails)' { $pt.Count -eq 1 -and (@($pt -match 'guardrails\.ps1').Count -eq 1) }
@@ -105,7 +105,7 @@ Phase 'B. Idempotency (run install again)'
 $r2 = Run-Install
 $s2 = Read-Settings
 Check 'second install exits 0'              { $r2.Code -eq 0 }
-Check 'still exactly 8 SessionStart hooks'  { (Get-Cmds $s2 'SessionStart').Count -eq 8 }
+Check 'still exactly 9 SessionStart hooks'  { (Get-Cmds $s2 'SessionStart').Count -eq 9 }
 Check 'still exactly 4 SessionEnd hooks'    { (Get-Cmds $s2 'SessionEnd').Count -eq 4 }
 Check 'still exactly 1 PostToolUse hook'    { (Get-Cmds $s2 'PostToolUse').Count -eq 1 }
 Check 'still exactly 1 Stop hook'           { (Get-Cmds $s2 'Stop').Count -eq 1 }
@@ -131,7 +131,7 @@ $s3 = Read-Settings
 Check 'custom top-level key preserved'      { $s3.myCustomKey -eq 123 }
 Check 'unrelated UserPromptSubmit preserved' { (Get-Cmds $s3 'UserPromptSubmit') -contains 'echo ups-hook' }
 Check 'custom SessionStart hook preserved'  { (Get-Cmds $s3 'SessionStart') -contains 'echo custom-user-hook' }
-Check 'managed hooks appended (8 + 1 user)' { (Get-Cmds $s3 'SessionStart').Count -eq 9 }
+Check 'managed hooks appended (9 + 1 user)' { (Get-Cmds $s3 'SessionStart').Count -eq 10 }
 Check 'effortLevel preserved-or-set'        { $s3.effortLevel -eq 'xhigh' }
 
 # ----------------------------------------------------------------------------
@@ -342,17 +342,17 @@ $null = Run-Install
 $sg = Read-Settings
 $gss = Get-Cmds $sg 'SessionStart'; $gse = Get-Cmds $sg 'SessionEnd'
 # anchored detectors: only a command that actually INVOKES a managed hook file counts
-$invSh  = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|morning-brief|memory-sync|guardrails)\.sh\b'
-$invPs1 = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|morning-brief|memory-sync|guardrails)\.ps1\b'
+$invSh  = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|model-watch|morning-brief|memory-sync|guardrails)\.sh\b'
+$invPs1 = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|model-watch|morning-brief|memory-sync|guardrails)\.ps1\b'
 Check 'heal: settings still valid JSON'                  { $sg -ne $null }
 Check 'heal: ZERO invoked bash-form managed hooks remain' { @(($gss+$gse) | Where-Object { $_ -match $invSh }).Count -eq 0 }
-Check 'heal: exactly 8 invoked-ps1 managed in SessionStart' { @($gss | Where-Object { $_ -match $invPs1 }).Count -eq 8 }
+Check 'heal: exactly 9 invoked-ps1 managed in SessionStart' { @($gss | Where-Object { $_ -match $invPs1 }).Count -eq 9 }
 Check 'heal: exactly 4 invoked-ps1 managed in SessionEnd' { @($gse | Where-Object { $_ -match $invPs1 }).Count -eq 4 }
 Check 'heal: stale ps managed at C:\old evicted'         { @(($gss+$gse) | Where-Object { $_ -match 'C:\\old' }).Count -eq 0 }
 Check 'heal: user OWN bash hook PRESERVED'               { $gss -contains 'bash "$HOME/my-own-hook.sh"' }
 Check 'heal: path-mention hook PRESERVED (no over-evict)' { $gss -contains 'echo "docs: .claude/hooks/config-sync.ps1"' }
 Check 'heal: custom top-level key preserved'             { $sg.myCustomKey -eq 7 }
-Check 'heal: no managed duplication (10 start / 4 end)'   { $gss.Count -eq 10 -and $gse.Count -eq 4 }
+Check 'heal: no managed duplication (11 start / 4 end)'   { $gss.Count -eq 11 -and $gse.Count -eq 4 }
 
 # ----------------------------------------------------------------------------
 Phase 'H. Spaces in HOME path'
