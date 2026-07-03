@@ -123,6 +123,17 @@ ln -sfn "$REPO_DIR/claude/lib/seed-leakwords.py" "$DST/lib/seed-leakwords.py"
 mkdir -p "$DST/workflows"
 ln -sfn "$REPO_DIR/claude/workflows/expert-debate.js" "$DST/workflows/expert-debate.js"
 echo "  ✓ workflows linked (expert-debate)"
+
+# 사용자 스킬 (playbooks·retro·reconcile) — CLAUDE.md 가 라우팅하는 스킬을 ~/.claude/skills 에
+# 배포해 실제 /retro·/reconcile·playbooks 호출이 가능하게 한다 (미배포 시 참조만 되고 발화 불가).
+mkdir -p "$DST/skills"
+for s in "$REPO_DIR"/claude/skills/*/; do
+  [ -d "$s" ] || continue
+  n="$(basename "$s")"
+  if [ -e "$DST/skills/$n" ] && [ ! -L "$DST/skills/$n" ]; then rm -rf "$DST/skills/$n"; fi
+  ln -sfn "${s%/}" "$DST/skills/$n"
+done
+echo "  ✓ skills linked (playbooks, retro, reconcile → ~/.claude/skills)"
 chmod +x "$REPO_DIR/claude/lib/memdir.sh" "$REPO_DIR/claude/lib/events.sh" "$REPO_DIR/claude/lib/pending.sh" "$REPO_DIR/claude/lib/metrics.sh"
 echo "  ✓ lib linked (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder)"
 

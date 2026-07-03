@@ -52,6 +52,20 @@ New-Item -ItemType Directory -Force -Path $workflows | Out-Null
 Copy-Item (Join-Path $repoDir 'claude\workflows\expert-debate.js') (Join-Path $workflows 'expert-debate.js') -Force
 Write-Host '  ✓ workflows copied (expert-debate)'
 
+# 사용자 스킬 (playbooks·retro·reconcile) — CLAUDE.md 가 라우팅하는 스킬을 ~/.claude/skills 에
+# 배포해 실제 /retro·/reconcile·playbooks 호출이 가능하게 한다 (미배포 시 참조만 되고 발화 불가).
+$skillsSrc = Join-Path $repoDir 'claude\skills'
+if (Test-Path $skillsSrc) {
+    $skillsDst = Join-Path $dst 'skills'
+    New-Item -ItemType Directory -Force -Path $skillsDst | Out-Null
+    Get-ChildItem -Path $skillsSrc -Directory | ForEach-Object {
+        $sd = Join-Path $skillsDst $_.Name
+        if (Test-Path $sd) { Remove-Item $sd -Recurse -Force }
+        Copy-Item $_.FullName $sd -Recurse -Force
+    }
+    Write-Host '  ✓ skills copied (playbooks, retro, reconcile → ~/.claude/skills)'
+}
+
 # .leakwords 자동시드 (v9 0-D2): profile 식별토큰 → gate2b 활성. profile 빔이면 no-op.
 $py3sl = (Get-Command python3 -ErrorAction SilentlyContinue)
 if ($py3sl) {
