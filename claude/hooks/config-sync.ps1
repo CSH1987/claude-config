@@ -33,18 +33,30 @@ try {
     git rev-parse --abbrev-ref --symbolic-full-name '@{u}' *> $null
     if ($LASTEXITCODE -ne 0) { return }
 
-    # lock (atomic). 이미 돌고 있으면 스킵. 10분 이상 묵은 락은 회수.
+    # lock (atomic). 이미 돌고 있으면 스킵. 소유 프로세스가 죽었거나 10분 이상 묵은 락은 회수.
+    # 소유 PID 를 락 안에 기록하는 이유: SessionEnd 훅이 push 도중 킬되면 finally 가 안 돌아
+    # 락이 남는데, 나이 규칙(10분)만으로는 곧바로 이어지는 다음 세션의 자가치유(start push)가
+    # 그 잔존 락에 막힌다. 죽은 PID 의 락은 나이 무관 즉시 회수한다. (PID 재사용으로 무관한
+    # 프로세스가 같은 PID 를 갖는 드문 경우엔 스킵되지만, 10분 규칙이 최종 안전망으로 남는다.)
     $lock = Join-Path $Repo '.git\.config-sync.lock'
+    $pidFile = Join-Path $lock 'pid'
+    function Test-LockStale {
+        $ownerPid = 0
+        try { $ownerPid = [int]((Get-Content $pidFile -ErrorAction Stop | Select-Object -First 1)) } catch {}
+        if ($ownerPid -gt 0 -and -not (Get-Process -Id $ownerPid -ErrorAction SilentlyContinue)) { return $true }
+        $it = Get-Item $lock -ErrorAction SilentlyContinue
+        return [bool]($it -and ((Get-Date) - $it.CreationTime).TotalMinutes -gt 10)
+    }
     $haveLock = $false
     try { $null = New-Item -ItemType Directory -Path $lock -ErrorAction Stop; $haveLock = $true }
     catch {
-        $it = Get-Item $lock -ErrorAction SilentlyContinue
-        if ($it -and ((Get-Date) - $it.CreationTime).TotalMinutes -gt 10) {
+        if (Test-LockStale) {
             Remove-Item $lock -Recurse -Force -ErrorAction SilentlyContinue
             try { $null = New-Item -ItemType Directory -Path $lock -ErrorAction Stop; $haveLock = $true } catch {}
         }
     }
     if (-not $haveLock) { return }
+    Set-Content -Path $pidFile -Value $PID -ErrorAction SilentlyContinue
 
     try {
         # Windows 엔 timeout(1) 이 없으므로 git lowSpeed 로 느린/끊긴 네트워크에서 pull 이 무한 대기하지 않게 한다
@@ -84,6 +96,12 @@ try {
             $ahead = (git rev-list --count '@{u}..HEAD' 2>$null)
             if ($ahead -and [int]$ahead -gt 0) {
                 if (-not (Invoke-Push)) { Invoke-Pull; [void](Invoke-Push) }
+                # 정체 가시화: 자가치유까지 실패해 여전히 ahead>0 이면 조용히 넘기지 않고 알린다
+                # (침묵 실패가 몇 주간 백업 공백으로 이어졌던 회귀 방지 — 원인: 네트워크/인증/비FF).
+                $still = (git rev-list --count '@{u}..HEAD' 2>$null)
+                if ($still -and [int]$still -gt 0) {
+                    Write-Host ("claude-config: {0} 백업이 원격보다 {1}커밋 앞서 있습니다(푸시 실패 지속 — 네트워크/인증 확인 필요)." -f $Repo, $still)
+                }
             }
             Invoke-DeployIfChanged $headBefore
         } elseif ($Mode -eq 'end') {

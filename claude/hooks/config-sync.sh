@@ -36,17 +36,27 @@ git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1 || exit 0
 
 export GIT_TERMINAL_PROMPT=0   # 자격증명 없으면 행 대신 즉시 실패
 
-# lock (atomic mkdir). 이미 돌고 있으면 스킵. 10분 이상 묵은 락은 회수.
+# lock (atomic mkdir). 이미 돌고 있으면 스킵. 소유 프로세스가 죽었거나 10분 이상 묵은 락은 회수.
+# 소유 PID 를 락 안에 기록하는 이유: SessionEnd 훅이 push 도중 킬되면 trap 이 안 돌아 락이
+# 남는데, 나이 규칙(10분)만으로는 곧바로 이어지는 다음 세션의 자가치유(start push)가 그 잔존
+# 락에 막힌다. 죽은 PID 의 락은 나이 무관 즉시 회수한다. (PID 재사용/교차 셸 판별 불가 시엔
+# 스킵되지만, 10분 규칙이 최종 안전망으로 남는다.)
 lock="$repo/.git/.config-sync.lock"
+lock_stale() {
+  p="$(cat "$lock/pid" 2>/dev/null || true)"
+  if [ -n "$p" ] && ! kill -0 "$p" 2>/dev/null; then return 0; fi
+  [ -n "$(find "$lock" -maxdepth 0 -mmin +10 2>/dev/null)" ]
+}
 if ! mkdir "$lock" 2>/dev/null; then
-  if [ -n "$(find "$lock" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then
-    rmdir "$lock" 2>/dev/null || true
+  if lock_stale; then
+    rm -rf "$lock" 2>/dev/null || true
     mkdir "$lock" 2>/dev/null || exit 0
   else
     exit 0
   fi
 fi
-trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+echo "$$" > "$lock/pid" 2>/dev/null || true
+trap 'rm -rf "$lock" 2>/dev/null || true' EXIT
 
 # timeout: macOS 기본엔 없음 → 있으면만 사용
 TO=""
@@ -84,6 +94,12 @@ case "$mode" in
     ahead="$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)"
     if [ "${ahead:-0}" -gt 0 ] 2>/dev/null; then
       push_now || { pull; push_now || true; }
+      # 정체 가시화: 자가치유까지 실패해 여전히 ahead>0 이면 조용히 넘기지 않고 알린다
+      # (침묵 실패가 몇 주간 백업 공백으로 이어졌던 회귀 방지 — 원인: 네트워크/인증/비FF).
+      still="$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)"
+      if [ "${still:-0}" -gt 0 ] 2>/dev/null; then
+        echo "claude-config: $repo 백업이 원격보다 ${still}커밋 앞서 있습니다(푸시 실패 지속 — 네트워크/인증 확인 필요)." >&2
+      fi
     fi
     apply_if_changed "$head_before"
     ;;
