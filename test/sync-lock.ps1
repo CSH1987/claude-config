@@ -99,6 +99,38 @@ Assert 'case6: end mode committed (clean tree)' (-not (git -C $w status --porcel
 Assert 'case6: end mode pushed (ahead=0)' ((Get-Ahead $w) -eq 0)
 Assert 'case6: lock cleaned up' (-not (Test-Path (Join-Path $w '.git\.config-sync.lock')))
 
+# Cases 7-8: work-autosync twin carries the same PID-liveness lock fix.
+$hookW = Join-Path $root 'claude\hooks\work-autosync.ps1'
+function Invoke-HookW([string]$work, [string]$mode) {
+    Push-Location $work
+    $o = (& powershell -NoProfile -ExecutionPolicy Bypass -File $hookW -Mode $mode 2>&1 | Out-String)
+    Pop-Location
+    return $o
+}
+
+# Case 7: work-autosync dead-pid lock reclaimed immediately -> backlog pushed.
+$w = New-TestRepo 'case7'
+Set-Content (Join-Path $w '.claude-autosync') ''
+Add-LocalCommit $w
+$lock = Join-Path $w '.git\.work-autosync.lock'
+New-Item -ItemType Directory -Path $lock | Out-Null
+Set-Content (Join-Path $lock 'pid') (Get-DeadPid)
+Invoke-HookW $w 'start' | Out-Null
+Assert 'case7: work-autosync dead-pid lock reclaimed -> pushed (ahead=0)' ((Get-Ahead $w) -eq 0)
+Assert 'case7: work-autosync lock removed' (-not (Test-Path $lock))
+
+# Case 8: work-autosync live-pid lock respected (skip).
+$w = New-TestRepo 'case8'
+Set-Content (Join-Path $w '.claude-autosync') ''
+Add-LocalCommit $w
+$lock = Join-Path $w '.git\.work-autosync.lock'
+New-Item -ItemType Directory -Path $lock | Out-Null
+$sleeper = Start-Process powershell -ArgumentList '-NoProfile', '-Command', 'Start-Sleep 60' -PassThru -WindowStyle Hidden
+Set-Content (Join-Path $lock 'pid') $sleeper.Id
+Invoke-HookW $w 'start' | Out-Null
+Assert 'case8: work-autosync live-pid lock respected -> no push (ahead=1)' ((Get-Ahead $w) -eq 1)
+Stop-Process -Id $sleeper.Id -Force
+
 Remove-Item $tmp -Recurse -Force
 $verdict = 'FAIL'; if ($script:fail -eq 0) { $verdict = 'ALL-OK' }
 Write-Output ('RESULT: pass=' + $script:pass + ' fail=' + $script:fail + ' ' + $verdict)

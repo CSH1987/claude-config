@@ -32,17 +32,29 @@ try {
     git rev-parse --abbrev-ref --symbolic-full-name '@{u}' *> $null
     if ($LASTEXITCODE -ne 0) { return }                               # no upstream -> nothing to sync
 
+    # lock with owner PID recorded inside (same fix as config-sync): a SessionEnd hook killed
+    # mid-push skips 'finally' and leaves the lock; age-only reclaim (10 min) would then block the
+    # very next session's start-mode self-heal. Dead-PID locks are reclaimed immediately regardless
+    # of age; locks without a pid file keep the 10-min rule as the final safety net.
     $lock = Join-Path $top '.git\.work-autosync.lock'
+    $pidFile = Join-Path $lock 'pid'
+    function Test-LockStale {
+        $ownerPid = 0
+        try { $ownerPid = [int]((Get-Content $pidFile -ErrorAction Stop | Select-Object -First 1)) } catch {}
+        if ($ownerPid -gt 0 -and -not (Get-Process -Id $ownerPid -ErrorAction SilentlyContinue)) { return $true }
+        $it = Get-Item $lock -ErrorAction SilentlyContinue
+        return [bool]($it -and ((Get-Date) - $it.CreationTime).TotalMinutes -gt 10)
+    }
     $haveLock = $false
     try { $null = New-Item -ItemType Directory -Path $lock -ErrorAction Stop; $haveLock = $true }
     catch {
-        $it = Get-Item $lock -ErrorAction SilentlyContinue
-        if ($it -and ((Get-Date) - $it.CreationTime).TotalMinutes -gt 10) {
+        if (Test-LockStale) {
             Remove-Item $lock -Recurse -Force -ErrorAction SilentlyContinue
             try { $null = New-Item -ItemType Directory -Path $lock -ErrorAction Stop; $haveLock = $true } catch {}
         }
     }
     if (-not $haveLock) { return }
+    Set-Content -Path $pidFile -Value $PID -ErrorAction SilentlyContinue
 
     try {
         function Invoke-Pull {
@@ -60,6 +72,12 @@ try {
             $ahead = (git rev-list --count '@{u}..HEAD' 2>$null)
             if ($ahead -and [int]$ahead -gt 0) {
                 if (-not (Invoke-Push)) { Invoke-Pull; [void](Invoke-Push) }
+                # stalled-backup visibility (same as config-sync): silent push failures once caused
+                # a weeks-long backup gap - if still ahead after self-heal, say so.
+                $still = (git rev-list --count '@{u}..HEAD' 2>$null)
+                if ($still -and [int]$still -gt 0) {
+                    [Console]::Error.WriteLine("claude-config work-autosync: $top backup is $still commit(s) ahead of remote (push still failing - check network/auth).")
+                }
             }
         } elseif ($Mode -eq 'end') {
             if ((git status --porcelain) 2>$null) {

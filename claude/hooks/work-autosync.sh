@@ -31,16 +31,26 @@ export GIT_TERMINAL_PROMPT=0
 # fail-closed secret denylist (case-insensitive)
 secret_re='(^|/)\.env($|\.)|\.envrc$|\.(pem|key|p12|pfx|jks|keystore|ppk|p8)$|(^|/)id_(rsa|ed25519|dsa|ecdsa)$|\.(npmrc|netrc|pgpass|pypirc)$|(service[-_]account|credentials).*\.json$|token.*\.json$|(^|/)database\.(ya?ml|json)$|(^|/)\.(aws|kube|ssh)/|\.tfstate$|secrets?\.(ya?ml|json|env)$'
 
+# lock with owner PID recorded inside (same fix as config-sync): a SessionEnd hook killed
+# mid-push skips the trap and leaves the lock; age-only reclaim (10 min) would then block the
+# very next session's start-mode self-heal. Dead-PID locks are reclaimed immediately; locks
+# without a pid file keep the 10-min rule as the final safety net.
 lock="$top/.git/.work-autosync.lock"
+lock_stale() {
+  p="$(cat "$lock/pid" 2>/dev/null || true)"
+  if [ -n "$p" ] && ! kill -0 "$p" 2>/dev/null; then return 0; fi
+  [ -n "$(find "$lock" -maxdepth 0 -mmin +10 2>/dev/null)" ]
+}
 if ! mkdir "$lock" 2>/dev/null; then
-  if [ -n "$(find "$lock" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then
-    rmdir "$lock" 2>/dev/null || true
+  if lock_stale; then
+    rm -rf "$lock" 2>/dev/null || true
     mkdir "$lock" 2>/dev/null || exit 0
   else
     exit 0
   fi
 fi
-trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+echo "$$" > "$lock/pid" 2>/dev/null || true
+trap 'rm -rf "$lock" 2>/dev/null || true' EXIT
 
 TO=""
 command -v timeout >/dev/null 2>&1 && TO="timeout 30"
@@ -62,6 +72,12 @@ case "$mode" in
     ahead="$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)"
     if [ "${ahead:-0}" -gt 0 ] 2>/dev/null; then
       push_now || { pull; push_now || true; }
+      # stalled-backup visibility (same as config-sync): silent push failures once caused
+      # a weeks-long backup gap - if still ahead after self-heal, say so.
+      still="$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)"
+      if [ "${still:-0}" -gt 0 ] 2>/dev/null; then
+        echo "claude-config work-autosync: $top backup is $still commit(s) ahead of remote (push still failing - check network/auth)." >&2
+      fi
     fi
     ;;
   end)

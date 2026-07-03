@@ -74,6 +74,27 @@ sh "$hook" end "$w" >/dev/null 2>&1
 [ "$(ahead "$w")" = "0" ]; assert "case6: end mode pushed (ahead=0)" $?
 [ ! -d "$w/.git/.config-sync.lock" ]; assert "case6: lock cleaned up" $?
 
+# cases 7-8: work-autosync twin carries the same PID-liveness lock fix
+hookw="$root/claude/hooks/work-autosync.sh"
+
+# case7: work-autosync dead-pid lock reclaimed immediately -> backlog pushed
+w="$(new_repo case7)"; touch "$w/.claude-autosync"; add_commit "$w"
+lock="$w/.git/.work-autosync.lock"; mkdir "$lock"
+( : ) & deadpid=$!; wait "$deadpid" 2>/dev/null
+echo "$deadpid" > "$lock/pid"
+(cd "$w" && sh "$hookw" start) >/dev/null 2>&1
+[ "$(ahead "$w")" = "0" ]; assert "case7: work-autosync dead-pid lock reclaimed -> pushed (ahead=0)" $?
+[ ! -d "$lock" ]; assert "case7: work-autosync lock removed" $?
+
+# case8: work-autosync live-pid lock respected (skip)
+w="$(new_repo case8)"; touch "$w/.claude-autosync"; add_commit "$w"
+lock="$w/.git/.work-autosync.lock"; mkdir "$lock"
+sleep 60 & live=$!
+echo "$live" > "$lock/pid"
+(cd "$w" && sh "$hookw" start) >/dev/null 2>&1
+[ "$(ahead "$w")" = "1" ]; assert "case8: work-autosync live-pid lock respected -> skip (ahead=1)" $?
+kill "$live" 2>/dev/null
+
 rm -rf "$tmp"
 verdict=FAIL; [ "$fail" = "0" ] && verdict=ALL-OK
 echo "RESULT: pass=$pass fail=$fail $verdict"

@@ -39,6 +39,7 @@ if ($Mode -eq 'end') {
                 } catch {}
             }
             $safe = ($machineId -replace '[^A-Za-z0-9._-]', '_')
+            if (-not $safe) { $safe = 'unknown' }
             $mirrorRoot = Join-Path (Join-Path $memDir 'native-memory') $safe
             Get-ChildItem -Path $projRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
                 $memSub = Join-Path $_.FullName 'memory'

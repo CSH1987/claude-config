@@ -33,6 +33,7 @@ if [ "$mode" = "end" ] && [ -d "$HOME/.claude/projects" ]; then
     [ -n "$m" ] && machine_id="$m"
   fi
   machine_id="$(printf '%s' "$machine_id" | tr -c 'A-Za-z0-9._-' '_')"
+  [ -n "$machine_id" ] || machine_id="unknown"
   for d in "$HOME/.claude/projects"/*/memory; do
     [ -d "$d" ] || continue
     proj="$(basename "$(dirname "$d")")"
