@@ -1,6 +1,8 @@
 # claude-config:work-autosync — opt-in cloud backup of the CURRENT project (NOT the config repo).
 #   Gated on a `.claude-autosync` marker at the git repo root (created by `claude-newproj`).
-#   -Mode start (SessionStart) -> git pull --rebase ; -Mode end (SessionEnd) -> commit + push.
+#   -Mode start (SessionStart) -> git pull --rebase + push any unpushed backlog (self-heal).
+#   -Mode end (SessionEnd) -> commit + push FIRST (the hook can be killed mid-run at session end;
+#   a network step before push loses the backup) ; on push failure only: pull --rebase, retry once.
 #   FAIL-CLOSED secret guard: before committing, unstages secret-looking files (.env, keys, tokens, ...)
 #   so they are NEVER pushed to the cloud — a warning lists them; fix by adding to .gitignore.
 #   Never blocks the session (GIT_TERMINAL_PROMPT=0, atomic lock, quiet skip on offline/conflict/no-upstream).
@@ -47,8 +49,18 @@ try {
             git pull --rebase --autostash --quiet *> $null
             if ($LASTEXITCODE -ne 0) { git rebase --abort *> $null }
         }
+        # push with lowSpeed guard (no hang on dead network); returns success for retry-after-pull decisions
+        function Invoke-Push {
+            git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 push --quiet *> $null
+            return ($LASTEXITCODE -eq 0)
+        }
         if ($Mode -eq 'start') {
             Invoke-Pull
+            # self-heal: push any backlog left by a SessionEnd hook killed before its push completed
+            $ahead = (git rev-list --count '@{u}..HEAD' 2>$null)
+            if ($ahead -and [int]$ahead -gt 0) {
+                if (-not (Invoke-Push)) { Invoke-Pull; [void](Invoke-Push) }
+            }
         } elseif ($Mode -eq 'end') {
             if ((git status --porcelain) 2>$null) {
                 git add -A *> $null
@@ -62,8 +74,7 @@ try {
                     git commit -m ("autosync: " + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) *> $null
                 }
             }
-            Invoke-Pull
-            git push --quiet *> $null
+            if (-not (Invoke-Push)) { Invoke-Pull; [void](Invoke-Push) }
         }
     } finally {
         Remove-Item $lock -Recurse -Force -ErrorAction SilentlyContinue

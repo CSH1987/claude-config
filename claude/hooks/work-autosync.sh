@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # claude-config:work-autosync — opt-in cloud backup of the CURRENT project (NOT the config repo).
 #   Gated on a `.claude-autosync` marker at the git repo root (created by `claude-newproj`).
-#   start (SessionStart) -> git pull --rebase ; end (SessionEnd) -> commit + push.
+#   start (SessionStart) -> git pull --rebase + push any unpushed backlog (self-heal).
+#   end (SessionEnd) -> commit + push FIRST (the hook can be killed mid-run at session end;
+#   a network step before push loses the backup) ; on push failure only: pull --rebase, retry once.
 #   FAIL-CLOSED secret guard: before committing, unstages secret-looking files (.env, keys, tokens, ...)
 #   so they are NEVER pushed to the cloud — a warning lists them; fix by adding to .gitignore.
 #   Never blocks the session (GIT_TERMINAL_PROMPT=0, atomic lock, quiet skip on offline/conflict/no-upstream).
@@ -48,9 +50,19 @@ pull() {
     || git rebase --abort >/dev/null 2>&1 || true
 }
 
+# push with lowSpeed guard (no hang on dead network); returns failure so callers can retry after pull
+push_now() {
+  $TO git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 push --quiet >/dev/null 2>&1
+}
+
 case "$mode" in
   start)
     pull
+    # self-heal: push any backlog left by a SessionEnd hook killed before its push completed
+    ahead="$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)"
+    if [ "${ahead:-0}" -gt 0 ] 2>/dev/null; then
+      push_now || { pull; push_now || true; }
+    fi
     ;;
   end)
     if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
@@ -64,8 +76,7 @@ case "$mode" in
         git commit -m "autosync: $(date '+%Y-%m-%d %H:%M:%S')" >/dev/null 2>&1 || true
       fi
     fi
-    pull
-    $TO git push --quiet >/dev/null 2>&1 || true
+    push_now || { pull; push_now || true; }
     ;;
 esac
 exit 0
