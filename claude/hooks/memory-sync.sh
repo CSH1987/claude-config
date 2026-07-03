@@ -21,6 +21,27 @@ fi
 command -v cygpath >/dev/null 2>&1 && memdir="$(cygpath -u "$memdir" 2>/dev/null || printf '%s' "$memdir")"
 [ -d "$memdir/.git" ] || exit 0   # not a git repo yet (A1 미실행) -> nothing to sync
 
+# 네이티브 오토메모리 병합(미러): ~/.claude/projects/<proj>/memory/*.md
+#   -> $MEM/native-memory/<machineId>/<proj>/  (SCHEMA.md §0 티어)
+# 복사-덮어쓰기만, 삭제 없음(백업이지 정본 아님). fail-open: 실패해도 sync 계속.
+# machineId: _resolver-manifest.json machine_id > hostname > 'unknown' (lib/events 와 동일 규칙).
+if [ "$mode" = "end" ] && [ -d "$HOME/.claude/projects" ]; then
+  machine_id="$(hostname 2>/dev/null || echo unknown)"
+  [ -n "$machine_id" ] || machine_id="unknown"
+  if [ -f "$memdir/_resolver-manifest.json" ]; then
+    m="$(sed -n 's/.*"machine_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$memdir/_resolver-manifest.json" 2>/dev/null | head -1)"
+    [ -n "$m" ] && machine_id="$m"
+  fi
+  machine_id="$(printf '%s' "$machine_id" | tr -c 'A-Za-z0-9._-' '_')"
+  for d in "$HOME/.claude/projects"/*/memory; do
+    [ -d "$d" ] || continue
+    proj="$(basename "$(dirname "$d")")"
+    dst="$memdir/native-memory/$machine_id/$proj"
+    mkdir -p "$dst" 2>/dev/null || continue
+    cp -f "$d"/*.md "$dst"/ 2>/dev/null || true
+  done
+fi
+
 # delegate to config-sync.sh with claude-memory as the repo (deployed > repo-relative)
 cs="$HOME/.claude/hooks/config-sync.sh"
 if [ ! -f "$cs" ]; then

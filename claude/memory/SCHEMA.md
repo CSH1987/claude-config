@@ -45,6 +45,9 @@ $MEM/
 │       └── <decision-id>.md
 ├── events/
 │   └── <machineId>.jsonl            # SHARDED append-only; merge=union
+├── native-memory/
+│   └── <machineId>/                 # SHARDED per machine; Claude Code native auto-memory MIRROR
+│       └── <project-dir>/           #   one-way copy of ~/.claude/projects/<project-dir>/memory/*.md
 ├── _sync-log/
 │   └── <machineId>.jsonl            # SHARDED backup/observability log; merge=union
 ├── metrics.md                       # mode-A DERIVE only (cloud never touches it)
@@ -70,6 +73,7 @@ shard* — same-file contention is structurally impossible.
 | `decisions/<hostA>/` | mode-A | **no** (pre-commit rejects) |
 | `decisions/github/` | mode-B (Actions) | yes — append-only, PC-off canonical advance |
 | `events/<machineId>.jsonl` | that machine | yes (own shard only) |
+| `native-memory/<machineId>/` | that machine (memory-sync SessionEnd mirror) | **no** (mode-B has no native store) |
 | `_sync-log/<machineId>.jsonl` | that machine | yes (own shard only) |
 | `cloud-digest/<runId>.md` | mode-B | yes (per-run) |
 | `_pending/<runId>/` | mode-B proposes / mode-A reconciles | yes (proposals) |
