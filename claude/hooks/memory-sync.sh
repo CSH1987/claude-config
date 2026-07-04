@@ -19,7 +19,19 @@ if [ -z "$memdir" ]; then
 fi
 [ -n "$memdir" ] || exit 0
 command -v cygpath >/dev/null 2>&1 && memdir="$(cygpath -u "$memdir" 2>/dev/null || printf '%s' "$memdir")"
-[ -d "$memdir/.git" ] || exit 0   # not a git repo yet (A1 미실행) -> nothing to sync
+
+# 자가치유: 이 머신에 스토어가 아직 클론돼 있지 않으면(첫 셋업/그 Mac 등) SessionStart 에 자동 부트스트랩.
+# 성공하면 아래 .git 게이트를 통과해 곧바로 pull/sync 로 이어진다. fail-open(실패해도 세션 안 막음).
+if [ "$mode" = "start" ] && [ ! -d "$memdir/.git" ]; then
+  bs="$HOME/.claude/lib/memory-bootstrap.sh"
+  if [ ! -f "$bs" ]; then
+    bd="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
+    [ -n "$bd" ] && bs="$bd/../lib/memory-bootstrap.sh"
+  fi
+  [ -f "$bs" ] && CLAUDE_MEMORY_DIR="$memdir" sh "$bs" 2>/dev/null || true
+fi
+
+[ -d "$memdir/.git" ] || exit 0   # 아직 git 레포 아님(부트스트랩 불가/미실행) -> sync 할 것 없음
 
 # 네이티브 오토메모리 병합(미러): ~/.claude/projects/<proj>/memory/*.md
 #   -> $MEM/native-memory/<machineId>/<proj>/  (SCHEMA.md §0 티어)

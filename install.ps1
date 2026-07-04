@@ -44,6 +44,8 @@ Copy-Item (Join-Path $repoDir 'claude\lib\brief.py')     (Join-Path $lib 'brief.
 Copy-Item (Join-Path $repoDir 'claude\lib\model-watch.py') (Join-Path $lib 'model-watch.py') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\dashboard.py') (Join-Path $lib 'dashboard.py') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\seed-leakwords.py') (Join-Path $lib 'seed-leakwords.py') -Force
+Copy-Item (Join-Path $repoDir 'claude\lib\memory-bootstrap.ps1') (Join-Path $lib 'memory-bootstrap.ps1') -Force
+Copy-Item (Join-Path $repoDir 'claude\lib\memory-bootstrap.sh')  (Join-Path $lib 'memory-bootstrap.sh')  -Force
 Write-Host '  ✓ lib copied (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder, model-watch engine)'
 
 # 워크플로 (Workflow 도구의 named workflow — 모든 머신에서 Workflow({name:'expert-debate'}) 호출 가능)
@@ -293,6 +295,13 @@ $omcStateDir = Join-Path $memDir 'omc-state'
 if (-not [Environment]::GetEnvironmentVariable('OMC_STATE_DIR', 'User')) {
     [Environment]::SetEnvironmentVariable('OMC_STATE_DIR', $omcStateDir, 'User')
     Write-Host "  ✓ OMC_STATE_DIR(User) → $omcStateDir (new sessions)"
+}
+# 자동 부트스트랩: 이 머신에 PRIVATE 기억저장소가 아직 없으면 원격을 자동 클론(무동작 활성화).
+# 이미 .git 이면 즉시 skip(불가침), 원격 미해석/실데이터면 skip. 스캐폴드 mkdir 앞에 둬 빈 dir 클론을 돕는다.
+$bootPs1 = Join-Path $repoDir 'claude\lib\memory-bootstrap.ps1'
+if (Test-Path $bootPs1) {
+    $env:CLAUDE_MEMORY_DIR = $memDir
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $bootPs1 *> $null
 }
 foreach ($d in @($memDir, (Join-Path $memDir 'profile'), (Join-Path $memDir 'decisions'), $omcStateDir)) {
     if (-not (Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }

@@ -19,7 +19,23 @@ if (-not $memDir) {
     }
 }
 if (-not $memDir) { exit 0 }
-if (-not (Test-Path (Join-Path $memDir '.git'))) { exit 0 }   # not a git repo yet -> nothing to sync
+
+# self-heal: if the store isn't cloned on this machine yet (first setup / that Mac), auto-bootstrap
+# it at SessionStart. On success the .git gate below passes and pull/sync proceeds. fail-open.
+if ($Mode -eq 'start' -and -not (Test-Path (Join-Path $memDir '.git'))) {
+    $bs = Join-Path $env:USERPROFILE '.claude\lib\memory-bootstrap.ps1'
+    if (-not (Test-Path $bs)) {
+        $here = $PSScriptRoot
+        if (-not $here) { $here = Split-Path -Parent $MyInvocation.MyCommand.Path }
+        if ($here) { $bs = Join-Path $here '..\lib\memory-bootstrap.ps1' }
+    }
+    if (Test-Path $bs) {
+        $env:CLAUDE_MEMORY_DIR = $memDir
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $bs *> $null
+    }
+}
+
+if (-not (Test-Path (Join-Path $memDir '.git'))) { exit 0 }   # still not a git repo -> nothing to sync
 
 # native auto-memory merge (mirror): ~/.claude/projects/<proj>/memory/*.md
 #   -> $MEM/native-memory/<machineId>/<proj>/  (SCHEMA.md section 0 tier)

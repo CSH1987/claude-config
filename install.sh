@@ -118,6 +118,9 @@ ln -sfn "$REPO_DIR/claude/lib/brief.py"     "$DST/lib/brief.py"
 ln -sfn "$REPO_DIR/claude/lib/model-watch.py" "$DST/lib/model-watch.py"
 ln -sfn "$REPO_DIR/claude/lib/dashboard.py" "$DST/lib/dashboard.py"
 ln -sfn "$REPO_DIR/claude/lib/seed-leakwords.py" "$DST/lib/seed-leakwords.py"
+ln -sfn "$REPO_DIR/claude/lib/memory-bootstrap.sh"  "$DST/lib/memory-bootstrap.sh"
+ln -sfn "$REPO_DIR/claude/lib/memory-bootstrap.ps1" "$DST/lib/memory-bootstrap.ps1"
+chmod +x "$REPO_DIR/claude/lib/memory-bootstrap.sh" 2>/dev/null || true
 
 # 워크플로 (Workflow 도구의 named workflow — 모든 머신에서 Workflow({name:'expert-debate'}) 호출 가능)
 mkdir -p "$DST/workflows"
@@ -248,6 +251,9 @@ for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
   echo "  ✓ memdir env → $(basename "$rc")"
 done
 _md="${CLAUDE_MEMORY_DIR:-$HOME/claude-memory}"
+# 자동 부트스트랩: 이 머신에 PRIVATE 기억저장소가 아직 없으면 원격을 자동 클론(무동작 활성화).
+# 이미 .git 이면 즉시 skip(불가침), 원격 미해석/실데이터면 skip. 스캐폴드 mkdir 앞에 둬 빈 dir 클론을 돕는다.
+[ -f "$REPO_DIR/claude/lib/memory-bootstrap.sh" ] && CLAUDE_MEMORY_DIR="$_md" bash "$REPO_DIR/claude/lib/memory-bootstrap.sh" || true
 mkdir -p "$_md/profile" "$_md/decisions" "$_md/omc-state"
 # 샤드 동시쓰기 충돌 라인보존: PRIVATE 스토어의 events/_sync-log jsonl 은 merge=union (SCHEMA.md §0/§3, plan v9).
 # 부재 시에만 시드(사용자 수정 보존). PUBLIC claude-config 가 아니라 PRIVATE 스토어 루트($_md)에 둔다.

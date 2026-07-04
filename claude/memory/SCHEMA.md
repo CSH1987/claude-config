@@ -365,6 +365,14 @@ mode-B but mode-A never touches another machine's shard). One JSON object per li
   threshold, cold-start suspension, M-A2 milestone gate, labeling procedure**: see
   `claude/protocols/recall-budget.md`.
 - **Path resolution**: `claude/lib/memdir.{ps1,sh}` (resolver; deploy-only to `~/.claude/lib/`).
+- **Store bootstrap** (auto-link the store onto a machine that lacks it): `claude/lib/memory-bootstrap.{ps1,sh}`,
+  invoked by `install.{ps1,sh}` and by `memory-sync` SessionStart self-heal. It clones the PRIVATE remote —
+  resolved as `CLAUDE_MEMORY_REMOTE` (env override) > gh-derived `https://github.com/<login>/claude-memory.git`
+  (no hardcoded URL) — **only** when `$MEM/.git` is absent. Safety: never touches an existing store (idempotent),
+  refuses to clobber a `$MEM` holding non-scaffold data, auto-creates the remote only under
+  `CLAUDE_MEMORY_BOOTSTRAP_CREATE=1` (default is clone-only), and is fail-open (off: `CLAUDE_MEMORY_NO_BOOTSTRAP=1`).
+  This is what makes the memory backup + `native-memory/<machineId>/` mirror + sync self-heal activate on a new
+  machine (or a long-idle one) with zero manual steps.
 - **A1 deterministic injection**: SessionStart hook `claude/hooks/memory-inject.{ps1,sh}`
   reads `profile/user-profile.json` via the resolver and emits it as `additionalContext`
   (model-independent; fail-open).
