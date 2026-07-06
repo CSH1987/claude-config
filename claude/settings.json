@@ -178,7 +178,7 @@
   },
   "effortLevel": "xhigh",
   "autoUpdatesChannel": "latest",
-  "skipWorkflowUsageWarning": true,
   "skipDangerousModePermissionPrompt": true,
+  "skipWorkflowUsageWarning": true,
   "theme": "dark"
 }
