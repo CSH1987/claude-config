@@ -3,6 +3,7 @@
 #   · Harness 플러그인 자동 설치/복구
 #   · effortLevel=xhigh 영구 적용 + ultracode/ultraplan 리마인더
 #   · `claude` 명령을 ultracode 로 자동 실행(셸 함수 오버라이드)
+#   · 런타임 보장: node(플러그인 훅 필수) + python≥3.10(security-guidance 3계층) + brew PATH 출처 고정
 set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DST="$HOME/.claude"
@@ -36,6 +37,94 @@ install_bash_wrapper() {
     if [ ! -e "$HOME/.bash_profile" ] || ! grep -q 'bashrc' "$HOME/.bash_profile" 2>/dev/null; then
       printf '\n# claude-config:claude-ultra (load .bashrc for login shells)\n[ -f ~/.bashrc ] && . ~/.bashrc\n' >> "$HOME/.bash_profile"
     fi
+  fi
+}
+
+# Homebrew PATH 출처를 로그인 프로필에 고정 (macOS 전용).
+# node·python 등 brew 바이너리는 /opt/homebrew/bin(Apple Silicon)·/usr/local/bin(Intel)에 있다. 이 경로가
+# 로그인 셸 PATH 에 없으면(신규 머신·GUI 실행) claude 가 스폰하는 훅이 node 를 못 찾아 매번 exit 127 난다.
+# macOS 의 path_helper(/etc/paths.d)는 이 레포로 동기화되지 않으므로 출처가 불안정 → 표준 `brew shellenv` 를
+# ~/.zprofile·~/.bash_profile 에 심어 PATH 출처를 "동기화되는 프로필" 안으로 가져온다(멱등, 마커 가드).
+# 현재 install.sh 실행에도 즉시 eval → 이후 command -v node/python3.13 판정이 정확해진다.
+ensure_brew_path() {
+  [ "$(uname -s)" = "Darwin" ] || return 0
+  local brew_bin="" b
+  for b in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    [ -x "$b" ] && { brew_bin="$b"; break; }
+  done
+  [ -n "$brew_bin" ] || { command -v brew >/dev/null 2>&1 && brew_bin="$(command -v brew)"; }
+  [ -n "$brew_bin" ] || return 0
+  eval "$("$brew_bin" shellenv)" 2>/dev/null || true   # 현재 실행에 즉시 반영
+  local marker='claude-config:brew-shellenv' prof
+  # zsh 로그인 셸(macOS 기본)은 .zprofile 을 읽으므로 항상 심는다.
+  # .bash_profile 은 bash 로그인 사용자용 → 스퍼리어스 파일 생성을 피해 이미 있거나 .bashrc 가 있을 때만.
+  local profs="$HOME/.zprofile"
+  { [ -e "$HOME/.bash_profile" ] || [ -e "$HOME/.bashrc" ]; } && profs="$profs $HOME/.bash_profile"
+  for prof in $profs; do
+    [ -e "$prof" ] || : > "$prof"
+    grep -qF "$marker" "$prof" 2>/dev/null && continue
+    printf '\n# %s (brew bin on PATH so claude hooks can find node/python)\n%s\n' \
+      "$marker" "eval \"\$($brew_bin shellenv)\"" >> "$prof"
+    echo "  ✓ brew shellenv → $(basename "$prof")"
+  done
+}
+
+# 런타임 부트스트랩: 플러그인 훅이 요구하는 node + python≥3.10 을 이 머신에 보장 (미설치/버전부족일 때만; 멱등).
+#   · node        : oh-my-claudecode 등 다수 훅이 `node …run.cjs` 로 실행 → 없으면 매 훅 exit 127.
+#                   bootstrap.sh 도 node 를 깔지만, install.sh 를 직접 도는 경로(재설치·수동·config-sync)는
+#                   부트스트랩을 안 거치므로 여기서도 보장한다.
+#   · python≥3.10 : security-guidance 3계층 리뷰어(sg-python.sh)가 요구. macOS 기본 python3 는 3.9.6 라 미달.
+#                   sg-python.sh Pass1 은 python3.13~3.10 만 프로브 → brew python@3.13 을 깐다.
+#                   3.13 을 고르는 이유: Pass1 이 버전드 python3.13 바이너리를 PATH shadow 여부와 무관하게
+#                   확정 선택하기 때문. python@3.14 는 Pass1 이 프로브하지 않아, 시스템 python3 를 shadow 할 때만
+#                   Pass2 로 잡혀 덜 견고하다.
+# set -e 하에서 패키지 매니저 실패로 스크립트가 죽지 않도록 모든 설치는 fail-soft. deploy-only(아래 가드) 에선 도달 안 함.
+ensure_runtimes() {
+  local os c v; os="$(uname -s)"
+  # --- Node.js ---
+  if ! command -v node >/dev/null 2>&1; then
+    echo "  … node 미설치 — 설치 시도(플러그인 훅 필수)"
+    if [ "$os" = "Darwin" ] && command -v brew >/dev/null 2>&1; then brew install node >/dev/null 2>&1 || true
+    elif command -v apt-get >/dev/null 2>&1; then sudo -n apt-get install -y nodejs npm >/dev/null 2>&1 || true
+    elif command -v dnf     >/dev/null 2>&1; then sudo -n dnf install -y nodejs >/dev/null 2>&1 || true
+    elif command -v pacman  >/dev/null 2>&1; then sudo -n pacman -S --noconfirm nodejs >/dev/null 2>&1 || true
+    elif command -v apk     >/dev/null 2>&1; then sudo -n apk add nodejs >/dev/null 2>&1 || true
+    fi
+  fi
+  if command -v node >/dev/null 2>&1; then
+    echo "  ✓ node $(node --version 2>/dev/null)"
+  else
+    echo "  ! node 미확보 — 수동 설치 필요(https://nodejs.org 또는 brew install node). 없으면 omc 등 node 훅이 매 세션 실패."
+  fi
+  # --- Python ≥3.10 (sg-python.sh 호환 버전 판정: is_sdk_compatible 미러) ---
+  local py_ok=0
+  for c in python3.13 python3.12 python3.11 python3.10; do
+    command -v "$c" >/dev/null 2>&1 && { py_ok=1; break; }
+  done
+  if [ "$py_ok" = 0 ] && command -v python3 >/dev/null 2>&1; then
+    v="$(python3 -c 'import sys;print(f"{sys.version_info[0]}.{sys.version_info[1]}")' 2>/dev/null || echo 0.0)"
+    case "$v" in 3.1[0-9]|3.[2-9][0-9]|[4-9].*|[1-9][0-9].*) py_ok=1 ;; esac
+  fi
+  if [ "$py_ok" = 0 ]; then
+    echo "  … python≥3.10 미탐지 — 설치 시도(security-guidance 3계층)"
+    if [ "$os" = "Darwin" ] && command -v brew >/dev/null 2>&1; then brew install python@3.13 >/dev/null 2>&1 || true
+    elif command -v apt-get >/dev/null 2>&1; then sudo -n apt-get install -y python3 >/dev/null 2>&1 || true
+    elif command -v dnf     >/dev/null 2>&1; then sudo -n dnf install -y python3 >/dev/null 2>&1 || true
+    elif command -v pacman  >/dev/null 2>&1; then sudo -n pacman -S --noconfirm python >/dev/null 2>&1 || true
+    elif command -v apk     >/dev/null 2>&1; then sudo -n apk add python3 >/dev/null 2>&1 || true
+    fi
+    for c in python3.13 python3.12 python3.11 python3.10; do
+      command -v "$c" >/dev/null 2>&1 && { py_ok=1; break; }
+    done
+    if [ "$py_ok" = 0 ] && command -v python3 >/dev/null 2>&1; then
+      v="$(python3 -c 'import sys;print(f"{sys.version_info[0]}.{sys.version_info[1]}")' 2>/dev/null || echo 0.0)"
+      case "$v" in 3.1[0-9]|3.[2-9][0-9]|[4-9].*|[1-9][0-9].*) py_ok=1 ;; esac
+    fi
+  fi
+  if [ "$py_ok" = 1 ]; then
+    echo "  ✓ python≥3.10 확보(security-guidance 3계층 활성 가능)"
+  else
+    echo "  ! python≥3.10 미확보 — security-guidance 3계층만 비활성(패턴체크·단발 LLM 리뷰는 동작). 수동: brew install python@3.13"
   fi
 }
 
@@ -239,6 +328,10 @@ fi
 # `claude` → ultracode 자동: 위에서 정의한 래퍼 설치 (Unix 경로; Windows 는 위 분기에서 처리됨).
 install_bash_wrapper
 
+# Homebrew PATH 출처를 동기화되는 로그인 프로필에 고정 (macOS). node/python 을 깔기 전에 실행해
+# 현재 실행의 command -v 판정을 정확히 하고, 새 머신/GUI 실행에서도 훅이 brew 바이너리를 찾게 한다.
+ensure_brew_path
+
 # 평생 기억저장소 env 영구설정 (결정 D1) — 셸 rc 에 export(이미 설정돼 있으면 ${VAR:-default} 로 그 값 보존).
 # OMC 는 process.env.OMC_STATE_DIR 를 읽어 성장데이터를 단일 트리로 모은다. admin 불필요(D4).
 memdir_marker='claude-config:memdir-env'
@@ -313,6 +406,10 @@ if command -v git >/dev/null 2>&1; then
   echo "  ✓ git defaults (init.defaultBranch, push.autoSetupRemote, fetch.prune, rebase.autoStash) — only if unset"
 fi
 
+# 런타임 부트스트랩(node + python≥3.10). 플러그인 설치보다 먼저, CLAUDECODE 세션 가드 밖에서 실행한다:
+# brew 설치는 중첩 claude 를 띄우지 않아 세션 안에서도 안전하고, 플러그인 훅이 node 를 필요로 하기 때문.
+ensure_runtimes
+
 # 즉시 설치
 # claude 세션 내부에서 install.sh 를 돌리면, 플러그인 설치가 띄우는 중첩 claude 프로세스의
 # SessionEnd 훅(config-sync push)이 "Hook cancelled" 로 죽어 install 이 exit 1 + stale lock 을 남긴다.
@@ -339,5 +436,5 @@ elif command -v claude >/dev/null 2>&1; then
 else
   echo "  ℹ claude 미설치 — 다음 세션 훅이 설치"
 fi
-echo "✓ 완료. effortLevel=xhigh 영구 + ultracode 자동(claude 오버라이드) + harness 자동."
-echo "  (새 터미널을 열어야 claude 오버라이드가 적용됩니다.)"
+echo "✓ 완료. effortLevel=xhigh 영구 + ultracode 자동(claude 오버라이드) + harness 자동 + 런타임(node·python≥3.10) 보장."
+echo "  (새 터미널을 열어야 claude 오버라이드·brew PATH 가 적용됩니다.)"

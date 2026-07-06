@@ -107,6 +107,7 @@ git -C "$env:USERPROFILE\claude-config" pull; powershell -ExecutionPolicy Bypass
 > **⚠️ 보안 모델 (자동 실행 — 꼭 이해하세요)**: 위 "변경 시 자동 반영"은 **공개 레포(`CSH1987/claude-config`)의 코드를 매 세션 자동으로 pull·실행**한다는 뜻입니다. 즉 **보안 경계 = 당신의 GitHub 계정**입니다. `main` 에 악성 커밋이 들어가면(계정 탈취·토큰 유출 등) 동기화된 **모든 머신**에서 다음 세션에 그 코드가 실행됩니다. 완화: **① GitHub 계정 2FA 필수, ② 레포에 토큰·비밀 절대 커밋 금지(이미 `gh auth token` 런타임 주입), ③ `main` 브랜치 보호 권장.** dotfiles 류의 일반적·수용 가능한 패턴이지만 **의식적으로 수용한 위험**이어야 합니다. 더 엄격히 하려면 `CLAUDE_CONFIG_VERIFY_COMMIT=1` 같은 서명 검증 게이팅(옵트인 — 모든 커밋 GPG 서명 필요)을 추가할 수 있습니다.
 
 ### install 이 머신에 바꾸는 것
+- **런타임 보장(Mac/Linux)**: 플러그인 훅이 요구하는 **node**(oh-my-claudecode 등 다수 훅이 node 로 실행 — 없으면 매 훅 exit 127)와 **python≥3.10**(security-guidance 3계층 리뷰어)을 미설치 시 자동 설치(macOS `brew`, Linux `apt/dnf/pacman/apk`). macOS 는 `sg-python.sh` 가 프로브하는 `python@3.13` 을 깝니다. 또한 `brew shellenv` 를 `~/.zprofile` 에 심어 `/opt/homebrew/bin` PATH 출처를 동기화되는 프로필 안으로 가져와, 새 머신/GUI 실행에서도 훅이 node·python 을 찾게 합니다.
 - **Windows**: `~/.pyshim` 생성 후 USER PATH 앞에 추가(hookify 의 python3), ExecutionPolicy(CurrentUser)를 필요시 `RemoteSigned` 로, `claude` 오버라이드를 Windows PowerShell 5.1 + (있으면) pwsh 7 프로필 양쪽에 기록.
 - **공통**: `claude` 실행 시 `gh auth token` 으로 `GITHUB_PERSONAL_ACCESS_TOKEN` 을 런타임 주입(github MCP). 레포에 토큰 저장 안 함.
 
