@@ -36,11 +36,19 @@ secret_re='(^|/)\.env($|\.)|\.envrc$|\.(pem|key|p12|pfx|jks|keystore|ppk|p8)$|(^
 # very next session's start-mode self-heal. Dead-PID locks are reclaimed immediately; locks
 # without a pid file keep the 10-min rule as the final safety net.
 lock="$top/.git/.work-autosync.lock"
+# stale 판정 3규칙: (1)기록된 PID 죽음→즉시, (2)pid 없음→2분 유예, (3)그 외→10분 최종망.
 lock_stale() {
+  [ -d "$lock" ] || return 1
   p="$(cat "$lock/pid" 2>/dev/null || true)"
-  if [ -n "$p" ] && ! kill -0 "$p" 2>/dev/null; then return 0; fi
-  [ -n "$(find "$lock" -maxdepth 0 -mmin +10 2>/dev/null)" ]
+  if [ -n "$p" ]; then
+    kill -0 "$p" 2>/dev/null || return 0                       # (1) 죽은 PID → 즉시 stale
+    [ -n "$(find "$lock" -maxdepth 0 -mmin +10 2>/dev/null)" ] # (3) 살아있음 → 10분 최종망
+    return $?
+  fi
+  [ -n "$(find "$lock" -maxdepth 0 -mmin +2 2>/dev/null)" ]    # (2) no-pid 고아 → 2분 유예
 }
+# 선제 청소: acquire 전에 이미 stale 한 락(특히 죽은-PID 고아)을 먼저 제거.
+if [ -d "$lock" ] && lock_stale; then rm -rf "$lock" 2>/dev/null || true; fi
 if ! mkdir "$lock" 2>/dev/null; then
   if lock_stale; then
     rm -rf "$lock" 2>/dev/null || true

@@ -53,7 +53,7 @@ touch -d '20 minutes ago' "$lock" 2>/dev/null \
 sh "$hook" start "$w" >/dev/null 2>&1
 [ "$(ahead "$w")" = "0" ]; assert "case3: old no-pid lock reclaimed -> pushed (ahead=0)" $?
 
-# case4: legacy no-pid lock, fresh (<10 min) -> respected (no over-aggressive reclaim)
+# case4: legacy no-pid lock, fresh (<2 min) -> respected (no over-aggressive reclaim)
 w="$(new_repo case4)"; add_commit "$w"
 lock="$w/.git/.config-sync.lock"; mkdir "$lock"
 sh "$hook" start "$w" >/dev/null 2>&1
@@ -93,6 +93,34 @@ sleep 60 & live=$!
 echo "$live" > "$lock/pid"
 (cd "$w" && sh "$hookw" start) >/dev/null 2>&1
 [ "$(ahead "$w")" = "1" ]; assert "case8: work-autosync live-pid lock respected -> skip (ahead=1)" $?
+kill "$live" 2>/dev/null
+
+# case9: no-pid lock aged 5 min (>2-min grace, <10 min) -> reclaimed (tightened no-pid rule)
+w="$(new_repo case9)"; add_commit "$w"
+lock="$w/.git/.config-sync.lock"; mkdir "$lock"
+touch -d '5 minutes ago' "$lock" 2>/dev/null \
+  || touch -t "$(date -v-5M +%Y%m%d%H%M 2>/dev/null)" "$lock" 2>/dev/null
+sh "$hook" start "$w" >/dev/null 2>&1
+[ "$(ahead "$w")" = "0" ]; assert "case9: 5-min no-pid lock reclaimed (2-min grace) -> pushed (ahead=0)" $?
+[ ! -d "$lock" ]; assert "case9: lock removed after run" $?
+
+# case10: work-autosync twin also carries the tightened no-pid rule (5-min no-pid -> reclaimed)
+w="$(new_repo case10)"; touch "$w/.claude-autosync"; add_commit "$w"
+lock="$w/.git/.work-autosync.lock"; mkdir "$lock"
+touch -d '5 minutes ago' "$lock" 2>/dev/null \
+  || touch -t "$(date -v-5M +%Y%m%d%H%M 2>/dev/null)" "$lock" 2>/dev/null
+(cd "$w" && sh "$hookw" start) >/dev/null 2>&1
+[ "$(ahead "$w")" = "0" ]; assert "case10: work-autosync 5-min no-pid lock reclaimed -> pushed (ahead=0)" $?
+
+# case11: LIVE-pid lock older than 10 min -> reclaimed (tier-3 age fallback / PID-reuse safety net)
+w="$(new_repo case11)"; add_commit "$w"
+lock="$w/.git/.config-sync.lock"; mkdir "$lock"
+sleep 60 & live=$!
+echo "$live" > "$lock/pid"
+touch -d '15 minutes ago' "$lock" 2>/dev/null \
+  || touch -t "$(date -v-15M +%Y%m%d%H%M 2>/dev/null)" "$lock" 2>/dev/null
+sh "$hook" start "$w" >/dev/null 2>&1
+[ "$(ahead "$w")" = "0" ]; assert "case11: live-pid lock >10min reclaimed (age net) -> pushed (ahead=0)" $?
 kill "$live" 2>/dev/null
 
 rm -rf "$tmp"

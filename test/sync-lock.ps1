@@ -71,11 +71,11 @@ $w = New-TestRepo 'case3'
 Add-LocalCommit $w
 $lock = Join-Path $w '.git\.config-sync.lock'
 New-Item -ItemType Directory -Path $lock | Out-Null
-(Get-Item $lock).CreationTime = (Get-Date).AddMinutes(-15)
+(Get-Item $lock).LastWriteTime = (Get-Date).AddMinutes(-15)
 Invoke-Hook $w 'start' | Out-Null
 Assert 'case3: old no-pid lock reclaimed -> backlog pushed (ahead=0)' ((Get-Ahead $w) -eq 0)
 
-# Case 4: legacy lock without pid file, fresh (<10 min) -> respected (no over-aggressive reclaim).
+# Case 4: legacy lock without pid file, fresh (<2 min) -> respected (no over-aggressive reclaim).
 $w = New-TestRepo 'case4'
 Add-LocalCommit $w
 $lock = Join-Path $w '.git\.config-sync.lock'
@@ -129,6 +129,40 @@ $sleeper = Start-Process powershell -ArgumentList '-NoProfile', '-Command', 'Sta
 Set-Content (Join-Path $lock 'pid') $sleeper.Id
 Invoke-HookW $w 'start' | Out-Null
 Assert 'case8: work-autosync live-pid lock respected -> no push (ahead=1)' ((Get-Ahead $w) -eq 1)
+Stop-Process -Id $sleeper.Id -Force
+
+# Case 9: no-pid lock aged 5 min (>2-min grace, <10 min) -> reclaimed under tightened no-pid rule.
+#   Regression guard for the preemptive dead/no-pid sweep: previously respected until 10 min.
+$w = New-TestRepo 'case9'
+Add-LocalCommit $w
+$lock = Join-Path $w '.git\.config-sync.lock'
+New-Item -ItemType Directory -Path $lock | Out-Null
+(Get-Item $lock).LastWriteTime = (Get-Date).AddMinutes(-5)
+Invoke-Hook $w 'start' | Out-Null
+Assert 'case9: 5-min no-pid lock reclaimed (2-min grace) -> pushed (ahead=0)' ((Get-Ahead $w) -eq 0)
+Assert 'case9: lock removed after run' (-not (Test-Path $lock))
+
+# Case 10: work-autosync twin also carries the tightened no-pid rule (5-min no-pid -> reclaimed).
+$w = New-TestRepo 'case10'
+Set-Content (Join-Path $w '.claude-autosync') ''
+Add-LocalCommit $w
+$lock = Join-Path $w '.git\.work-autosync.lock'
+New-Item -ItemType Directory -Path $lock | Out-Null
+(Get-Item $lock).LastWriteTime = (Get-Date).AddMinutes(-5)
+Invoke-HookW $w 'start' | Out-Null
+Assert 'case10: work-autosync 5-min no-pid lock reclaimed -> pushed (ahead=0)' ((Get-Ahead $w) -eq 0)
+
+# Case 11: LIVE-pid lock older than 10 min -> reclaimed (tier-3 age fallback / PID-reuse safety net).
+#   Locks the branch where an alive-but-unrelated pid is overridden purely by age.
+$w = New-TestRepo 'case11'
+Add-LocalCommit $w
+$lock = Join-Path $w '.git\.config-sync.lock'
+New-Item -ItemType Directory -Path $lock | Out-Null
+$sleeper = Start-Process powershell -ArgumentList '-NoProfile', '-Command', 'Start-Sleep 60' -PassThru -WindowStyle Hidden
+Set-Content (Join-Path $lock 'pid') $sleeper.Id
+(Get-Item $lock).LastWriteTime = (Get-Date).AddMinutes(-15)
+Invoke-Hook $w 'start' | Out-Null
+Assert 'case11: live-pid lock >10min reclaimed (age net) -> pushed (ahead=0)' ((Get-Ahead $w) -eq 0)
 Stop-Process -Id $sleeper.Id -Force
 
 Remove-Item $tmp -Recurse -Force

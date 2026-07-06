@@ -33,23 +33,34 @@ try {
     git rev-parse --abbrev-ref --symbolic-full-name '@{u}' *> $null
     if ($LASTEXITCODE -ne 0) { return }
 
-    # lock (atomic). 이미 돌고 있으면 스킵. 소유 프로세스가 죽었거나 10분 이상 묵은 락은 회수.
-    # 소유 PID 를 락 안에 기록하는 이유: SessionEnd 훅이 push 도중 킬되면 finally 가 안 돌아
-    # 락이 남는데, 나이 규칙(10분)만으로는 곧바로 이어지는 다음 세션의 자가치유(start push)가
-    # 그 잔존 락에 막힌다. 죽은 PID 의 락은 나이 무관 즉시 회수한다. (PID 재사용으로 무관한
-    # 프로세스가 같은 PID 를 갖는 드문 경우엔 스킵되지만, 10분 규칙이 최종 안전망으로 남는다.)
+    # lock (atomic). 이미 돌고 있으면 스킵. stale 락은 회수. stale 판정 3규칙(우선순위):
+    #   (1) 락에 기록된 소유 PID 가 죽었으면 → 나이 무관 즉시 stale (killed-SessionEnd 고아의 주 경로)
+    #   (2) pid 파일이 없거나 비었으면(mkdir 직후 pid 기록 전에 프로세스가 죽은 창) → 2분 초과 시 stale
+    #   (3) 그 외(살아있는/판별 불가 PID) → 10분 초과 시 stale (PID 재사용 대비 최종 안전망)
+    # 소유 PID 기록 이유: SessionEnd 훅이 push 도중 킬되면 finally 가 안 돌아 락이 남는데,
+    # 나이 규칙(10분)만으로는 곧바로 이어지는 다음 세션의 자가치유(start push)가 그 잔존 락에 막힌다.
     $lock = Join-Path $Repo '.git\.config-sync.lock'
     $pidFile = Join-Path $lock 'pid'
     function Test-LockStale {
+        $it = Get-Item $lock -ErrorAction SilentlyContinue
+        if (-not $it) { return $false }
+        # 나이는 LastWriteTime(=mkdir/pid 기록 시각) 기준: NTFS CreationTime tunneling(삭제·재생성 시 옛 생성시각 상속) 면역 + bash find -mmin(mtime) 과 동일 의미.
+        $ageMin = ((Get-Date) - $it.LastWriteTime).TotalMinutes
         $ownerPid = 0
         try { $ownerPid = [int]((Get-Content $pidFile -ErrorAction Stop | Select-Object -First 1)) } catch {}
-        if ($ownerPid -gt 0 -and -not (Get-Process -Id $ownerPid -ErrorAction SilentlyContinue)) { return $true }
-        $it = Get-Item $lock -ErrorAction SilentlyContinue
-        return [bool]($it -and ((Get-Date) - $it.CreationTime).TotalMinutes -gt 10)
+        if ($ownerPid -gt 0) {
+            if (-not (Get-Process -Id $ownerPid -ErrorAction SilentlyContinue)) { return $true }  # (1) 죽은 PID
+            return ($ageMin -gt 10)                                                                # (3) 살아있음→10분
+        }
+        return ($ageMin -gt 2)                                                                     # (2) no-pid→2분
     }
+    # 선제 청소: acquire 시도 전에 이미 stale 한 락(특히 죽은-PID 고아)을 먼저 쓸어낸다.
+    # 기존엔 mkdir 경합 시에만 회수 → 훅이 한 번만 발화하는 세션에선 고아가 다음 세션까지 남았다.
+    if ((Test-Path $lock) -and (Test-LockStale)) { Remove-Item $lock -Recurse -Force -ErrorAction SilentlyContinue }
     $haveLock = $false
     try { $null = New-Item -ItemType Directory -Path $lock -ErrorAction Stop; $haveLock = $true }
     catch {
+        # 선제 스윕과 mkdir 사이에 새 락이 생겼거나 스윕이 못 지운 경우의 경합 폴백
         if (Test-LockStale) {
             Remove-Item $lock -Recurse -Force -ErrorAction SilentlyContinue
             try { $null = New-Item -ItemType Directory -Path $lock -ErrorAction Stop; $haveLock = $true } catch {}

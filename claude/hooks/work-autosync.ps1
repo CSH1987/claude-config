@@ -38,13 +38,22 @@ try {
     # of age; locks without a pid file keep the 10-min rule as the final safety net.
     $lock = Join-Path $top '.git\.work-autosync.lock'
     $pidFile = Join-Path $lock 'pid'
+    # stale 판정 3규칙: (1)기록된 PID 죽음→즉시, (2)no-pid→2분 유예, (3)그 외→10분 최종망.
     function Test-LockStale {
+        $it = Get-Item $lock -ErrorAction SilentlyContinue
+        if (-not $it) { return $false }
+        # 나이는 LastWriteTime(=mkdir/pid 기록 시각) 기준: NTFS CreationTime tunneling 면역 + bash find -mmin(mtime) 과 동일 의미.
+        $ageMin = ((Get-Date) - $it.LastWriteTime).TotalMinutes
         $ownerPid = 0
         try { $ownerPid = [int]((Get-Content $pidFile -ErrorAction Stop | Select-Object -First 1)) } catch {}
-        if ($ownerPid -gt 0 -and -not (Get-Process -Id $ownerPid -ErrorAction SilentlyContinue)) { return $true }
-        $it = Get-Item $lock -ErrorAction SilentlyContinue
-        return [bool]($it -and ((Get-Date) - $it.CreationTime).TotalMinutes -gt 10)
+        if ($ownerPid -gt 0) {
+            if (-not (Get-Process -Id $ownerPid -ErrorAction SilentlyContinue)) { return $true }  # (1) 죽은 PID
+            return ($ageMin -gt 10)                                                                # (3) 살아있음→10분
+        }
+        return ($ageMin -gt 2)                                                                     # (2) no-pid→2분
     }
+    # 선제 청소: acquire 전에 이미 stale 한 락(특히 죽은-PID 고아)을 먼저 쓸어낸다.
+    if ((Test-Path $lock) -and (Test-LockStale)) { Remove-Item $lock -Recurse -Force -ErrorAction SilentlyContinue }
     $haveLock = $false
     try { $null = New-Item -ItemType Directory -Path $lock -ErrorAction Stop; $haveLock = $true }
     catch {
