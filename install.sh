@@ -292,7 +292,9 @@ d=json.load(open(dst)); s=json.load(open(src))
 d.setdefault("extraKnownMarketplaces",{}).update(s["extraKnownMarketplaces"])
 d.setdefault("enabledPlugins",{}).update(s["enabledPlugins"])
 d.setdefault("effortLevel", s.get("effortLevel","xhigh"))  # 없을 때만 — 사용자 선택 보존
-d.setdefault("permissions",{}).setdefault("defaultMode", s.get("permissions",{}).get("defaultMode","auto"))  # auto 모드(연구 프리뷰) — 없을 때만; ~/.claude 사용자수준에서만 유효, Opus/Sonnet 4.6+ 필요
+d.setdefault("permissions",{}).setdefault("defaultMode", s.get("permissions",{}).get("defaultMode","auto"))  # 소스의 defaultMode(현재 bypassPermissions) — 없을 때만; 기존 사용자 선택 보존
+if "skipDangerousModePermissionPrompt" in s:  # bypass 진입 시 위험 경고창 스킵 — 심링크 아닌 머지 경로 머신도 무프롬프트가 되도록(없을 때만; 사용자 선택 보존)
+    d.setdefault("skipDangerousModePermissionPrompt", s["skipDangerousModePermissionPrompt"])
 # 소스의 모든 hook 이벤트(SessionStart, SessionEnd, ...)를 머지. 자가 치유 dedup(순서 보존).
 hk=d.setdefault("hooks",{})
 for event, groups in s.get("hooks",{}).items():

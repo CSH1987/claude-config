@@ -1,6 +1,6 @@
 {
   "permissions": {
-    "defaultMode": "auto"
+    "defaultMode": "bypassPermissions"
   },
   "hooks": {
     "PreToolUse": [
@@ -179,5 +179,6 @@
   "effortLevel": "xhigh",
   "autoUpdatesChannel": "latest",
   "skipWorkflowUsageWarning": true,
+  "skipDangerousModePermissionPrompt": true,
   "theme": "dark"
 }
