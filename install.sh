@@ -52,15 +52,17 @@ ensure_brew_path() {
   for b in /opt/homebrew/bin/brew /usr/local/bin/brew; do
     [ -x "$b" ] && { brew_bin="$b"; break; }
   done
-  [ -n "$brew_bin" ] || { command -v brew >/dev/null 2>&1 && brew_bin="$(command -v brew)"; }
+  # if 형(전 bash 버전에서 errexit 완전 면제) — brew 완전 부재 Mac + bash 3.2 조합에서의 abort 여지 제거.
+  if [ -z "$brew_bin" ] && command -v brew >/dev/null 2>&1; then brew_bin="$(command -v brew)"; fi
   [ -n "$brew_bin" ] || return 0
   eval "$("$brew_bin" shellenv)" 2>/dev/null || true   # 현재 실행에 즉시 반영
   local marker='claude-config:brew-shellenv' prof
   # zsh 로그인 셸(macOS 기본)은 .zprofile 을 읽으므로 항상 심는다.
   # .bash_profile 은 bash 로그인 사용자용 → 스퍼리어스 파일 생성을 피해 이미 있거나 .bashrc 가 있을 때만.
-  local profs="$HOME/.zprofile"
-  { [ -e "$HOME/.bash_profile" ] || [ -e "$HOME/.bashrc" ]; } && profs="$profs $HOME/.bash_profile"
-  for prof in $profs; do
+  # 배열로 담아 $HOME 에 공백이 있어도 안전(언쿼트 분할 회피).
+  local -a profs=("$HOME/.zprofile")
+  { [ -e "$HOME/.bash_profile" ] || [ -e "$HOME/.bashrc" ]; } && profs+=("$HOME/.bash_profile")
+  for prof in "${profs[@]}"; do
     [ -e "$prof" ] || : > "$prof"
     grep -qF "$marker" "$prof" 2>/dev/null && continue
     printf '\n# %s (brew bin on PATH so claude hooks can find node/python)\n%s\n' \
