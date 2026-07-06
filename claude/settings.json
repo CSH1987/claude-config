@@ -1,4 +1,7 @@
 {
+  "permissions": {
+    "defaultMode": "auto"
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -174,11 +177,7 @@
     }
   },
   "effortLevel": "xhigh",
-  "permissions": {
-    "defaultMode": "auto"
-  },
   "autoUpdatesChannel": "latest",
   "skipWorkflowUsageWarning": true,
-  "theme": "dark",
-  "model": "claude-fable-5"
+  "theme": "dark"
 }
