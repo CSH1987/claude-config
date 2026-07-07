@@ -11,6 +11,15 @@
             "command": "bash \"$HOME/.claude/hooks/guardrails.sh\""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/filter-test-output.sh\""
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -113,6 +122,14 @@
             "command": "bash \"$HOME/.claude/hooks/memory-sync.sh\" start"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/hermes-sync.sh\""
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -184,9 +201,17 @@
       }
     }
   },
+  "env": {
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-fable-5",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5"
+  },
   "effortLevel": "xhigh",
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
-  "theme": "dark"
+  "theme": "dark",
+  "model": "opusplan",
+  "fallbackModel": ["claude-opus-4-8", "claude-sonnet-5"],
+  "advisorModel": "fable"
 }
