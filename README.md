@@ -187,7 +187,8 @@ claude-config/
         ├── effort-reminder.txt      # 위 리마인더 본문(.sh/.ps1 이 읽음)
         ├── config-sync.sh/.ps1      # SessionStart=pull / SessionEnd=push — 설정 레포 자동 동기화
         ├── work-autosync.sh/.ps1    # 옵트인(.claude-autosync) 작업 프로젝트 자동 백업 (시크릿 fail-closed)
-        └── model-watch.sh/.ps1      # SessionStart — 새 최고(프론티어) 모델 자동 감지·전환 (하루 1회, lib/model-watch.py)
+        ├── model-watch.sh/.ps1      # SessionStart — 새 최고(프론티어) 모델 자동 감지·전환 (하루 1회, lib/model-watch.py)
+        └── auto-update.sh/.ps1      # SessionStart — 세션 구성요소(플러그인·pwsh·node·gh·git) 안전 자동 최신화 (하루 1회, lib/auto-update.py)
 ```
 
 ## 모델 자동 스위칭 (model-watch)
@@ -197,3 +198,13 @@ claude-config/
 - **감지**: 하루 1회, 세션 시작 시 분리(detached) 프로세스가 `claude -p` 헤드리스(구독 토큰, $0)로 CLI 자신의 환경 정보에서 "가장 최신 모델 목록"을 **추출**(판단이 아니라 추출 — 모델의 자기편향 회피). CLI 자동업데이트가 이 정보를 항상 최신으로 유지.
 - **검증 후 적용**: 후보 ID 를 실제 `--model` 호출로 검증(현재 쓰던 `[1m]` 같은 변형 접미사 우선 유지) 후 `~/.claude/settings.json` 의 `model` 을 원자적으로 갱신. **다음 세션부터 적용**, 다음 세션 시작 시 전환 알림 1회 표시.
 - **안전장치**: 세션 시작을 절대 블로킹하지 않음(fail-open) · 잘못된 ID 는 전환 안 함 · 이력 `~/.claude/model-watch/history.jsonl` · 끄기 `CLAUDE_MODEL_WATCH_OFF=1` · 특정 모델 고정 시 `~/.claude/model-watch/pin` 파일 생성.
+
+## 세션 구성요소 자동 업데이트 (auto-update)
+
+Claude Code 플러그인과 세션이 의존하는 런타임(pwsh·node·gh·git)을 **사람이 신경 안 써도** 항상 최신으로, 단 **안전하게** 유지합니다. (claude-config 레포 자체는 config-sync 가 이미 매 세션 pull 로 최신화 — auto-update 는 레포를 건드리지 않음.)
+
+- **대상/방법**: 하루 1회, 세션 시작 시 분리(detached) 프로세스가 — 플러그인은 `claude plugin marketplace update`(마켓플레이스 + 설치된 플러그인 갱신), 런타임은 winget(Windows) / brew(macOS·Linuxbrew)로 업그레이드. apt/dnf 는 대화형 sudo 가 필요해 건드리지 않음(해당 런타임만 skip).
+- **안전장치(핵심)**: 세션을 절대 블로킹하지 않음(fail-open — 어떤 대상이 실패해도 세션은 정상) · 업데이트 전 **직전 버전을 KNOWN_GOOD 로 기록**(`~/.claude/auto-update/state.json`) · 런타임이 업데이트 후 `--version` 이 깨지면 **자동으로 KNOWN_GOOD 로 롤백** · 변경 이력 `~/.claude/auto-update/history.jsonl`(old→new).
+- **미리보기 / 끄기 / 고정**: 무엇을 바꿀지 미리보기(실제 변경 없음) `AUTO_UPDATE_DRY_RUN=1` · 끄기 `CLAUDE_NO_AUTO_UPDATE=1` · 자동 갱신 고정(안 함) `~/.claude/auto-update/pin` 파일 생성.
+- **롤백(수동)**: 런타임은 `state.json` 의 known_good 버전으로 `winget install --version <ver>` / `brew` 로 되돌림. 플러그인은 사용자 레벨 버전 핀이 없어(마켓플레이스 SHA 핀만 가능) 문제 시 해당 플러그인 `/plugin disable` 또는 `pin` 파일로 대응.
+- **설계 근거**: "무조건 최신"이 아니라 **안전 자동 최신**(스로틀 · fail-open · KNOWN_GOOD · 롤백 · opt-out) — 공개 마켓플레이스 코드를 매일 자동 실행하는 공급망 리스크를 낮추면서 최신성을 얻습니다(온보딩 아키텍처 결정의 supply-chain 항목과 정합).

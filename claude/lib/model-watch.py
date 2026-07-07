@@ -130,7 +130,7 @@ def run_claude(prefix, args, prompt):
     npm shim needs a `cmd /c` wrap, and cmd.exe mangles argv quotes/</> chars.
     Child env gets CLAUDE_MODEL_WATCH_OFF=1 so nested SessionStart hooks never
     re-enter this script (no recursion)."""
-    env = dict(os.environ, CLAUDE_MODEL_WATCH_OFF="1")
+    env = dict(os.environ, CLAUDE_MODEL_WATCH_OFF="1", CLAUDE_NO_AUTO_UPDATE="1")
     cp = subprocess.run(
         prefix + args,
         capture_output=True,

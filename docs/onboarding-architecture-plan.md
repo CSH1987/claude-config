@@ -48,28 +48,23 @@
 - 신뢰 경계 = GitHub 계정 + 2FA + TLS(정직하게 명시 — 지문 게이트는 설치 *이후* 커밋을 보호하지 설치 자체를 보호하진 않는다). PII는 PRIVATE 레포에만. PUBLIC 레포의 hookify pre-push PII 가드는 안전망이지 경계가 아님.
 
 ### 계층 2 — POLICY (Hermes: 이식 가능한 마크다운 정책, 런타임 아님)
-`claude-config/claude/hermes/`:
-- `roster.md` — 능력 역할(planner/executor/critic/researcher/reviewer/browser-op/ui-designer/security/ops-reliability)
-- `routing.md` — intent → role → mode → playbook → escalation 표
-- `modes.md` — smallest-fit 에스컬레이션 사다리(직접답변 → 단일 에이전트 → 모드 → autopilot/ralph)
-- `capabilities.md` — 능력 → 구체 도구(browser-automation→playwright, live-docs→context7, web-fetch→insane-search)
-- **`bindings/claude-code.md` — 모든 Claude Code 커플링이 격리된 단 하나의 파일.** 추상 역할/모드를 harness/OMC 에이전트·슬래시모드에 매핑. 미래 런타임은 자기 바인딩 파일만 새로 쓰면 됨.
-- **이중 정본 방지:** `roster.md`는 벤더 플러그인 정의에서 **projector로 생성**(DO-NOT-EDIT 배너) + CI drift 체크로 실제와 어긋나면 실패 → 정본이 조용히 거짓말하지 못함.
-- **이식성 린트**(leakscan.py 확장): 바인딩 파일 외 `hermes/*.md`에 raw `mcp__plugin_*` 이름 금지 → 정책이 재커플링 불가.
+**YAGNI 대칭 적용:** 오케스트레이터를 지금 안 짓는 논리(정본이 이식 가능하므로 추출은 그날 싸다)를 Hermes 간접층에도 똑같이 적용한다. 런타임이 하나뿐인 지금은 바인딩 격리·projector·drift-CI·이식성 린트 같은 **간접 기계를 실제 이식 트리거(비-Claude 두 번째 런타임)가 생길 때까지 보류**한다.
+- **지금(경량):** 흩어진 라우팅 정책을 `claude-config/claude/hermes/`에 **평문 마크다운으로 정리**만 한다 — `roster.md`(역할: planner/executor/critic/researcher/reviewer/browser-op/ui-designer/security/ops-reliability), `routing.md`(intent→role→mode→playbook→escalation), `modes.md`(smallest-fit 사다리: 직접답변→단일→모드→autopilot/ralph), `capabilities.md`(능력→도구: browser-automation→playwright, live-docs→context7, web-fetch→insane-search). 기존 `CLAUDE.md`/`playbooks`에 이미 있는 정책의 **단일 참조점**일 뿐, 새 실행 기계는 없다.
+- **그날(이식 트리거 시):** `bindings/<runtime>.md`로 커플링 격리 + roster를 벤더 정의에서 projector 생성 + drift-CI + 이식성 린트(leakscan.py 확장, 바인딩 밖 raw `mcp__plugin_*` 금지)를 추가. 정본이 열린 MD라 이 추출은 그날에도 싸다 — 그래서 지금 지을 이유가 자기논리상 없다.
 
 ### 계층 3 — RUNTIME (Claude Code 네이티브 글루: 싸고 교체 가능, fail-open)
 기존 훅 확장:
 - **config-sync 분리** — 정본 DATA는 자유 자동 동기화, 실행 GLUE(훅/설정)는 **지문 검증·브랜치 보호·서명된 'promote' 커밋**(메인테이너 리뷰)으로만 전진. 초보는 핀된 글루를 소비하고 아무것도 서명 안 함.
-- **memory-sync 백업 수정** — push를 취약한 SessionEnd에서 떼어 **SessionStart 멱등 backlog-flush + 세션 중 체크포인트 + best-effort end-path**로. 한 번 쓰고 끝난 세션도 반드시 푸시, 종료 경합 없음.
+- **memory-sync 백업 — 대부분 이미 선적됨:** SessionStart 백로그 자가치유(pull→ahead>0 push→정체 loud 경고) + SessionEnd commit-후-즉시-push는 **이미 배포됨**(config-sync.sh, [[decision:HOME/20260704-native-memory-merge]]). **신규는 세션 중 주기적 체크포인트 하나뿐** — 종료 경합 완전 제거용.
 - **memory-inject 단일소스 카드** — Router Card + cold-start Welcome Card를 매 배포마다 hermes 정본에서 **생성**하고, 주입 시점에 announced 역할이 살아있는 바인딩으로 해소되는지 assert(드리프트면 loud 실패).
 - **결정적 훅 순서** — memory-sync 클론이 inject 읽기 전에 완료 → cold-start(빈 프로필) 오탐 불가.
 - **model-watch = pin + canary + rollback** — git-tracked KNOWN_GOOD 프론티어 모델.
 - **crash-safe health probe(신설)** — 하드 타임아웃·fail-open·self-reporting, `events/`에 기록 + 터미널에 평문 한 줄.
-- **smallest-fit GATE(UserPromptSubmit)** — 사소한 요청에 멀티에이전트 팬아웃을 결정적으로 차단.
+- **smallest-fit 억제(정직한 한계 명시)** — 기본은 Router Card가 모델을 사소↔실작업으로 판정 편향하는 **모델 매개 넛지**다. UserPromptSubmit 훅은 컨텍스트만 주입할 뿐 그 턴의 서브에이전트 도구를 못 끄므로 '결정적 차단'이 아니다. 진짜 비용 바닥이 필요하면 PreToolUse에서 사소 판정 시 Task(서브에이전트) 스폰을 실제 막는 하드 게이트를 옵트인. 게이트 실패 모드는 **fail-open(팬아웃 허용)** — 비용 바닥은 보장이 아니라 best-effort(실작업 저출력 회피 우선).
 
 ### 계층 4 — VIEW (Obsidian: 선택·지연·옵트인·읽기 전용 렌즈, 부트스트랩 미설치)
 - PII 없는 `.obsidian` "스킨"(CORE 플러그인만: Graph/Backlinks/Outline/Search/Tags)을 PUBLIC claude-config에 배포.
-- 사용자가 옵트인하면 install helper가 (a) 환경 감지 후 headless/WSL/SSH/컨테이너/no-display 및 OneDrive/iCloud 리다이렉트 홈에서 **거부**, (b) 앱 설치, (c) 이미 클론된 claude-memory에 볼트 루트, (d) `obsidian.json`을 **지연·best-effort**로 설정(스키마 드리프트 관용, 'already running' 체크, 실패 시 마법사로 degrade — 죽은 사설 설정을 PUBLIC 레포에 넣지 않음).
+- 사용자가 옵트인하면 install helper가 (a) 환경 감지 후 headless/WSL/SSH/컨테이너/no-display 및 OneDrive/iCloud 리다이렉트 홈에서 **거부**, (b) 앱 설치, (c) 기존 `vaultdir.sh` **분리-볼트**(`$HOME/obsidian-vault`)에 루트 + 정본 단방향 투영(claude-memory 직접 루팅 안 함 → `.obsidian` 자동싱크 오염 방지), (d) `obsidian.json`을 **지연·best-effort**로 설정(스키마 드리프트 관용, 'already running' 체크, 실패 시 마법사로 degrade — 죽은 사설 설정을 PUBLIC 레포에 넣지 않음).
 - ~$0 vault-index 훅이 MOC(Home/Decisions/Profile/Activity/Agents + 원장 기반 System Health 노트)를 **별도 gitignore된 view 디렉터리**에 재생성 — 정본 결정 파일엔 절대 안 씀, Obsidian 있을 때만 실행.
 - 지식층은 **헤드리스로도** 항상 주입되는 마크다운 포인터 + 라우팅 요약으로 전달 → 앱을 안 깔아도 손해 없음.
 
@@ -86,7 +81,7 @@
 | 5 | crash-safe health probe가 평문 한 줄. 정상=간결('시스템 정상'), 비정상=시끄럽고 실행가능('run: claude repair') | AUTO |
 | 6 | 빈 프롬프트 대신 Welcome Card: "최대 성능으로 셋업됨 — 평문으로 원하는 걸 말하세요. 예: '간단한 웹사이트 만들어줘'" 프로필 생기는 순간 자동 은퇴 | AUTO |
 | 7 | 평문 목표 입력(언어 무관, 프로필 따라 기본 한국어). 설정·플래그·슬래시 명령 없음 | **YOU (1회)** |
-| 8 | 모델이 Router Card 읽고 intent 분류, smallest-fit GATE 결정: 사소=직접답변(팬아웃 차단), 실제 기능=executor+critic + 평문 한 줄 고지('이 작업은 executor+critic로 진행합니다'), 강한 must-pass 신호면 /ralph·/autopilot로 에스컬레이션. xhigh+ultracode+검증최신모델 이미 가동 | AUTO |
+| 8 | 모델이 Router Card 읽고 intent 분류, smallest-fit 판정(모델 매개): 사소=직접답변(팬아웃 억제), 실제 기능=executor+critic + 평문 한 줄 고지('이 작업은 executor+critic로 진행합니다'), 강한 must-pass 신호면 /ralph·/autopilot로 에스컬레이션. xhigh+ultracode+검증최신모델 이미 가동 | AUTO |
 | 9 | 무거운 작업 전 비용/레이트 한 줄 고지 + 기본 상한. 초보가 조용히 최고가 모델+xhigh+팬아웃에 얹히지 않음 | AUTO |
 | 10 | 세션 종료 시 메모리 자동 커밋, backlog-flush+end-path가 한 번뿐인 세션도 푸시 보장. 오프라인/인증실패 백로그는 다음 시작 시 평문 고지(안 된 걸 '됐다'고 안 함) | AUTO |
 | 11 | **실제 가치가 쌓인 뒤에만**(첫 `[[wikilink]]`/N번째 결정) 코치가 세션당 최대 1회 제안: "지식을 그래프로 볼래요? Obsidian 세팅해줄게요." 거절 무비용·기억됨 | AUTO (나중) |
@@ -99,8 +94,8 @@
 - **검증-최신 프론티어 모델(지배적 레버):** model-watch가 KNOWN_GOOD 유지 + 작은 결정적 헤드리스 스모크(툴콜·출력형식·거부 sanity·컨텍스트/가격 sanity) 통과 시에만 승격 → 첫 턴이 *증명된* 최고 모델로. 롤백은 settings 값 `git revert` 한 줄.
 - **경계된 staleness:** 새 프론티어 모델이 N일간 미승격이면 health 라인이 알리고 최신으로 원커맨드 opt-in 제공 → '최대 성능' 약속과 안전 양립.
 - **effortLevel=xhigh 영구 + ultracode 자동:** 최고 추론·동적 멀티에이전트가 out-of-box.
-- **smallest-fit 라우팅을 결정적 게이트로:** UserPromptSubmit 훅이 사소한 요청의 팬아웃 차단 → 한 줄짜리에 토큰/지연/비용 안 태움.
-- **바이트-고정 주입 프리픽스(정직한 캐시 = 지연/비용, 품질 아님):** memory-inject가 바이트 동일 CLAUDE.md+프로필+얇은 도구면 방출, 휘발 토큰(날짜·세션id)은 캐시 브레이크포인트 뒤로, 11개 플러그인 스키마는 defer. `cache_read_input_tokens` 로깅으로 온기 상시 증명.
+- **smallest-fit 라우팅(모델 매개 넛지 + 옵트인 하드 게이트):** 기본은 Router Card가 사소한 요청을 직접답변으로 편향. 결정적 비용 바닥이 필요하면 PreToolUse에서 서브에이전트 스폰을 막는 하드 게이트를 옵트인(실패 시 fail-open). '보장'이 아니라 기본값 편향 + 옵트인 강제.
+- **바이트-고정 주입 프리픽스(정직한 캐시 = 지연/비용, 품질 아님):** memory-inject가 바이트 동일 CLAUDE.md+프로필+얇은 도구면 방출, 휘발 토큰(날짜·세션id)은 캐시 브레이크포인트 뒤로, 12개 플러그인 스키마는 defer. `cache_read_input_tokens` 로깅으로 온기 상시 증명.
 - **올바른 순서의 캐시 프리웜(선택):** 유효한 프리필(max_tokens≥1, no-stream/thinking/forced-tool), 실제 턴과 *정확히 같은* 프리픽스, **pull-후-웜**, TTL 넘을 설치면 스킵. TTFT/비용 절감으로만 판매(품질 주장 아님).
 - **팬아웃 캐시 규율:** 병렬 서브에이전트는 부모의 모델+도구+고정 프리픽스 상속(append-only), 오케스트레이터가 첫 요청의 첫 토큰을 기다린 뒤 나머지 발사 → 콜드 쓰기 N회 대신 방금 쓴 캐시 읽기. 독립 서브태스크는 effort:low로 비용 절감(메인은 xhigh 유지).
 - **A1 개인화 무비용:** 라우팅 기본값이 주입 프로필(자동화 선호·xhigh·한국어) 읽어 사용자별 튜닝. '자동화 선호'는 다단계를 autopilot/ralph로 기울임.
@@ -109,31 +104,31 @@
 
 ## 6. Hermes 오케스트레이션층 (구체)
 
-Hermes는 **오케스트레이션 정책층**이며, `claude-config/claude/hermes/`의 PUBLIC 이식 가능 마크다운으로 표현되고 이미 설치된 네이티브 오케스트레이터(harness+OMC)가 **실행**한다 — 별도 런타임 아님. 4개 정본 아티팩트(roster/routing/modes/capabilities) + 커플링 격리 바인딩 1개. roster는 벤더 플러그인에서 projector로 생성·drift 체크되어 거짓말 불가. 이식성 린트가 바인딩 밖 raw 플러그인명 금지. 자동 활성은 기존 레일 재사용: config-sync 배포 + ensure-harness가 바인딩 해소 검증(self-heal-or-warn) + Router Card 결정적 주입(정본에서 생성, 역할 해소 assert). 초보는 평문 한 문장 → 모델이 xhigh+ultracode로 카드 읽고 smallest-fit 자기선택 → 한 줄 고지 후 네이티브 실행. 각 라우팅 결정은 `events/`에 로깅되어 기존 `/retro`→`/promote`(사람 리뷰·PII-free) 루프로 자기개선.
+Hermes는 **오케스트레이션 정책층**이며, `claude-config/claude/hermes/`의 PUBLIC 이식 가능 마크다운으로 표현되고 이미 설치된 네이티브 오케스트레이터(harness+OMC)가 **실행**한다 — 별도 런타임 아님. **YAGNI 대칭:** 지금은 4개 정본 아티팩트(roster/routing/modes/capabilities)를 **평문으로 정리**만 하고, 커플링 격리 바인딩·projector·drift-CI·이식성 린트 같은 간접 기계는 **실제 이식 트리거까지 보류**한다(정본이 열린 MD라 그날 추출도 쌈). 자동 활성은 기존 레일 재사용: config-sync 배포 + ensure-harness가 역할→에이전트 해소 검증(self-heal-or-warn; 바인딩 트리 없이도 roster 역할이 살아있는 에이전트로 매핑되는지 확인) + Router Card 결정적 주입(정본에서 생성, 역할 해소 assert). 초보는 평문 한 문장 → 모델이 xhigh+ultracode로 카드 읽고 smallest-fit 자기선택 → 한 줄 고지 후 네이티브 실행. 각 라우팅 결정은 `events/`에 로깅되어 기존 `/retro`→`/promote`(사람 리뷰·PII-free) 루프로 자기개선.
 
 ---
 
 ## 7. Obsidian 연동 (파일시스템 정본 + 옵트인 렌즈)
 
-파일시스템/git이 **항상** system of record. Obsidian은 선택·지연·옵트인·읽기전용 렌즈, 부트스트랩 미설치, 세션 핫패스에 절대 없음. 볼트는 이미 클론된 claude-memory에 직접 루트(임포트·복사 0) — 그래프는 이미 데이터에 존재(frontmatter id/status/supersedes/projects/tags + `[[wikilink]]`)하므로 CORE 플러그인만으로 구조를 *드러냄*(강요 아님), 커뮤니티 플러그인 safe-mode 신뢰 프롬프트 회피. `obsidian.json`은 지연·best-effort(스키마 감지, running 체크, atomic temp-write+rename, 실패 시 마법사 degrade). MOC는 gitignore된 view 디렉터리에 read-only 배너로 재생성, 정본 결정 파일엔 안 씀. 환경 거부(headless/WSL/클라우드 홈). 볼트=PRIVATE(PII), 공개 동기화 절대 없음. 선택적 Local REST API MCP는 핫패스 밖, 키는 어떤 레포에도 안 들어감. 지식층은 헤드리스로도 항상 주입 포인터로 전달.
+파일시스템/git이 **항상** system of record. Obsidian은 선택·지연·옵트인·읽기전용 렌즈, 부트스트랩 미설치, 세션 핫패스에 절대 없음. **볼트 모델(기존 `vaultdir.sh`와 정렬):** claude-memory를 직접 볼트로 삼지 **않는다** — 이미 배포된 `vaultdir.sh`가 해석하는 **별도 볼트**(`$HOME/obsidian-vault`, Claude 산출물은 `<vault>/Claude` 하위)에 두고, 정본 마크다운은 그 볼트로 **단방향 투영/심링크**한다. 이렇게 해야 config-sync의 `git add -A` 자동커밋이 `.obsidian/`(workspace·.trash·cache)을 PRIVATE 정본 트리에 편입시키는 **오염을 원천 차단**한다(분리-볼트 = Obsidian이 읽기뿐 아니라 **싱크 경로에서도 비-load-bearing**). 그래프는 이미 데이터에 존재(frontmatter id/status/supersedes/projects/tags + `[[wikilink]]`)하므로 CORE 플러그인만으로 구조를 *드러냄*(강요 아님), 커뮤니티 플러그인 safe-mode 신뢰 프롬프트 회피. `obsidian.json`은 지연·best-effort(스키마 감지, running 체크, atomic temp-write+rename, 실패 시 마법사 degrade). MOC는 gitignore된 view 디렉터리에 read-only 배너로 재생성, 정본 결정 파일엔 안 씀. (볼트를 정본 위에 얹는 변형을 굳이 쓴다면 `.obsidian/` 자체를 반드시 gitignore + config-sync push 가드에 등록 — 그러나 분리-볼트가 기본 권장.) 환경 거부(headless/WSL/클라우드 홈). 볼트=PRIVATE(PII), 공개 동기화 절대 없음. 선택적 Local REST API MCP는 핫패스 밖, 키는 어떤 레포에도 안 들어감. 지식층은 헤드리스로도 항상 주입 포인터로 전달.
 
 ---
 
 ## 8. 전파 (any PC / new user)
 
-기존 레일에 얹되 강화: (1) **부트스트랩** — 핀된(tag/SHA) 한 줄, 라이브 진행·멱등 재개, 로그인 2회 안내 + 계정 생성 폴백. (2) **config-sync** — DATA 자유 pull, GLUE는 지문검증·서명 promote만; 검증 공개키는 **레포 밖(out-of-band)** 공개, 실제 경계는 GitHub 계정+2FA+TLS로 정직히 명시. (3) **memory/vault bootstrap** — memory-sync 자동 클론(자가치유), memory-inject가 A1+Router Card 재구성, Obsidian 옵트인 이력 있으면 스킨+볼트 등록 재현(PII 경계 안 넘김). (4) **self-heal** — SessionStart 훅 멱등 stat-then-heal·fail-open·하드타임아웃. (5) **supply-chain** — 11개 플러그인 SHA 핀 + 주간 헤드리스 bump-and-smoke 자동 PR(글루 영향 bump는 사람 리뷰, 보안 권고 별도 체크). Obsidian 설치 여부와 무관하게 전파.
+기존 레일에 얹되 강화: (1) **부트스트랩** — 핀된(tag/SHA) 한 줄, 라이브 진행·멱등 재개, 로그인 2회 안내 + 계정 생성 폴백. (2) **config-sync** — DATA 자유 pull, GLUE는 지문검증·서명 promote만; 검증 공개키는 **레포 밖(out-of-band)** 공개, 실제 경계는 GitHub 계정+2FA+TLS로 정직히 명시. (3) **memory/vault bootstrap** — memory-sync 자동 클론(자가치유), memory-inject가 A1+Router Card 재구성, Obsidian 옵트인 이력 있으면 스킨+볼트 등록 재현(PII 경계 안 넘김). (4) **self-heal** — SessionStart 훅 멱등 stat-then-heal·fail-open·하드타임아웃. (5) **supply-chain** — 12개 플러그인 SHA 핀 + 주간 헤드리스 bump-and-smoke 자동 PR(글루 영향 bump는 사람 리뷰, 보안 권고 별도 체크). Obsidian 설치 여부와 무관하게 전파.
 
 ---
 
 ## 9. 마이그레이션 단계 (작고 되돌릴 수 있게)
 
-- **Phase 0 — 신뢰성 바닥:** memory-sync push를 SessionStart backlog-flush + 체크포인트 + end-path로(백업 유실 사건 직접 봉합). crash-safe health probe 추가. 부트스트랩·플러그인 SHA 핀. *각각 훅/설정 1개 revert로 되돌림.*
-- **Phase 1 — Hermes 정본 정책층(행동 변화 0):** `hermes/{roster,routing,modes,capabilities}.md + bindings/claude-code.md`. roster projector + drift 체크 + 이식성 린트. ensure-harness 바인딩 검증. *순수 추가 → 디렉터리 삭제로 원복.*
+- **Phase 0 — 신뢰성 바닥:** (현상 정정) SessionStart 백로그 자가치유 + SessionEnd commit-후-즉시-push는 **이미 선적됨**([[decision:HOME/20260704-native-memory-merge]], config-sync.sh). **신규는 세션 중 주기적 체크포인트 하나뿐**. + crash-safe health probe + 부트스트랩·플러그인 SHA 핀. *각각 훅/설정 1개 revert로 되돌림.*
+- **Phase 1 — Hermes 정책 정리(경량, 행동 변화 0):** 흩어진 라우팅 정책을 `hermes/{roster,routing,modes,capabilities}.md` **평문 마크다운으로 정리만**(새 실행 기계 없음). **간접 기계(bindings 격리·projector·drift-CI·이식성 린트)는 실제 이식 트리거까지 보류** — 오케스트레이터와 동일한 YAGNI. *순수 추가 → 디렉터리 삭제로 원복.*
 - **Phase 2 — 단일소스 카드 + 결정적 순서:** memory-inject가 Router/Welcome Card 생성·역할 해소 assert. 훅 순서 수정(cold-start 경합 제거). *플래그 게이트 → 끄면 이전 침묵.*
-- **Phase 3 — smallest-fit 게이트 + 비용 가드:** 에스컬레이션 사다리를 UserPromptSubmit 훅으로(사소 팬아웃 차단) + 비용 한 줄 고지·기본 상한. *게이트 훅 끄면 원복.*
+- **Phase 3 — smallest-fit 억제 + 비용 가드:** 기본은 Router Card 모델 매개 편향; **옵트인** 하드 게이트는 PreToolUse에서 서브에이전트 스폰 차단(실패 시 fail-open, 비용 바닥은 best-effort). + 비용 한 줄 고지·기본 상한. *게이트 훅 끄면 원복.*
 - **Phase 4 — 검증 모델 + 게이트 글루(신뢰성 평면):** model-watch KNOWN_GOOD 핀+canary+rollback+staleness opt-in. config-sync DATA-auto vs 서명 GLUE-promote 분리. hookify PII 가드 무장. 검증키 out-of-band. *git-tracked 값 revert로 원복.*
 - **Phase 5 — 스키마 버전화 + 무손실 보존:** SCHEMA.md 버전화, forward-only·backup-before-migrate·멱등 마이그레이션 + 호환 게이트(로컬 코드가 스키마 못 다루면 거부→뒤처진 머신 브릭 방지), 불변 백업, 스모크. 보존/압축은 정본 무손실(재생성 가능 텔레메트리만 압축, 결정/프로필은 archive-not-delete + 인덱스, 정본 프루닝은 사람 확인).
-- **Phase 6 — Obsidian 옵트인 렌즈(마지막, 완전 선택):** PII-free CORE 스킨, 코치 훅 세션당 1회 제안(가치 쌓인 뒤), install helper(환경 거부·지연 obsidian.json·gitignore view 디렉터리·present-only vault-index·클린 언인스톨). *구성상 비-load-bearing → 통째로 드롭해도 코어 성능 영향 0.*
+- **Phase 6 — Obsidian 옵트인 렌즈(마지막, 완전 선택):** 기존 `vaultdir.sh` **분리-볼트 모델과 조정**(별도 `$HOME/obsidian-vault` + 정본 단방향 투영, `.obsidian/` gitignore·push 가드 명시). PII-free CORE 스킨, 코치 훅 세션당 1회 제안(가치 쌓인 뒤), install helper(환경 거부·지연 obsidian.json·gitignore view 디렉터리·present-only vault-index·클린 언인스톨). *구성상 비-load-bearing → 통째로 드롭해도 코어 성능 영향 0.*
 
 ---
 
@@ -168,8 +163,18 @@ Hermes는 **오케스트레이션 정책층**이며, `claude-config/claude/herme
 
 ## 12. 결정 (Decision Record 요약)
 
-우리는 온보딩 아키텍처를 **"Headless-First Core with a Deferred Obsidian Lens, over a Verified Gated-Glue reliability plane"** 으로 구축한다. (1) 핀된 한 줄 부트스트랩이 유일한 초보 관문, 로그인 2회 정직 안내·라이브 진행·멱등 재개. (2) 모든 성능 기본값(검증-최신 모델·xhigh·ultracode·harness/OMC)은 사전 배선되어 '최대 성능'이 out-of-box, 사소 요청엔 결정적 smallest-fit 게이트 + 비용 한 줄. (3) Hermes는 `claude-config/claude/hermes/`의 PUBLIC 이식 마크다운(roster는 벤더에서 생성·drift 체크, 커플링은 바인딩 1파일, 이식성 린트)로 harness/OMC가 실행, 단일소스 Router/Welcome Card가 역할 드리프트에 loud 실패. (4) 신뢰성 일급: SessionStart backlog-flush로 백업 유실 봉합, crash-safe health probe 평문 한 줄, config-sync DATA-auto/서명 GLUE-promote 분리·검증키 out-of-band, 플러그인 SHA 핀, 스키마 마이그레이션 호환 게이트+불변 백업+무손실 보존. (5) Obsidian은 부트스트랩 미설치·비-load-bearing — 옵트인·환경가드·CORE-only 읽기 렌즈, MOC는 gitignore view, 지식층은 헤드리스 주입 포인터로도 전달. **이유:** 첫 턴 최대 성능·거의 0 마찰을 주고, 이식성 불변식을 구성상 참으로 유지하며, 침묵 실패와 계정-경계 리스크에 몇 년을 버틴다 — 모든 추가 메커니즘이 기존 claude-config 훅 패턴을 복제해 새 런타임 없이 YAGNI를 지킨다.
+우리는 온보딩 아키텍처를 **"Headless-First Core with a Deferred Obsidian Lens, over a Verified Gated-Glue reliability plane"** 으로 구축한다. (1) 핀된 한 줄 부트스트랩이 유일한 초보 관문, 로그인 2회 정직 안내·라이브 진행·멱등 재개. (2) 모든 성능 기본값(검증-최신 모델·xhigh·ultracode·harness/OMC)은 사전 배선되어 '최대 성능'이 out-of-box, 사소 요청엔 smallest-fit 억제(모델 매개 기본 + 옵트인 하드 게이트, fail-open) + 비용 한 줄. (3) Hermes는 `claude-config/claude/hermes/`의 PUBLIC 이식 마크다운으로 harness/OMC가 실행 — 지금은 정책 정리만, 간접 기계(projector·drift-CI·바인딩 격리·린트)는 이식 트리거까지 보류(YAGNI 대칭), 단일소스 Router/Welcome Card가 역할 드리프트에 loud 실패. (4) 신뢰성 일급: SessionStart backlog-flush로 백업 유실 봉합, crash-safe health probe 평문 한 줄, config-sync DATA-auto/서명 GLUE-promote 분리·검증키 out-of-band, 플러그인 SHA 핀, 스키마 마이그레이션 호환 게이트+불변 백업+무손실 보존. (5) Obsidian은 부트스트랩 미설치·비-load-bearing — 옵트인·환경가드·CORE-only 읽기 렌즈, MOC는 gitignore view, 지식층은 헤드리스 주입 포인터로도 전달. **이유:** 첫 턴 최대 성능·거의 0 마찰을 주고, 이식성 불변식을 구성상 참으로 유지하며, 침묵 실패와 계정-경계 리스크에 몇 년을 버틴다 — 모든 추가 메커니즘이 기존 claude-config 훅 패턴을 복제해 새 런타임 없이 YAGNI를 지킨다.
 
 ---
 
-*생성: 2026-07-05 · 멀티에이전트 기획(12 에이전트) 통합 · 정본 결정 레코드: `claude-memory decisions/HOME/`*
+## 13. 아키텍트 검증 반영 (1라운드 · D1~D4)
+
+아키텍트가 기획서를 **실제 배포 코드와 대조** 검증(조건부 APPROVED). 척추는 유지, 4개 정합성 결함을 정정:
+
+- **D1 (성능·정직성) — smallest-fit "결정적 게이트" 과장 정정.** UserPromptSubmit 훅은 그 턴의 서브에이전트 도구를 못 끄므로 결정적 차단 불가. → **모델 매개 넛지(기본) + PreToolUse 하드 게이트(옵트인, 실패 시 fail-open)** 로 정정하고 "보장"을 "best-effort"로 강등(§3 계층3·§5·§9 Phase3·§12).
+- **D2 (이식성·안전) — 볼트를 claude-memory에 루팅하면 config-sync `git add -A`가 `.obsidian/`를 정본에 자동 편입.** → 이미 배포된 `vaultdir.sh`의 **분리-볼트**(`$HOME/obsidian-vault`) + 정본 단방향 투영으로 정렬해 오염을 원천 차단(§3 계층4·§7·§9 Phase6).
+- **D3 (정직성) — Phase 0가 이미 선적된 백업 수정을 그린필드처럼 재제안.** → SessionStart 백로그 자가치유 + SessionEnd 즉시 push는 **이미 배포됨**([[decision:HOME/20260704-native-memory-merge]]), **신규는 세션 중 체크포인트뿐**으로 현상 정정(§3 계층3·§9 Phase0).
+- **D4 (내부 모순) — 자기 YAGNI를 오케스트레이터엔 적용, Hermes 간접층엔 미적용.** → **대칭 적용**: 지금은 라우팅 정책을 평문으로 정리만, 간접 기계(projector·drift-CI·바인딩 격리·린트)는 실제 이식 트리거까지 보류(§2·§3 계층2·§6·§9 Phase1).
+- NIT: 플러그인 수 11 → **12**로 정정(§5·§8).
+
+*생성: 2026-07-05 · 멀티에이전트 기획(12 에이전트) 통합 + 아키텍트 검증 1라운드 반영(D1~D4) · 정본 결정 레코드: `claude-memory decisions/HOME/`*
