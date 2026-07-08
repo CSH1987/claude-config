@@ -178,9 +178,11 @@ ln -sfn "$REPO_DIR/claude/hooks/guardrails.sh"       "$DST/hooks/guardrails.sh"
 ln -sfn "$REPO_DIR/claude/hooks/guardrails.py"       "$DST/hooks/guardrails.py"
 ln -sfn "$REPO_DIR/claude/hooks/edit-track.sh"       "$DST/hooks/edit-track.sh"
 ln -sfn "$REPO_DIR/claude/hooks/stop-metrics.sh"     "$DST/hooks/stop-metrics.sh"
-chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/memory-inject.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/session-events.sh" "$REPO_DIR/claude/hooks/reconcile-check.sh" "$REPO_DIR/claude/hooks/morning-brief.sh" "$REPO_DIR/claude/hooks/model-watch.sh" "$REPO_DIR/claude/hooks/auto-update.sh" "$REPO_DIR/claude/hooks/memory-sync.sh" "$REPO_DIR/claude/hooks/guardrails.sh" "$REPO_DIR/claude/hooks/edit-track.sh" "$REPO_DIR/claude/hooks/stop-metrics.sh"
+ln -sfn "$REPO_DIR/claude/hooks/filter-test-output.sh" "$DST/hooks/filter-test-output.sh"
+ln -sfn "$REPO_DIR/claude/hooks/hermes-sync.sh"      "$DST/hooks/hermes-sync.sh"
+chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/memory-inject.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/session-events.sh" "$REPO_DIR/claude/hooks/reconcile-check.sh" "$REPO_DIR/claude/hooks/morning-brief.sh" "$REPO_DIR/claude/hooks/model-watch.sh" "$REPO_DIR/claude/hooks/auto-update.sh" "$REPO_DIR/claude/hooks/memory-sync.sh" "$REPO_DIR/claude/hooks/guardrails.sh" "$REPO_DIR/claude/hooks/edit-track.sh" "$REPO_DIR/claude/hooks/stop-metrics.sh" "$REPO_DIR/claude/hooks/filter-test-output.sh" "$REPO_DIR/claude/hooks/hermes-sync.sh"
 printf '%s' "$REPO_DIR" > "$DST/.config-sync-path"   # config-sync 가 레포 위치를 찾도록
-echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, model-watch, auto-update, morning-brief, memory-sync, guardrails, edit-track, stop-metrics)"
+echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, model-watch, auto-update, morning-brief, memory-sync, guardrails, edit-track, stop-metrics, filter-test-output, hermes-sync)"
 
 # leak-guard (M1): route this repo's git hooks to the versioned claude/githooks (pre-commit/pre-push).
 # Repo-local config; blocks PII/secrets in config-sync's auto-commit/push to the PUBLIC repo. config-sync 본문 무수정.
@@ -213,7 +215,8 @@ ln -sfn "$REPO_DIR/claude/lib/dashboard.py" "$DST/lib/dashboard.py"
 ln -sfn "$REPO_DIR/claude/lib/seed-leakwords.py" "$DST/lib/seed-leakwords.py"
 ln -sfn "$REPO_DIR/claude/lib/memory-bootstrap.sh"  "$DST/lib/memory-bootstrap.sh"
 ln -sfn "$REPO_DIR/claude/lib/memory-bootstrap.ps1" "$DST/lib/memory-bootstrap.ps1"
-chmod +x "$REPO_DIR/claude/lib/memory-bootstrap.sh" 2>/dev/null || true
+ln -sfn "$REPO_DIR/claude/lib/vaultdir.sh"          "$DST/lib/vaultdir.sh"
+chmod +x "$REPO_DIR/claude/lib/memory-bootstrap.sh" "$REPO_DIR/claude/lib/vaultdir.sh" 2>/dev/null || true
 
 # 워크플로 (Workflow 도구의 named workflow — 모든 머신에서 Workflow({name:'expert-debate'}) 호출 가능)
 mkdir -p "$DST/workflows"
@@ -229,7 +232,24 @@ for s in "$REPO_DIR"/claude/skills/*/; do
   if [ -e "$DST/skills/$n" ] && [ ! -L "$DST/skills/$n" ]; then rm -rf "$DST/skills/$n"; fi
   ln -sfn "${s%/}" "$DST/skills/$n"
 done
-echo "  ✓ skills linked (playbooks, retro, reconcile → ~/.claude/skills)"
+echo "  ✓ skills linked (playbooks, retro, reconcile, hermes-bridge, workload-optimization → ~/.claude/skills)"
+
+# 사용자 에이전트 (hermes-liaison 등) — CLAUDE.md 가 라우팅하는 에이전트를 ~/.claude/agents 에
+# 배포해 실제 발화가 가능하게 한다 (미배포 시 참조만 되고 발화 불가; skills 루프와 동일 패턴).
+mkdir -p "$DST/agents"
+for a in "$REPO_DIR"/claude/agents/*; do
+  [ -e "$a" ] || continue
+  n="$(basename "$a")"
+  if [ -e "$DST/agents/$n" ] && [ ! -L "$DST/agents/$n" ]; then rm -rf "$DST/agents/$n"; fi
+  ln -sfn "$a" "$DST/agents/$n"
+done
+echo "  ✓ agents linked (hermes-liaison → ~/.claude/agents)"
+
+# exports (portable-rules 등) — hermes-sync 훅이 ~/.claude/exports/portable-rules.md 를 읽으므로
+# 디렉터리째 링크해 항상 최신본이 보이게 한다.
+if [ -e "$DST/exports" ] && [ ! -L "$DST/exports" ]; then rm -rf "$DST/exports"; fi
+ln -sfn "$REPO_DIR/claude/exports" "$DST/exports"
+echo "  ✓ exports linked (portable-rules → ~/.claude/exports)"
 chmod +x "$REPO_DIR/claude/lib/memdir.sh" "$REPO_DIR/claude/lib/events.sh" "$REPO_DIR/claude/lib/pending.sh" "$REPO_DIR/claude/lib/metrics.sh"
 echo "  ✓ lib linked (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder, model-watch + auto-update engines)"
 
@@ -297,7 +317,21 @@ d.setdefault("effortLevel", s.get("effortLevel","xhigh"))  # 없을 때만 — �
 d.setdefault("permissions",{}).setdefault("defaultMode", s.get("permissions",{}).get("defaultMode","auto"))  # 소스의 defaultMode(현재 bypassPermissions) — 없을 때만; 기존 사용자 선택 보존
 if "skipDangerousModePermissionPrompt" in s:  # bypass 진입 시 위험 경고창 스킵 — 심링크 아닌 머지 경로 머신도 무프롬프트가 되도록(없을 때만; 사용자 선택 보존)
     d.setdefault("skipDangerousModePermissionPrompt", s["skipDangerousModePermissionPrompt"])
+# 모델 전략(적응형 플랜) — 레포가 정본(항상 소스값으로 갱신): model 별칭(opusplan)과
+# env 재매핑(ANTHROPIC_DEFAULT_*)·fallbackModel·advisorModel 은 전 머신 동기화 대상.
+# 직지정(concrete id) 잔재는 이 덮어쓰기로 자연 치유되고, model-watch 의 새 프런티어
+# 재매핑도 레포 settings 를 거쳐 여기서 전파된다. env 는 키 단위 갱신 — 머신 로컬 env
+# 키(토큰 등)는 보존.
+if "model" in s: d["model"]=s["model"]
+else: d.pop("model", None)  # 레포가 model 무지정이면 직지정 잔재 제거(계정 기본값 사용)
+if isinstance(s.get("env"), dict): d.setdefault("env",{}).update(s["env"])
+for k in ("fallbackModel","advisorModel"):
+    if k in s: d[k]=s[k]
+for k in ("theme","autoUpdatesChannel","skipWorkflowUsageWarning"):  # 개인 취향 키 — 없을 때만(사용자 선택 보존)
+    if k in s: d.setdefault(k, s[k])
 # 소스의 모든 hook 이벤트(SessionStart, SessionEnd, ...)를 머지. 자가 치유 dedup(순서 보존).
+# 그룹의 matcher(예: filter-test-output 의 "Bash")를 보존·동기화한다 — 유실 시 PreToolUse 훅이
+# 모든 도구 호출마다 발화하는 회귀가 있었음(install.ps1 의 matcher 사양과 대칭).
 hk=d.setdefault("hooks",{})
 for event, groups in s.get("hooks",{}).items():
     cur=hk.setdefault(event,[])
@@ -308,20 +342,39 @@ for event, groups in s.get("hooks",{}).items():
         if key: seen.add(key)
         dedup.append(g)
     cur=dedup
+    src_matcher={h["command"]: g.get("matcher") for g in groups for h in g.get("hooks",[]) if h.get("command")}
+    for g in cur:  # 자가치유: 관리 명령만 담긴 기존 그룹의 matcher 를 소스 사양에 맞춤(사용자 훅 그룹 불변)
+        cmds=[h.get("command") for h in g.get("hooks",[])]
+        if cmds and all(c in src_matcher for c in cmds):
+            m=src_matcher[cmds[0]]
+            if m is None: g.pop("matcher", None)
+            else: g["matcher"]=m
     have={h.get("command") for g in cur for h in g.get("hooks",[])}
     for g in groups:
         for h in g.get("hooks",[]):
             if h.get("command") and h["command"] not in have:
-                cur.append({"hooks":[{"type":"command","command":h["command"]}]}); have.add(h["command"])
+                ng={"hooks":[{"type":"command","command":h["command"]}]}
+                if g.get("matcher"): ng["matcher"]=g["matcher"]
+                cur.append(ng); have.add(h["command"])
     hk[event]=cur
 # 자동업데이트 항상 ON(1/2): settings 의 비활성 레버 제거 (autoupdates→settings 마이그레이션 대비; "0" 도 truthy 라 끄므로 키째 제거)
 if isinstance(d.get("env"), dict): d["env"].pop("DISABLE_AUTOUPDATER", None)
-json.dump(d,open(dst,"w"),indent=2,ensure_ascii=False); open(dst,"a").write("\n")
+# 원자적 쓰기(tmp+rename): detached model-watch probe 등 동시 읽기가 잘린 파일을 보지 않도록.
+import os
+tmp=dst+".tmp-install-merge"
+with open(tmp,"w") as f:
+    json.dump(d,f,indent=2,ensure_ascii=False); f.write("\n")
+os.replace(tmp,dst)
 PY
   echo "  ✓ settings merged (기존 보존, 백업됨)"
 else
   echo "  ! python3 미설치 — settings 머지 건너뜀 (symlink 사용 권장 또는 python3 설치 후 재실행)"
 fi
+
+# 배포 스탬프: payload 가 어느 HEAD 기준으로 배치됐는지 기록. config-sync 는 이 스탬프와
+# 현재 HEAD 를 비교해 deploy 필요 여부를 판정한다("자기 pull 로 변경됐을 때만" 방식은 세션의
+# 수동 git pull 이 선점하면 배포가 무기한 표류하는 갭이 있었음 — 2026-07-08 사건).
+git -C "$REPO_DIR" rev-parse HEAD > "$DST/.last-deployed-head" 2>/dev/null || true
 
 # 테스트/CI·자동동기화용 deploy-only: payload(훅·settings·CLAUDE.md·ultracode.json)만 배치하고
 # 머신상태(셸 래퍼·플러그인·PATH 등)는 건너뜀 — 멱등·부작용 없음(config-sync 가 매 변경마다 호출).

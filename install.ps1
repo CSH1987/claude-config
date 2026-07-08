@@ -25,9 +25,11 @@ Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.ps1')      (Join-Path $ho
 Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.py')       (Join-Path $hooks 'guardrails.py')       -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\edit-track.ps1')      (Join-Path $hooks 'edit-track.ps1')      -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\stop-metrics.ps1')    (Join-Path $hooks 'stop-metrics.ps1')    -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\filter-test-output.ps1') (Join-Path $hooks 'filter-test-output.ps1') -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\hermes-sync.ps1')     (Join-Path $hooks 'hermes-sync.ps1')     -Force
 # config-sync 가 레포 위치를 찾도록 기록 (BOM 없이)
 [System.IO.File]::WriteAllText((Join-Path $dst '.config-sync-path'), $repoDir, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, model-watch, auto-update, morning-brief, memory-sync, guardrails, edit-track, stop-metrics)'
+Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, model-watch, auto-update, morning-brief, memory-sync, guardrails, edit-track, stop-metrics, filter-test-output, hermes-sync)'
 
 # 평생 기억저장소 경로 resolver(memdir) 복사 — 모든 hook·skill 이 호출하는 단일 진실원(경로만, 데이터 없음).
 $lib = Join-Path $dst 'lib'
@@ -48,7 +50,8 @@ Copy-Item (Join-Path $repoDir 'claude\lib\dashboard.py') (Join-Path $lib 'dashbo
 Copy-Item (Join-Path $repoDir 'claude\lib\seed-leakwords.py') (Join-Path $lib 'seed-leakwords.py') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\memory-bootstrap.ps1') (Join-Path $lib 'memory-bootstrap.ps1') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\memory-bootstrap.sh')  (Join-Path $lib 'memory-bootstrap.sh')  -Force
-Write-Host '  ✓ lib copied (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder, model-watch engine, auto-update engine)'
+Copy-Item (Join-Path $repoDir 'claude\lib\vaultdir.sh')          (Join-Path $lib 'vaultdir.sh')          -Force
+Write-Host '  ✓ lib copied (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder, model-watch engine, auto-update engine, vaultdir)'
 
 # 워크플로 (Workflow 도구의 named workflow — 모든 머신에서 Workflow({name:'expert-debate'}) 호출 가능)
 $workflows = Join-Path $dst 'workflows'
@@ -67,7 +70,26 @@ if (Test-Path $skillsSrc) {
         if (Test-Path $sd) { Remove-Item $sd -Recurse -Force }
         Copy-Item $_.FullName $sd -Recurse -Force
     }
-    Write-Host '  ✓ skills copied (playbooks, retro, reconcile → ~/.claude/skills)'
+    Write-Host '  ✓ skills copied (playbooks, retro, reconcile, hermes-bridge, workload-optimization → ~/.claude/skills)'
+}
+
+# 사용자 에이전트 (hermes-liaison 등) — CLAUDE.md 가 라우팅하는 에이전트를 ~/.claude/agents 에
+# 배포해 실제 발화가 가능하게 한다 (미배포 시 참조만 되고 발화 불가; skills 와 동일 패턴).
+$agentsSrc = Join-Path $repoDir 'claude\agents'
+if (Test-Path $agentsSrc) {
+    $agentsDst = Join-Path $dst 'agents'
+    New-Item -ItemType Directory -Force -Path $agentsDst | Out-Null
+    Copy-Item (Join-Path $agentsSrc '*') $agentsDst -Recurse -Force
+    Write-Host '  ✓ agents copied (hermes-liaison → ~/.claude/agents)'
+}
+
+# exports (portable-rules 등) — hermes-sync 훅이 ~/.claude/exports/portable-rules.md 를 읽는다.
+$exportsSrc = Join-Path $repoDir 'claude\exports'
+if (Test-Path $exportsSrc) {
+    $exportsDst = Join-Path $dst 'exports'
+    New-Item -ItemType Directory -Force -Path $exportsDst | Out-Null
+    Copy-Item (Join-Path $exportsSrc '*') $exportsDst -Recurse -Force
+    Write-Host '  ✓ exports copied (portable-rules → ~/.claude/exports)'
 }
 
 # .leakwords 자동시드 (v9 0-D2): profile 식별토큰 → gate2b 활성. profile 빔이면 no-op.
@@ -172,6 +194,18 @@ if (Test-Path $settingsPath) {
 }
 if ($s -isnot [System.Collections.IDictionary]) { $s = @{} }
 
+# 레포 소스 settings — 레포-정본 키(모델 전략 등)의 단일 진실원. 파싱 실패 시 빈 사전 + $srcOk=false
+# ($srcOk 미확인 상태에서 '레포 무지정 → 로컬 model 제거' 분기가 오발동하지 않도록 가드; bash 머지는
+#  json.load 실패 시 set -e 로 중단돼 스탬프가 안 남는 것과 대칭인 fail-soft).
+$srcSettings = @{}
+$srcOk = $false
+try {
+    $srcRaw = [System.IO.File]::ReadAllText((Join-Path $repoDir 'claude\settings.json'), (New-Object System.Text.UTF8Encoding($false)))
+    $srcSettings = $ser.DeserializeObject($srcRaw)
+    if ($srcSettings -is [System.Collections.IDictionary]) { $srcOk = $true }
+} catch {}
+if ($srcSettings -isnot [System.Collections.IDictionary]) { $srcSettings = @{} }
+
 # 마켓플레이스 — 기존 보존, 항목만 추가/갱신 (harness, omc=oh-my-claudecode)
 (Get-Dict $s 'extraKnownMarketplaces')['harness-marketplace'] = @{ source = @{ source = 'github'; repo = 'revfactory/harness' } }
 (Get-Dict $s 'extraKnownMarketplaces')['omc'] = @{ source = @{ source = 'github'; repo = 'Yeachan-Heo/oh-my-claudecode' } }
@@ -197,7 +231,16 @@ if (-not $s.ContainsKey('effortLevel')) { $s['effortLevel'] = 'xhigh' }
 # 주의: defaultMode=auto 는 사용자수준(~/.claude/settings.json)에서만 유효(프로젝트 .claude/* 는 무시).
 #       우리 배포 대상이 ~/.claude/settings.json 이라 적용됨. 모델은 Opus/Sonnet 4.6+ 필요.
 $perm = Get-Dict $s 'permissions'
-if (-not $perm.ContainsKey('defaultMode')) { $perm['defaultMode'] = 'auto' }
+if (-not $perm.ContainsKey('defaultMode')) {
+    # 소스의 defaultMode(현재 bypassPermissions)를 따른다 — 없을 때만; install.sh 머지와 대칭(플랫폼 드리프트 제거).
+    $dm = 'auto'
+    if (($srcSettings['permissions'] -is [System.Collections.IDictionary]) -and $srcSettings['permissions'].ContainsKey('defaultMode')) { $dm = [string]$srcSettings['permissions']['defaultMode'] }
+    $perm['defaultMode'] = $dm
+}
+if ($srcSettings.ContainsKey('skipDangerousModePermissionPrompt') -and (-not $s.ContainsKey('skipDangerousModePermissionPrompt'))) {
+    # bypass 진입 시 위험 경고창 스킵 — 없을 때만(사용자 선택 보존); install.sh 머지와 대칭.
+    $s['skipDangerousModePermissionPrompt'] = $srcSettings['skipDangerousModePermissionPrompt']
+}
 
 # 자동업데이트 항상 ON 보장(1/2): settings 의 비활성 레버 제거.
 # 전역 config 의 autoUpdates 가 settings 의 env.DISABLE_AUTOUPDATER 로 마이그레이션될 수 있는데,
@@ -205,6 +248,27 @@ if (-not $perm.ContainsKey('defaultMode')) { $perm['defaultMode'] = 'auto' }
 if (($s['env'] -is [System.Collections.IDictionary]) -and $s['env'].ContainsKey('DISABLE_AUTOUPDATER')) {
     [void]$s['env'].Remove('DISABLE_AUTOUPDATER')
     Write-Host '  ✓ settings env.DISABLE_AUTOUPDATER 제거 (auto-update 항상 ON)'
+}
+
+# 모델 전략(적응형 플랜) — 레포가 정본(항상 소스값으로 갱신): model 별칭(opusplan)과
+# env 재매핑(ANTHROPIC_DEFAULT_*)·fallbackModel·advisorModel 은 전 머신 동기화 대상.
+# 직지정(concrete id) 잔재는 이 덮어쓰기로 자연 치유되고, model-watch 의 새 프런티어
+# 재매핑도 레포 settings 를 거쳐 여기서 전파된다. env 는 키 단위 갱신 — 머신 로컬 env
+# 키(토큰 등)는 보존. (install.sh 머지 파이썬과 대칭) $srcOk=false 면 블록 전체 스킵
+# (파싱 실패를 '레포 무지정'으로 오인해 로컬 model 을 지우는 사고 방지).
+if ($srcOk) {
+    if ($srcSettings.ContainsKey('model')) { $s['model'] = $srcSettings['model'] }
+    elseif ($s.ContainsKey('model')) { [void]$s.Remove('model') }  # 레포가 model 무지정이면 직지정 잔재 제거
+    if ($srcSettings['env'] -is [System.Collections.IDictionary]) {
+        $envDict = Get-Dict $s 'env'
+        foreach ($k in @($srcSettings['env'].Keys)) { $envDict[$k] = $srcSettings['env'][$k] }
+    }
+    foreach ($k in @('fallbackModel', 'advisorModel')) {
+        if ($srcSettings.ContainsKey($k)) { $s[$k] = $srcSettings[$k] }
+    }
+    foreach ($k in @('theme', 'autoUpdatesChannel', 'skipWorkflowUsageWarning')) {  # 개인 취향 키 — 없을 때만(사용자 선택 보존)
+        if ($srcSettings.ContainsKey($k) -and (-not $s.ContainsKey($k))) { $s[$k] = $srcSettings[$k] }
+    }
 }
 
 # 훅 (절대 경로 — Windows 환경변수 확장 이슈 회피).
@@ -226,7 +290,8 @@ $managedHooks = [ordered]@{
         (New-PsHook 'model-watch.ps1'     ''),
         (New-PsHook 'auto-update.ps1'     ''),
         (New-PsHook 'morning-brief.ps1'   ''),
-        (New-PsHook 'memory-sync.ps1'     ' -Mode start')
+        (New-PsHook 'memory-sync.ps1'     ' -Mode start'),
+        (New-PsHook 'hermes-sync.ps1'     '')
     )
     SessionEnd = @(
         (New-PsHook 'config-sync.ps1'     " -Mode end -Repo `"$repoDir`""),
@@ -235,7 +300,8 @@ $managedHooks = [ordered]@{
         (New-PsHook 'memory-sync.ps1'     ' -Mode end')
     )
     PreToolUse = @(
-        (New-PsHook 'guardrails.ps1'      '')
+        (New-PsHook 'guardrails.ps1'      ''),
+        @{ command = (New-PsHook 'filter-test-output.ps1' ''); matcher = 'Bash' }  # Bash 도구 호출에만 발화 (레포 settings.json 과 동일)
     )
     PostToolUse = @(
         (New-PsHook 'edit-track.ps1'      '')
@@ -244,14 +310,20 @@ $managedHooks = [ordered]@{
         (New-PsHook 'stop-metrics.ps1'    '')
     )
 }
-# 우리가 관리하는 모든 명령(이벤트 불문) — 기존 그룹에서 우리 것만 제거(자가 치유)
+# 우리가 관리하는 모든 명령(이벤트 불문) — 기존 그룹에서 우리 것만 제거(자가 치유).
+# 항목은 문자열 또는 @{ command=...; matcher=... } 사양(예: filter-test-output 은 matcher=Bash).
 $allManaged = @{}
-foreach ($evt in $managedHooks.Keys) { foreach ($c in $managedHooks[$evt]) { $allManaged[$c] = $true } }
+foreach ($evt in $managedHooks.Keys) {
+    foreach ($c in $managedHooks[$evt]) {
+        $cmdKey = if ($c -is [System.Collections.IDictionary]) { [string]$c['command'] } else { [string]$c }
+        $allManaged[$cmdKey] = $true
+    }
+}
 # 런처(bash/powershell)·경로·인자가 달라도 "우리 훅 파일을 실제 실행"하면 관리 훅으로 인식해 교체한다.
 # → 과거 bash-form 훅(`bash "$HOME/.claude/hooks/config-sync.sh"`)이 박힌 머신도 재실행으로 자가 치유.
 #   딱 3개 관리 파일명으로만 한정 + 호출 위치(-File "..." / bash "...")에 앵커 →
 #   사용자 자신의 bash 훅이나, 관리 경로를 인자/문구로 "언급만" 하는 훅은 보존(과잉 제거 방지).
-$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|model-watch|auto-update|morning-brief|memory-sync|guardrails|edit-track|stop-metrics)\.(ps1|sh)\b'
+$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|model-watch|auto-update|morning-brief|memory-sync|guardrails|edit-track|stop-metrics|filter-test-output|hermes-sync)\.(ps1|sh)\b'
 $hk = Get-Dict $s 'hooks'
 foreach ($evt in $managedHooks.Keys) {
     $existing = @(); if ($hk[$evt]) { $existing = @($hk[$evt]) }
@@ -269,7 +341,15 @@ foreach ($evt in $managedHooks.Keys) {
         }
         if (-not $isManaged) { [void]$kept.Add($grp) }   # 우리 훅이 아닌 그룹만 보존
     }
-    foreach ($cmd in $managedHooks[$evt]) { [void]$kept.Add(@{ hooks = @(@{ type = 'command'; command = $cmd }) }) }
+    foreach ($spec in $managedHooks[$evt]) {
+        if ($spec -is [System.Collections.IDictionary]) {
+            $grp = @{ hooks = @(@{ type = 'command'; command = [string]$spec['command'] }) }
+            if ($spec['matcher']) { $grp['matcher'] = [string]$spec['matcher'] }
+            [void]$kept.Add($grp)
+        } else {
+            [void]$kept.Add(@{ hooks = @(@{ type = 'command'; command = [string]$spec }) })
+        }
+    }
     $hk[$evt] = @($kept.ToArray())
 }
 
@@ -277,6 +357,13 @@ foreach ($evt in $managedHooks.Keys) {
 $jsonOut = Format-Json ($ser.Serialize($s))
 [System.IO.File]::WriteAllText($settingsPath, $jsonOut + "`n", (New-Object System.Text.UTF8Encoding($false)))
 Write-Host '  ✓ settings merged (기존 보존, 백업됨)'
+
+# 배포 스탬프: payload 가 어느 HEAD 기준으로 배치됐는지 기록. config-sync 는 이 스탬프와
+# 현재 HEAD 를 비교해 deploy 필요 여부를 판정한다(외부 pull 선점 갭 제거 — 2026-07-08 사건).
+try {
+    $headNow = (& git -C $repoDir rev-parse HEAD 2>$null)
+    if ($headNow) { [System.IO.File]::WriteAllText((Join-Path $dst '.last-deployed-head'), (([string]$headNow).Trim() + "`n"), (New-Object System.Text.UTF8Encoding($false))) }
+} catch {}
 
 # 테스트/CI 용 deploy-only: 파일 배치(훅·settings·CLAUDE.md·ultracode.json)만 하고
 # 머신 상태 변경(python shim PATH·ExecutionPolicy·셸 프로필·플러그인 설치)은 건너뜀. (멱등·부작용 없음)

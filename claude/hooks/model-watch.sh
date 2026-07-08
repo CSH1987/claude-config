@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# claude-config:model-watch - SessionStart hook (macOS/Linux). Keeps `model` in
-#   ~/.claude/settings.json on the newest frontier Claude model automatically.
+# claude-config:model-watch - SessionStart hook (macOS/Linux). Keeps the ADAPTIVE PLAN
+#   (적응형 플랜: model=opusplan + env ANTHROPIC_DEFAULT_OPUS_MODEL remap) on the newest
+#   frontier Claude model automatically - standard path updates the env remap only;
+#   an existing concrete `model` pin is honored locally (legacy) and never propagated.
 #   Thin wrapper -> shared lib/model-watch.py engine (parity with model-watch.ps1).
 #   Fast path only; the once/day detection runs as a DETACHED probe (never blocks).
 #   Kill-switch: CLAUDE_MODEL_WATCH_OFF=1 or pin file ~/.claude/model-watch/pin.

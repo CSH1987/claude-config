@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
-"""claude-config: model-watch engine - keep Claude Code on the newest frontier model.
+"""claude-config: model-watch engine - keep the ADAPTIVE PLAN on the newest frontier model.
 
-Why: Claude Code has no cross-tier "always latest" alias (e.g. `fable` will not jump
-to a future frontier family), and /v1/models is not callable with subscription OAuth.
+Adaptive plan (적응형 플랜): settings `model` stays on the `opusplan` alias (plan phase =
+opus-alias model, execution = sonnet-alias model); the concrete frontier id lives ONLY in
+the env remap ANTHROPIC_DEFAULT_OPUS_MODEL. So "adopt the newest frontier" means updating
+that env remap - NOT pinning `model` to a concrete id (direct pins are deprecated here).
+The remap is also propagated to the local claude-config repo copy, so config-sync ships
+it to every machine on its normal commit/push/pull/deploy cycle.
+
+Why probing: Claude Code has no cross-tier "always latest" alias (e.g. `fable` will not
+jump to a future frontier family), and /v1/models is not callable with subscription OAuth.
 So we ask the CLI itself: a headless `claude -p` session's system prompt contains the
 current "most recent Claude models" info, kept fresh by CLI auto-update. $0 on
 subscription, no API key, works on every machine claude-config deploys to.
 
 Modes (argv[1], default `start`):
-  start  SessionStart fast path (<50ms): print pending switch notice (becomes session
+  start  SessionStart fast path (<50ms): print pending remap notice (becomes session
          additionalContext), then spawn today's DETACHED probe if not yet run today.
          Never blocks the session. FAIL-OPEN: any error -> silent exit 0.
-  probe  Detached worker (once/day): ask `claude -p --model haiku` for the top model id,
-         compare with settings.json `model` (base id, ignoring variant suffixes like
-         "[1m]"), validate candidates with real `claude --model <id> -p` probes
-         (prefer keeping the current variant suffix), then apply atomically to
-         ~/.claude/settings.json (python json round-trip - preserves hooks arrays,
-         unlike PS 5.1 ConvertTo-Json). Applies to NEW sessions only.
+  probe  Detached worker (once/day): detect the top model id, compare with the current
+         effective frontier (env remap; a concrete `model` pin is honored as legacy),
+         validate candidates with real `claude --model <id> -p` probes, then apply
+         atomically to ~/.claude/settings.json (python json round-trip - preserves
+         hooks arrays, unlike PS 5.1 ConvertTo-Json). Applies to NEW sessions only.
 
 Off switch: CLAUDE_MODEL_WATCH_OFF=1   Pin (never auto-switch): ~/.claude/model-watch/pin
 Debug: MODEL_WATCH_DEBUG=1 (re-raise errors). Probe output: ~/.claude/model-watch/probe.log
@@ -46,6 +52,7 @@ STATE = os.path.join(WATCH_DIR, "state.json")
 HISTORY = os.path.join(WATCH_DIR, "history.jsonl")
 PIN = os.path.join(WATCH_DIR, "pin")
 CLAUDE_TIMEOUT = 240  # seconds per headless call (detached, so generous is fine)
+ENV_KEY = "ANTHROPIC_DEFAULT_OPUS_MODEL"  # adaptive plan: the frontier id lives here
 
 DETECT_PROMPT = (
     "Automation query (no human reads prose). Your system prompt environment "
@@ -191,21 +198,76 @@ def model_valid(prefix, model):
         return False
 
 
-def apply_model(new_model):
-    """Atomically set settings.json `model`, preserving everything else. Returns old value."""
+def effective_frontier(s):
+    """(current frontier id, mode). Adaptive plan: `model` is an alias (opusplan) and the
+    frontier id lives in env ANTHROPIC_DEFAULT_OPUS_MODEL -> mode "env". A concrete
+    claude-* id in `model` is a legacy direct pin -> mode "model" (honored, not created)."""
+    m = (s.get("model") or "").strip() if isinstance(s, dict) else ""
+    if re.fullmatch(ID_RE, base_id(m)):
+        return m, "model"
+    env = s.get("env") if isinstance(s, dict) and isinstance(s.get("env"), dict) else {}
+    return (env.get(ENV_KEY) or "").strip(), "env"
+
+
+def propagate_to_repo(new_model):
+    """Best-effort, ADAPTIVE-PLAN ONLY: mirror the env remap into the local claude-config
+    repo settings so config-sync's normal auto-commit/push/deploy cycle ships it to every
+    machine. Legacy direct pins are NEVER propagated - the installer merge treats the repo
+    as the fleet source of truth for `model`, so writing a concrete id here would convert
+    every machine to a direct pin and silently dismantle the adaptive plan (self-
+    perpetuating: all machines would then report mode "model" forever).
+    Never raises; skipped silently when the repo is absent."""
+    try:
+        pf = os.path.join(CLAUDE_DIR, ".config-sync-path")
+        with open(pf, "r", encoding="utf-8") as f:
+            repo = f.read().strip()
+        rs = os.path.join(repo, "claude", "settings.json")
+        s = load_json(rs)
+        if not isinstance(s, dict):
+            return
+        env = s.setdefault("env", {})
+        if not isinstance(env, dict) or env.get(ENV_KEY) == new_model:
+            return
+        env[ENV_KEY] = new_model
+        write_json_atomic(rs, s)
+        log_history({"event": "repo_propagated", "to": new_model})
+    except Exception:
+        pass
+
+
+def apply_frontier(new_model, mode):
+    """Atomically update the frontier in settings.json, preserving everything else.
+    mode "env": update env ANTHROPIC_DEFAULT_OPUS_MODEL (adaptive plan - `model` alias
+    untouched) and propagate to the repo. mode "model": update the legacy direct pin
+    LOCALLY only (honored, not created, not propagated).
+    Returns (status, old) where status is "applied" | "noop" | "error"; old may
+    legitimately be None on a first application (key absent) - that is a success."""
     s = load_json(SETTINGS)
     if not isinstance(s, dict):
-        return None
-    old = s.get("model")
-    if old == new_model:
-        return None
+        return "error", None
+    if mode == "model":
+        old = s.get("model")
+        if old == new_model:
+            return "noop", old
+    else:
+        env = s.setdefault("env", {})
+        if not isinstance(env, dict):
+            return "error", None
+        old = env.get(ENV_KEY)
+        if old == new_model:
+            return "noop", old
     try:  # same .bak.<epoch> glob as install.ps1, whose keep-5 pruning also covers ours
         shutil.copy2(SETTINGS, SETTINGS + ".bak.%d" % int(time.time()))
     except Exception:
         pass
-    s["model"] = new_model
+    if mode == "model":
+        s["model"] = new_model
+    else:
+        s["env"][ENV_KEY] = new_model
     write_json_atomic(SETTINGS, s)
-    return old
+    if mode == "env":
+        propagate_to_repo(new_model)
+    return "applied", old
 
 
 def probe():
@@ -216,10 +278,8 @@ def probe():
     prefix = claude_cmdline()
     if not prefix:
         return
-    cur = ""
     s = load_json(SETTINGS)
-    if isinstance(s, dict):
-        cur = s.get("model") or ""
+    cur, mode = effective_frontier(s if isinstance(s, dict) else {})
 
     top = detect_top(prefix)
     st = read_state()
@@ -243,14 +303,16 @@ def probe():
         log_history({"event": "validation_failed", "top": top, "current": cur})
         return
 
-    old = apply_model(chosen)
-    if old is None and chosen != cur:
-        log_history({"event": "apply_failed", "to": chosen})
+    status, old = apply_frontier(chosen, mode)
+    if status == "error":
+        log_history({"event": "apply_failed", "to": chosen, "mode": mode})
         return
+    if status == "noop":
+        return  # 다른 주체(배포 머지 등)가 이미 적용 — 알림 불필요
     st = read_state()
-    st["notify"] = {"from": old or "(account default)", "to": chosen}
+    st["notify"] = {"from": old or "(account default)", "to": chosen, "mode": mode}
     write_state(st)
-    log_history({"event": "switched", "from": old, "to": chosen})
+    log_history({"event": "remapped" if mode == "env" else "switched", "from": old, "to": chosen})
 
 
 def spawn_probe_detached():
@@ -277,12 +339,21 @@ def start():
     if notice:
         # print BEFORE persisting the pop - if printing fails, the notice survives
         # for the next session instead of being silently lost.
-        print(
-            "[model-watch] 새 최고 모델 감지 — 기본 모델 자동 전환됨: %s → %s. "
-            "새 세션부터 적용됩니다(이 세션은 이전 모델일 수 있음). "
-            "자동 전환 고정 해제: ~/.claude/model-watch/pin 파일 생성, 끄기: CLAUDE_MODEL_WATCH_OFF=1"
-            % (notice.get("from"), notice.get("to"))
-        )
+        if notice.get("mode") == "model":  # legacy direct pin (deprecated path)
+            msg = (
+                "[model-watch] 새 최고 모델 감지 — 직지정 모델 전환됨: %s → %s. "
+                "새 세션부터 적용됩니다(이 세션은 이전 모델일 수 있음). "
+                "참고: 표준은 적응형 플랜(model=opusplan + env 재매핑)입니다. "
+                "고정: ~/.claude/model-watch/pin 파일 생성, 끄기: CLAUDE_MODEL_WATCH_OFF=1"
+            )
+        else:
+            msg = (
+                "[model-watch] 새 최고 모델 감지 — 적응형 플랜 재매핑: %s → %s "
+                "(ANTHROPIC_DEFAULT_OPUS_MODEL 갱신; model=opusplan 별칭은 그대로). "
+                "새 세션부터 적용되며, 레포 반영을 통해 전 머신에 전파됩니다. "
+                "고정: ~/.claude/model-watch/pin 파일 생성, 끄기: CLAUDE_MODEL_WATCH_OFF=1"
+            )
+        print(msg % (notice.get("from"), notice.get("to")))
         write_state(st)  # persist the consumed notice only after it was printed
     if st.get("checked") != today():
         st["checked"] = today()  # claim the day BEFORE spawning (multi-session stampede guard)

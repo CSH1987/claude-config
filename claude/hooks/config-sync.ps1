@@ -81,14 +81,22 @@ try {
             git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 push --quiet *> $null
             return ($LASTEXITCODE -eq 0)
         }
-        # pull 로 새 커밋이 들어오면 deploy-only 로 ~/.claude 에 자동 반영(멱등·부작용 없음).
+        # HEAD 가 "마지막 배포 스탬프"와 다르면 deploy-only 로 ~/.claude 에 자동 반영(멱등·부작용 없음).
         # deploy-only = 파일 배치만(settings·CLAUDE.md·hooks·ultracode.json), 플러그인/PATH/프로필 스킵.
         # 실패해도 세션 안 막음. 적용은 다음 세션부터(settings·CLAUDE.md 는 세션 시작 시 로드).
+        # 판정을 "자기 pull 전후 HEAD 비교"에서 스탬프 비교로 교체한 이유: 세션의 수동 git pull 등
+        # 외부 주체가 새 커밋을 먼저 당겨오면 이후 start 는 '변경 없음'으로 보여 배포가 무기한
+        # 표류했다(2026-07-08 사건). 스탬프(~/.claude/.last-deployed-head)는 install.ps1 이 payload
+        # 배치 직후 기록하므로, 어떤 경로로 HEAD 가 바뀌었든 다음 세션 시작에 따라잡는다.
         # (자기 덮어쓰기 안전: PS 는 스크립트를 메모리에 로드 후 실행. Unix 는 symlink 라 덮어쓰기 자체가 없음.)
         # 보안: 이는 공개 레포의 코드를 자동 실행한다 → 보안 경계=GitHub 계정(README §5 보안 모델 참조).
-        function Invoke-DeployIfChanged([string]$before) {
+        function Invoke-DeployIfChanged {
             $after = (git rev-parse HEAD 2>$null)
-            if (-not $after -or $before -eq $after) { return }   # pull 로 변경 없으면 스킵
+            if (-not $after) { return }
+            $stampFile = Join-Path $env:USERPROFILE '.claude\.last-deployed-head'
+            $stamp = ''
+            if (Test-Path $stampFile) { $stamp = (Get-Content $stampFile -Raw -ErrorAction SilentlyContinue); if ($stamp) { $stamp = $stamp.Trim() } }
+            if ($stamp -eq $after) { return }   # 이미 이 HEAD 로 배포됨
             $installPs1 = Join-Path $Repo 'install.ps1'
             if (-not (Test-Path $installPs1)) { return }
             try {
@@ -101,7 +109,6 @@ try {
             }
         }
         if ($Mode -eq 'start') {
-            $headBefore = (git rev-parse HEAD 2>$null)
             Invoke-Pull
             # 백로그 자가치유: 지난 SessionEnd 가 push 전에 죽어 남은 미푸시 커밋을 밀어 올린다.
             $ahead = (git rev-list --count '@{u}..HEAD' 2>$null)
@@ -114,7 +121,7 @@ try {
                     Write-Host ("claude-config: {0} 백업이 원격보다 {1}커밋 앞서 있습니다(푸시 실패 지속 — 네트워크/인증 확인 필요)." -f $Repo, $still)
                 }
             }
-            Invoke-DeployIfChanged $headBefore
+            Invoke-DeployIfChanged
         } elseif ($Mode -eq 'end') {
             $dirty = (git status --porcelain) 2>$null
             if ($dirty) {

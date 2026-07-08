@@ -1,6 +1,8 @@
-# claude-config:model-watch (Windows) - SessionStart hook. Keeps `model` in
-#   ~/.claude/settings.json on the newest frontier Claude model automatically
-#   (e.g. jumps Opus->Fable when a new top family ships). Thin wrapper -> shared
+# claude-config:model-watch (Windows) - SessionStart hook. Keeps the ADAPTIVE PLAN
+#   (model=opusplan + env ANTHROPIC_DEFAULT_OPUS_MODEL remap) on the newest frontier
+#   Claude model automatically - standard path updates the env remap only; an existing
+#   concrete `model` pin is honored locally (legacy) and never propagated
+#   (e.g. remaps Opus->Fable when a new top family ships). Thin wrapper -> shared
 #   lib/model-watch.py engine (parity with model-watch.sh). Fast path only; the
 #   actual once/day detection runs as a DETACHED probe, so session start never waits.
 #   Kill-switch: CLAUDE_MODEL_WATCH_OFF=1 or pin file ~/.claude/model-watch/pin.

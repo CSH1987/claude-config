@@ -81,14 +81,19 @@ push_now() {
   $TO git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 push --quiet >/dev/null 2>&1
 }
 
-# pull 로 새 커밋이 들어오면 deploy-only 로 ~/.claude 에 자동 반영(멱등·부작용 없음).
+# HEAD 가 "마지막 배포 스탬프"와 다르면 deploy-only 로 ~/.claude 에 자동 반영(멱등·부작용 없음).
 # deploy-only = 파일 배치만(settings·CLAUDE.md·hooks·ultracode.json), 플러그인/PATH/프로필 스킵.
 # 실패해도 세션 안 막음. 적용은 다음 세션부터(settings·CLAUDE.md 는 세션 시작 시 로드).
+# 판정을 "자기 pull 전후 HEAD 비교"에서 스탬프 비교로 교체한 이유: 세션의 수동 git pull 등
+# 외부 주체가 새 커밋을 먼저 당겨오면 이후 start 는 '변경 없음'으로 보여 배포가 무기한
+# 표류했다(2026-07-08 사건). 스탬프(~/.claude/.last-deployed-head)는 install.sh 가 payload
+# 배치 직후 기록하므로, 어떤 경로로 HEAD 가 바뀌었든 다음 세션 시작에 따라잡는다.
 apply_if_changed() {
-  before="$1"
   after="$(git rev-parse HEAD 2>/dev/null)"
   [ -z "$after" ] && return 0
-  [ "$before" = "$after" ] && return 0          # pull 로 변경 없으면 스킵
+  stamp=""
+  [ -f "$HOME/.claude/.last-deployed-head" ] && stamp="$(cat "$HOME/.claude/.last-deployed-head" 2>/dev/null)"
+  [ "$stamp" = "$after" ] && return 0           # 이미 이 HEAD 로 배포됨
   [ -f "$repo/install.sh" ] || return 0
   CLAUDE_INSTALL_DEPLOY_ONLY=1 $TO bash "$repo/install.sh" >/dev/null 2>&1 || true
   echo "claude-config: 새 설정을 받아 반영했습니다 (다음 세션부터 적용)." >&2
@@ -96,7 +101,6 @@ apply_if_changed() {
 
 case "$mode" in
   start)
-    head_before="$(git rev-parse HEAD 2>/dev/null)"
     pull
     # 백로그 자가치유: 지난 SessionEnd 가 push 전에 죽어 남은 미푸시 커밋을 밀어 올린다.
     ahead="$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)"
@@ -109,7 +113,7 @@ case "$mode" in
         echo "claude-config: $repo 백업이 원격보다 ${still}커밋 앞서 있습니다(푸시 실패 지속 — 네트워크/인증 확인 필요)." >&2
       fi
     fi
-    apply_if_changed "$head_before"
+    apply_if_changed
     ;;
   end)
     if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
