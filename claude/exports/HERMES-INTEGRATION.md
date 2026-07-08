@@ -10,10 +10,11 @@
 | `hermes-sync.ps1` / `.sh` | `claude/hooks/` (배포: `~/.claude/hooks/`) | hermes 감지 시 규칙·스킬 자동 주입 (미설치 시 무동작) |
 | SessionStart 훅 등록 | `settings.json` | 매 Claude Code 세션 시작 시 hermes-sync 실행 → hermes 설치 후 **추가 조치 없이** 자동 적용 |
 
-동작 방식:
-1. `hermes-sync`가 `~/.hermes`(또는 Windows `%LOCALAPPDATA%\hermes`)를 감지
-2. `AGENTS.md`(hermes의 작업 지침 파일 = CLAUDE.md 상당)에 마커 블록(`<!-- claude-config:portable-rules:start/end -->`)으로 규칙 삽입 — **hermes가 스스로 관리하는 내용은 보존**, 재실행 시 블록만 갱신(멱등)
-3. 이식 가능한 스킬(`workload-optimization`)을 `~/.hermes/skills/`로 복사 (hermes 스킬도 SKILL.md 형식 호환)
+동작 방식 (2026-07-08 실측 반영 — hermes v0.18.2):
+1. `hermes-sync`가 `~/.hermes`(또는 Windows `%LOCALAPPDATA%\hermes` — **Windows 설치 시 실제 설정 디렉터리**)를 감지
+2. hermes는 AGENTS.md를 **세션 작업 디렉터리(cwd)에서만** 로드한다(`agent/prompt_builder.py`, cwd only). 게이트웨이 기본 cwd = config.yaml `terminal.cwd`(플레이스홀더 `.`/`auto`/`cwd`면 홈 디렉터리 폴백). 따라서 마커 블록(`<!-- claude-config:portable-rules:start/end -->`)을 **두 곳에** 삽입: ① `HERMES_HOME/AGENTS.md`(공식 프로필 아티팩트) ② 실효 게이트웨이 cwd(`terminal.cwd` 절대경로 또는 홈)의 `AGENTS.md` — **hermes가 스스로 관리하는 내용은 보존**, 재실행 시 블록만 갱신(멱등)
+3. AGENTS.md는 **반드시 BOM 없는 UTF-8**로 기록 — hermes 스캐너가 U+FEFF 포함 파일을 `invisible_unicode`로 차단함
+4. 이식 가능한 스킬(`workload-optimization`)을 hermes `skills/`로 복사 (hermes 사용자 스킬 규약 `skills/<maybe-category>/<name>/SKILL.md` 호환)
 
 수동 실행: `powershell -File ~/.claude/hooks/hermes-sync.ps1` (테스트: `-HermesDir <경로>` 오버라이드)
 
