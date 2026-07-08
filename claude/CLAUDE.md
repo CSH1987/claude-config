@@ -96,7 +96,7 @@
 | 날짜 | 변경 내용 | 대상 | 사유 |
 |------|----------|------|------|
 | 2026-07-08 | 초기 구성 (에이전트 1·스킬 1·sync 훅) | agents/hermes-liaison, skills/hermes-bridge, hooks/hermes-sync | 헤르메스 도입(익일 예정) 사전 준비 |
-| 2026-07-08 | hermes v0.18.2 설치 완료 + sync 버그 2건 수정 (게이트웨이 cwd 이중 주입 · AGENTS.md BOM 제거) | hooks/hermes-sync.ps1/.sh, exports/HERMES-INTEGRATION.md | 배포 실측 — hermes는 AGENTS.md를 cwd에서만 로드하고 BOM 파일은 차단함. 남은 것: 모델 연결·텔레그램 토큰(사용자 직접) |
+| 2026-07-08 | sync 버그 2건 수정 (게이트웨이 cwd 이중 주입 · AGENTS.md BOM 제거) — Windows 착오 설치(v0.18.2)에서 실측 발견 후 해당 설치는 제거 | hooks/hermes-sync.ps1/.sh, exports/HERMES-INTEGRATION.md | hermes는 AGENTS.md를 cwd에서만 로드하고 BOM 파일은 차단함. **오케스트레이터 설치 대상 = 맥미니** (Windows 업무 PC 아님) |
 
 ## 사용자가 잊더라도 (능동적 보장)
 
