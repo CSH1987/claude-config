@@ -204,7 +204,8 @@
   "env": {
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-fable-5",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5"
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5",
+    "CLAUDE_MEMORY_NO_SYNC": "1"
   },
   "effortLevel": "xhigh",
   "autoUpdatesChannel": "latest",
