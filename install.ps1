@@ -24,12 +24,13 @@ Copy-Item (Join-Path $repoDir 'claude\hooks\memory-sync.ps1')     (Join-Path $ho
 Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.ps1')      (Join-Path $hooks 'guardrails.ps1')      -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.py')       (Join-Path $hooks 'guardrails.py')       -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\edit-track.ps1')      (Join-Path $hooks 'edit-track.ps1')      -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\edit-nudge.ps1')      (Join-Path $hooks 'edit-nudge.ps1')      -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\stop-metrics.ps1')    (Join-Path $hooks 'stop-metrics.ps1')    -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\filter-test-output.ps1') (Join-Path $hooks 'filter-test-output.ps1') -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\hermes-sync.ps1')     (Join-Path $hooks 'hermes-sync.ps1')     -Force
 # config-sync 가 레포 위치를 찾도록 기록 (BOM 없이)
 [System.IO.File]::WriteAllText((Join-Path $dst '.config-sync-path'), $repoDir, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, model-watch, auto-update, morning-brief, memory-sync, guardrails, edit-track, stop-metrics, filter-test-output, hermes-sync)'
+Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, model-watch, auto-update, morning-brief, memory-sync, guardrails, edit-track, edit-nudge, stop-metrics, filter-test-output, hermes-sync)'
 
 # 평생 기억저장소 경로 resolver(memdir) 복사 — 모든 hook·skill 이 호출하는 단일 진실원(경로만, 데이터 없음).
 $lib = Join-Path $dst 'lib'
@@ -304,7 +305,8 @@ $managedHooks = [ordered]@{
         @{ command = (New-PsHook 'filter-test-output.ps1' ''); matcher = 'Bash' }  # Bash 도구 호출에만 발화 (레포 settings.json 과 동일)
     )
     PostToolUse = @(
-        (New-PsHook 'edit-track.ps1'      '')
+        (New-PsHook 'edit-track.ps1'      ''),
+        (New-PsHook 'edit-nudge.ps1'      '')
     )
     Stop = @(
         (New-PsHook 'stop-metrics.ps1'    '')
@@ -323,7 +325,7 @@ foreach ($evt in $managedHooks.Keys) {
 # → 과거 bash-form 훅(`bash "$HOME/.claude/hooks/config-sync.sh"`)이 박힌 머신도 재실행으로 자가 치유.
 #   딱 3개 관리 파일명으로만 한정 + 호출 위치(-File "..." / bash "...")에 앵커 →
 #   사용자 자신의 bash 훅이나, 관리 경로를 인자/문구로 "언급만" 하는 훅은 보존(과잉 제거 방지).
-$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|model-watch|auto-update|morning-brief|memory-sync|guardrails|edit-track|stop-metrics|filter-test-output|hermes-sync)\.(ps1|sh)\b'
+$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|model-watch|auto-update|morning-brief|memory-sync|guardrails|edit-track|edit-nudge|stop-metrics|filter-test-output|hermes-sync)\.(ps1|sh)\b'
 $hk = Get-Dict $s 'hooks'
 foreach ($evt in $managedHooks.Keys) {
     $existing = @(); if ($hk[$evt]) { $existing = @($hk[$evt]) }
