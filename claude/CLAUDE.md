@@ -29,6 +29,7 @@
 - 전 머신 공통 기본은 **적응형 플랜(adaptive plan)** 입니다: settings 의 `"model": "opusplan"`(Claude Code 내장 별칭 — 이 설정값 문자열 자체는 바꿀 수 없음) + env 별칭 재매핑으로 구현됩니다. 플랜 단계=최상위 모델(`ANTHROPIC_DEFAULT_OPUS_MODEL`), 실행 단계=효율 모델(`ANTHROPIC_DEFAULT_SONNET_MODEL`), 결정 지점 보강=`advisorModel: fable`.
 - **최고 모델 직지정(예: `"model": "claude-fable-5[1m]"`)은 쓰지 않습니다.** 새 프런티어 모델이 나오면 model-watch 가 env 재매핑만 갱신하고 레포 settings 에도 반영해 config-sync 로 전 머신에 자동 전파합니다 (`model` 별칭은 그대로 유지 = 적응형).
 - 명칭: 이 구성을 대화·문서에서 "opusplan"이 아니라 **"적응형 플랜"** 으로 부릅니다.
+- 규모가 큰 작업(코딩·비코딩 공통)에서는 설계(top)→검토(mid, headless 전용 신설 env 슬롯)→최종산출(exec) **3단 릴레이**가 자동 적용됩니다(고위험만 반려 게이트, 미달 시 기존 단일 위임 유지). 라우팅 규약·측정 규약 상세는 `workload-optimization` 스킬의 "3단 릴레이" 절 참조.
 
 ## 계획 우선 (ultraplan)
 
