@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # claude-config 설치 (Mac/Linux) — 이 머신의 모든 폴더·세션에서:
 #   · Harness 플러그인 자동 설치/복구
-#   · effortLevel=xhigh 영구 적용 + ultracode/ultraplan 리마인더
+#   · effortLevel=high 영구 적용(바닥값, 판단작업은 xhigh 제안) + ultracode/ultraplan 리마인더
 #   · `claude` 명령을 ultracode 로 자동 실행(셸 함수 오버라이드)
 #   · 런타임 보장: node(플러그인 훅 필수) + python≥3.10(security-guidance 3계층) + brew PATH 출처 고정
 set -euo pipefail
@@ -181,9 +181,10 @@ ln -sfn "$REPO_DIR/claude/hooks/edit-nudge.sh"       "$DST/hooks/edit-nudge.sh"
 ln -sfn "$REPO_DIR/claude/hooks/stop-metrics.sh"     "$DST/hooks/stop-metrics.sh"
 ln -sfn "$REPO_DIR/claude/hooks/filter-test-output.sh" "$DST/hooks/filter-test-output.sh"
 ln -sfn "$REPO_DIR/claude/hooks/hermes-sync.sh"      "$DST/hooks/hermes-sync.sh"
-chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/memory-inject.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/session-events.sh" "$REPO_DIR/claude/hooks/reconcile-check.sh" "$REPO_DIR/claude/hooks/morning-brief.sh" "$REPO_DIR/claude/hooks/model-watch.sh" "$REPO_DIR/claude/hooks/auto-update.sh" "$REPO_DIR/claude/hooks/memory-sync.sh" "$REPO_DIR/claude/hooks/guardrails.sh" "$REPO_DIR/claude/hooks/edit-track.sh" "$REPO_DIR/claude/hooks/edit-nudge.sh" "$REPO_DIR/claude/hooks/stop-metrics.sh" "$REPO_DIR/claude/hooks/filter-test-output.sh" "$REPO_DIR/claude/hooks/hermes-sync.sh"
+ln -sfn "$REPO_DIR/claude/hooks/skill-watch.sh"      "$DST/hooks/skill-watch.sh"
+chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/memory-inject.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/session-events.sh" "$REPO_DIR/claude/hooks/reconcile-check.sh" "$REPO_DIR/claude/hooks/morning-brief.sh" "$REPO_DIR/claude/hooks/model-watch.sh" "$REPO_DIR/claude/hooks/auto-update.sh" "$REPO_DIR/claude/hooks/memory-sync.sh" "$REPO_DIR/claude/hooks/guardrails.sh" "$REPO_DIR/claude/hooks/edit-track.sh" "$REPO_DIR/claude/hooks/edit-nudge.sh" "$REPO_DIR/claude/hooks/stop-metrics.sh" "$REPO_DIR/claude/hooks/filter-test-output.sh" "$REPO_DIR/claude/hooks/hermes-sync.sh" "$REPO_DIR/claude/hooks/skill-watch.sh"
 printf '%s' "$REPO_DIR" > "$DST/.config-sync-path"   # config-sync 가 레포 위치를 찾도록
-echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, model-watch, auto-update, morning-brief, memory-sync, guardrails, edit-track, edit-nudge, stop-metrics, filter-test-output, hermes-sync)"
+echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, model-watch, auto-update, morning-brief, memory-sync, guardrails, edit-track, edit-nudge, stop-metrics, filter-test-output, hermes-sync, skill-watch)"
 
 # leak-guard (M1): route this repo's git hooks to the versioned claude/githooks (pre-commit/pre-push).
 # Repo-local config; blocks PII/secrets in config-sync's auto-commit/push to the PUBLIC repo. config-sync 본문 무수정.
@@ -211,6 +212,7 @@ ln -sfn "$REPO_DIR/claude/lib/metrics.ps1" "$DST/lib/metrics.ps1"
 ln -sfn "$REPO_DIR/claude/lib/metrics.py"  "$DST/lib/metrics.py"
 ln -sfn "$REPO_DIR/claude/lib/brief.py"     "$DST/lib/brief.py"
 ln -sfn "$REPO_DIR/claude/lib/model-watch.py" "$DST/lib/model-watch.py"
+ln -sfn "$REPO_DIR/claude/lib/skill-watch.py" "$DST/lib/skill-watch.py"
 ln -sfn "$REPO_DIR/claude/lib/auto-update.py" "$DST/lib/auto-update.py"
 ln -sfn "$REPO_DIR/claude/lib/dashboard.py" "$DST/lib/dashboard.py"
 ln -sfn "$REPO_DIR/claude/lib/seed-leakwords.py" "$DST/lib/seed-leakwords.py"
@@ -252,7 +254,7 @@ if [ -e "$DST/exports" ] && [ ! -L "$DST/exports" ]; then rm -rf "$DST/exports";
 ln -sfn "$REPO_DIR/claude/exports" "$DST/exports"
 echo "  ✓ exports linked (portable-rules → ~/.claude/exports)"
 chmod +x "$REPO_DIR/claude/lib/memdir.sh" "$REPO_DIR/claude/lib/events.sh" "$REPO_DIR/claude/lib/pending.sh" "$REPO_DIR/claude/lib/metrics.sh"
-echo "  ✓ lib linked (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder, model-watch + auto-update engines)"
+echo "  ✓ lib linked (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder, model-watch + skill-watch + auto-update engines)"
 
 # .leakwords 자동시드 (v9 0-D2): profile 식별토큰 → gate2b(bare 실명) 활성화. profile 빔이면 no-op.
 if command -v python3 >/dev/null 2>&1; then
@@ -314,7 +316,10 @@ dst,src=sys.argv[1],sys.argv[2]
 d=json.load(open(dst)); s=json.load(open(src))
 d.setdefault("extraKnownMarketplaces",{}).update(s["extraKnownMarketplaces"])
 d.setdefault("enabledPlugins",{}).update(s["enabledPlugins"])
-d.setdefault("effortLevel", s.get("effortLevel","xhigh"))  # 없을 때만 — 사용자 선택 보존
+if d.get("effortLevel") == "xhigh":
+    d["effortLevel"] = "high"  # 1회성 마이그레이션: 구 관리 기본값(xhigh) 정리 — 사용자가 다른 값을 골랐다면(else 분기) 무관
+else:
+    d.setdefault("effortLevel", s.get("effortLevel","high"))  # 없을 때만 — 사용자 선택 보존
 d.setdefault("permissions",{}).setdefault("defaultMode", s.get("permissions",{}).get("defaultMode","auto"))  # 소스의 defaultMode(현재 bypassPermissions) — 없을 때만; 기존 사용자 선택 보존
 if "skipDangerousModePermissionPrompt" in s:  # bypass 진입 시 위험 경고창 스킵 — 심링크 아닌 머지 경로 머신도 무프롬프트가 되도록(없을 때만; 사용자 선택 보존)
     d.setdefault("skipDangerousModePermissionPrompt", s["skipDangerousModePermissionPrompt"])
@@ -496,5 +501,5 @@ elif command -v claude >/dev/null 2>&1; then
 else
   echo "  ℹ claude 미설치 — 다음 세션 훅이 설치"
 fi
-echo "✓ 완료. effortLevel=xhigh 영구 + ultracode 자동(claude 오버라이드) + harness 자동 + 런타임(node·python≥3.10) 보장."
+echo "✓ 완료. effortLevel=high 영구(바닥값) + ultracode 자동(claude 오버라이드) + harness 자동 + 런타임(node·python≥3.10) 보장."
 echo "  (새 터미널을 열어야 claude 오버라이드·brew PATH 가 적용됩니다.)"

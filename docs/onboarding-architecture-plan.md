@@ -6,7 +6,7 @@
 # 온보딩 아키텍처 기획서 — 어떤 PC·초보 사용자든 첫 세션부터 최대 성능
 
 > **한 줄 결정:** *"Headless-First Core + Deferred Obsidian Lens, over a Verified Gated-Glue reliability plane."*
-> 초보는 **한 줄 부트스트랩 + 로그인 2회**만 하고, 그 순간부터 검증된 최신 모델·xhigh·멀티에이전트 오케스트레이션이 **기본값**으로 돌아간다. Obsidian은 **부트스트랩이 절대 설치하지 않고**, 나중에 옵트인하는 **읽기 전용 렌즈**다.
+> 초보는 **한 줄 부트스트랩 + 로그인 2회**만 하고, 그 순간부터 검증된 최신 모델·적응형 이펙트(high 바닥값)·멀티에이전트 오케스트레이션이 **기본값**으로 돌아간다. Obsidian은 **부트스트랩이 절대 설치하지 않고**, 나중에 옵트인하는 **읽기 전용 렌즈**다.
 
 이 문서는 멀티에이전트 기획(전문 렌즈 7 + 수렴 + 적대 비평 3 + 통합 = 에이전트 12개)의 통합 산출물이다. 목적은 **claude-config 기본셋업 + Obsidian 지식뷰 + Hermes 오케스트레이션**을, *이식성 불변식*을 지키면서, **어떤 PC/초보든 첫 세션부터 최대 성능·효율**을 내도록 통합하는 것이다.
 
@@ -17,7 +17,7 @@
 초보가 아무것도 몰라도, 첫 세션에 무동작으로 다음이 켜져 있어야 한다:
 
 1. **최신 모델 자동** — model-watch가 *검증된* 최신 프론티어 모델로 자동 전환(맹목적 최신이 아니라 KNOWN_GOOD).
-2. **최고 강도 자동** — effortLevel=xhigh + ultracode 동적 오케스트레이션이 기본값(설정에서 찾을 필요 없음).
+2. **적응형 이펙트 자동** — effortLevel=high(바닥값) + ultracode 동적 오케스트레이션이 기본값, 판단력 좌우 작업은 xhigh 전환 제안(설정에서 찾을 필요 없음).
 3. **병렬 오케스트레이션 기본** — 평문 요청이 알아서 planner/executor/critic 등으로 라우팅(슬래시 명령 지식 불필요).
 4. **기억·백업 자가치유 자동** — 프로필 A1 주입, 결정·메모리 백업, 다른 PC 전파가 알아서.
 5. **사소한 작업은 저비용** — 최대 성능이 "한 줄짜리 요청에도 멀티에이전트 폭발"을 의미하면 안 됨.
@@ -81,8 +81,8 @@
 | 5 | crash-safe health probe가 평문 한 줄. 정상=간결('시스템 정상'), 비정상=시끄럽고 실행가능('run: claude repair') | AUTO |
 | 6 | 빈 프롬프트 대신 Welcome Card: "최대 성능으로 셋업됨 — 평문으로 원하는 걸 말하세요. 예: '간단한 웹사이트 만들어줘'" 프로필 생기는 순간 자동 은퇴 | AUTO |
 | 7 | 평문 목표 입력(언어 무관, 프로필 따라 기본 한국어). 설정·플래그·슬래시 명령 없음 | **YOU (1회)** |
-| 8 | 모델이 Router Card 읽고 intent 분류, smallest-fit 판정(모델 매개): 사소=직접답변(팬아웃 억제), 실제 기능=executor+critic + 평문 한 줄 고지('이 작업은 executor+critic로 진행합니다'), 강한 must-pass 신호면 /ralph·/autopilot로 에스컬레이션. xhigh+ultracode+검증최신모델 이미 가동 | AUTO |
-| 9 | 무거운 작업 전 비용/레이트 한 줄 고지 + 기본 상한. 초보가 조용히 최고가 모델+xhigh+팬아웃에 얹히지 않음 | AUTO |
+| 8 | 모델이 Router Card 읽고 intent 분류, smallest-fit 판정(모델 매개): 사소=직접답변(팬아웃 억제), 실제 기능=executor+critic + 평문 한 줄 고지('이 작업은 executor+critic로 진행합니다'), 강한 must-pass 신호면 /ralph·/autopilot로 에스컬레이션. high(바닥값)+ultracode+검증최신모델 이미 가동 | AUTO |
+| 9 | 무거운 작업 전 비용/레이트 한 줄 고지 + 기본 상한. 초보가 조용히 최고가 모델+높은 effort+팬아웃에 얹히지 않음 | AUTO |
 | 10 | 세션 종료 시 메모리 자동 커밋, backlog-flush+end-path가 한 번뿐인 세션도 푸시 보장. 오프라인/인증실패 백로그는 다음 시작 시 평문 고지(안 된 걸 '됐다'고 안 함) | AUTO |
 | 11 | **실제 가치가 쌓인 뒤에만**(첫 `[[wikilink]]`/N번째 결정) 코치가 세션당 최대 1회 제안: "지식을 그래프로 볼래요? Obsidian 세팅해줄게요." 거절 무비용·기억됨 | AUTO (나중) |
 | 12 | Obsidian 제안 수락: helper가 미지원 환경 건너뛰고 앱 설치 후 **사전구성·채워진 그래프**로 바로 열림 — 유일한 선택적 GUI 단계, 원할 때까지 지연 | **YOU (1회, 선택)** |
@@ -93,18 +93,18 @@
 
 - **검증-최신 프론티어 모델(지배적 레버):** model-watch가 KNOWN_GOOD 유지 + 작은 결정적 헤드리스 스모크(툴콜·출력형식·거부 sanity·컨텍스트/가격 sanity) 통과 시에만 승격 → 첫 턴이 *증명된* 최고 모델로. 롤백은 settings 값 `git revert` 한 줄.
 - **경계된 staleness:** 새 프론티어 모델이 N일간 미승격이면 health 라인이 알리고 최신으로 원커맨드 opt-in 제공 → '최대 성능' 약속과 안전 양립.
-- **effortLevel=xhigh 영구 + ultracode 자동:** 최고 추론·동적 멀티에이전트가 out-of-box.
+- **effortLevel=high 영구(바닥값) + ultracode 자동:** 기본 고강도 추론·동적 멀티에이전트가 out-of-box, 판단력 좌우 작업은 xhigh 전환 제안(적응형 이펙트 정책).
 - **smallest-fit 라우팅(모델 매개 넛지 + 옵트인 하드 게이트):** 기본은 Router Card가 사소한 요청을 직접답변으로 편향. 결정적 비용 바닥이 필요하면 PreToolUse에서 서브에이전트 스폰을 막는 하드 게이트를 옵트인(실패 시 fail-open). '보장'이 아니라 기본값 편향 + 옵트인 강제.
 - **바이트-고정 주입 프리픽스(정직한 캐시 = 지연/비용, 품질 아님):** memory-inject가 바이트 동일 CLAUDE.md+프로필+얇은 도구면 방출, 휘발 토큰(날짜·세션id)은 캐시 브레이크포인트 뒤로, 12개 플러그인 스키마는 defer. `cache_read_input_tokens` 로깅으로 온기 상시 증명.
 - **올바른 순서의 캐시 프리웜(선택):** 유효한 프리필(max_tokens≥1, no-stream/thinking/forced-tool), 실제 턴과 *정확히 같은* 프리픽스, **pull-후-웜**, TTL 넘을 설치면 스킵. TTFT/비용 절감으로만 판매(품질 주장 아님).
-- **팬아웃 캐시 규율:** 병렬 서브에이전트는 부모의 모델+도구+고정 프리픽스 상속(append-only), 오케스트레이터가 첫 요청의 첫 토큰을 기다린 뒤 나머지 발사 → 콜드 쓰기 N회 대신 방금 쓴 캐시 읽기. 독립 서브태스크는 effort:low로 비용 절감(메인은 xhigh 유지).
-- **A1 개인화 무비용:** 라우팅 기본값이 주입 프로필(자동화 선호·xhigh·한국어) 읽어 사용자별 튜닝. '자동화 선호'는 다단계를 autopilot/ralph로 기울임.
+- **팬아웃 캐시 규율:** 병렬 서브에이전트는 부모의 모델+도구+고정 프리픽스 상속(append-only), 오케스트레이터가 첫 요청의 첫 토큰을 기다린 뒤 나머지 발사 → 콜드 쓰기 N회 대신 방금 쓴 캐시 읽기. 독립 서브태스크는 effort:low로 비용 절감(메인은 high 이상 유지).
+- **A1 개인화 무비용:** 라우팅 기본값이 주입 프로필(자동화 선호·high 바닥값·한국어) 읽어 사용자별 튜닝. '자동화 선호'는 다단계를 autopilot/ralph로 기울임.
 
 ---
 
 ## 6. Hermes 오케스트레이션층 (구체)
 
-Hermes는 **오케스트레이션 정책층**이며, `claude-config/claude/hermes/`의 PUBLIC 이식 가능 마크다운으로 표현되고 이미 설치된 네이티브 오케스트레이터(harness+OMC)가 **실행**한다 — 별도 런타임 아님. **YAGNI 대칭:** 지금은 4개 정본 아티팩트(roster/routing/modes/capabilities)를 **평문으로 정리**만 하고, 커플링 격리 바인딩·projector·drift-CI·이식성 린트 같은 간접 기계는 **실제 이식 트리거까지 보류**한다(정본이 열린 MD라 그날 추출도 쌈). 자동 활성은 기존 레일 재사용: config-sync 배포 + ensure-harness가 역할→에이전트 해소 검증(self-heal-or-warn; 바인딩 트리 없이도 roster 역할이 살아있는 에이전트로 매핑되는지 확인) + Router Card 결정적 주입(정본에서 생성, 역할 해소 assert). 초보는 평문 한 문장 → 모델이 xhigh+ultracode로 카드 읽고 smallest-fit 자기선택 → 한 줄 고지 후 네이티브 실행. 각 라우팅 결정은 `events/`에 로깅되어 기존 `/retro`→`/promote`(사람 리뷰·PII-free) 루프로 자기개선.
+Hermes는 **오케스트레이션 정책층**이며, `claude-config/claude/hermes/`의 PUBLIC 이식 가능 마크다운으로 표현되고 이미 설치된 네이티브 오케스트레이터(harness+OMC)가 **실행**한다 — 별도 런타임 아님. **YAGNI 대칭:** 지금은 4개 정본 아티팩트(roster/routing/modes/capabilities)를 **평문으로 정리**만 하고, 커플링 격리 바인딩·projector·drift-CI·이식성 린트 같은 간접 기계는 **실제 이식 트리거까지 보류**한다(정본이 열린 MD라 그날 추출도 쌈). 자동 활성은 기존 레일 재사용: config-sync 배포 + ensure-harness가 역할→에이전트 해소 검증(self-heal-or-warn; 바인딩 트리 없이도 roster 역할이 살아있는 에이전트로 매핑되는지 확인) + Router Card 결정적 주입(정본에서 생성, 역할 해소 assert). 초보는 평문 한 문장 → 모델이 high(바닥값)+ultracode로 카드 읽고 smallest-fit 자기선택(판단력 좌우 작업이면 xhigh 전환 제안) → 한 줄 고지 후 네이티브 실행. 각 라우팅 결정은 `events/`에 로깅되어 기존 `/retro`→`/promote`(사람 리뷰·PII-free) 루프로 자기개선.
 
 ---
 
@@ -163,7 +163,7 @@ Hermes는 **오케스트레이션 정책층**이며, `claude-config/claude/herme
 
 ## 12. 결정 (Decision Record 요약)
 
-우리는 온보딩 아키텍처를 **"Headless-First Core with a Deferred Obsidian Lens, over a Verified Gated-Glue reliability plane"** 으로 구축한다. (1) 핀된 한 줄 부트스트랩이 유일한 초보 관문, 로그인 2회 정직 안내·라이브 진행·멱등 재개. (2) 모든 성능 기본값(검증-최신 모델·xhigh·ultracode·harness/OMC)은 사전 배선되어 '최대 성능'이 out-of-box, 사소 요청엔 smallest-fit 억제(모델 매개 기본 + 옵트인 하드 게이트, fail-open) + 비용 한 줄. (3) Hermes는 `claude-config/claude/hermes/`의 PUBLIC 이식 마크다운으로 harness/OMC가 실행 — 지금은 정책 정리만, 간접 기계(projector·drift-CI·바인딩 격리·린트)는 이식 트리거까지 보류(YAGNI 대칭), 단일소스 Router/Welcome Card가 역할 드리프트에 loud 실패. (4) 신뢰성 일급: SessionStart backlog-flush로 백업 유실 봉합, crash-safe health probe 평문 한 줄, config-sync DATA-auto/서명 GLUE-promote 분리·검증키 out-of-band, 플러그인 SHA 핀, 스키마 마이그레이션 호환 게이트+불변 백업+무손실 보존. (5) Obsidian은 부트스트랩 미설치·비-load-bearing — 옵트인·환경가드·CORE-only 읽기 렌즈, MOC는 gitignore view, 지식층은 헤드리스 주입 포인터로도 전달. **이유:** 첫 턴 최대 성능·거의 0 마찰을 주고, 이식성 불변식을 구성상 참으로 유지하며, 침묵 실패와 계정-경계 리스크에 몇 년을 버틴다 — 모든 추가 메커니즘이 기존 claude-config 훅 패턴을 복제해 새 런타임 없이 YAGNI를 지킨다.
+우리는 온보딩 아키텍처를 **"Headless-First Core with a Deferred Obsidian Lens, over a Verified Gated-Glue reliability plane"** 으로 구축한다. (1) 핀된 한 줄 부트스트랩이 유일한 초보 관문, 로그인 2회 정직 안내·라이브 진행·멱등 재개. (2) 모든 성능 기본값(검증-최신 모델·적응형 이펙트(high 바닥값)·ultracode·harness/OMC)은 사전 배선되어 '최대 성능'이 out-of-box, 사소 요청엔 smallest-fit 억제(모델 매개 기본 + 옵트인 하드 게이트, fail-open) + 비용 한 줄. (3) Hermes는 `claude-config/claude/hermes/`의 PUBLIC 이식 마크다운으로 harness/OMC가 실행 — 지금은 정책 정리만, 간접 기계(projector·drift-CI·바인딩 격리·린트)는 이식 트리거까지 보류(YAGNI 대칭), 단일소스 Router/Welcome Card가 역할 드리프트에 loud 실패. (4) 신뢰성 일급: SessionStart backlog-flush로 백업 유실 봉합, crash-safe health probe 평문 한 줄, config-sync DATA-auto/서명 GLUE-promote 분리·검증키 out-of-band, 플러그인 SHA 핀, 스키마 마이그레이션 호환 게이트+불변 백업+무손실 보존. (5) Obsidian은 부트스트랩 미설치·비-load-bearing — 옵트인·환경가드·CORE-only 읽기 렌즈, MOC는 gitignore view, 지식층은 헤드리스 주입 포인터로도 전달. **이유:** 첫 턴 최대 성능·거의 0 마찰을 주고, 이식성 불변식을 구성상 참으로 유지하며, 침묵 실패와 계정-경계 리스크에 몇 년을 버틴다 — 모든 추가 메커니즘이 기존 claude-config 훅 패턴을 복제해 새 런타임 없이 YAGNI를 지킨다.
 
 ---
 

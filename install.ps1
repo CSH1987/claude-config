@@ -1,6 +1,6 @@
 ﻿# claude-config 설치 (Windows) — 이 머신의 모든 폴더·세션에서:
 #   · Harness 플러그인 자동 설치/복구
-#   · effortLevel=xhigh 영구 적용 + ultracode/ultraplan 리마인더
+#   · effortLevel=high 영구 적용(바닥값, 판단작업은 xhigh 제안) + ultracode/ultraplan 리마인더
 #   · `claude` 명령을 ultracode 로 자동 실행($PROFILE 함수 오버라이드)
 $ErrorActionPreference = 'Stop'
 $repoDir   = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -28,9 +28,10 @@ Copy-Item (Join-Path $repoDir 'claude\hooks\edit-nudge.ps1')      (Join-Path $ho
 Copy-Item (Join-Path $repoDir 'claude\hooks\stop-metrics.ps1')    (Join-Path $hooks 'stop-metrics.ps1')    -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\filter-test-output.ps1') (Join-Path $hooks 'filter-test-output.ps1') -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\hermes-sync.ps1')     (Join-Path $hooks 'hermes-sync.ps1')     -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\skill-watch.ps1')     (Join-Path $hooks 'skill-watch.ps1')     -Force
 # config-sync 가 레포 위치를 찾도록 기록 (BOM 없이)
 [System.IO.File]::WriteAllText((Join-Path $dst '.config-sync-path'), $repoDir, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, model-watch, auto-update, morning-brief, memory-sync, guardrails, edit-track, edit-nudge, stop-metrics, filter-test-output, hermes-sync)'
+Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, model-watch, auto-update, morning-brief, memory-sync, guardrails, edit-track, edit-nudge, stop-metrics, filter-test-output, hermes-sync, skill-watch)'
 
 # 평생 기억저장소 경로 resolver(memdir) 복사 — 모든 hook·skill 이 호출하는 단일 진실원(경로만, 데이터 없음).
 $lib = Join-Path $dst 'lib'
@@ -46,13 +47,14 @@ Copy-Item (Join-Path $repoDir 'claude\lib\metrics.sh')  (Join-Path $lib 'metrics
 Copy-Item (Join-Path $repoDir 'claude\lib\metrics.py')  (Join-Path $lib 'metrics.py')  -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\brief.py')     (Join-Path $lib 'brief.py')     -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\model-watch.py') (Join-Path $lib 'model-watch.py') -Force
+Copy-Item (Join-Path $repoDir 'claude\lib\skill-watch.py') (Join-Path $lib 'skill-watch.py') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\auto-update.py') (Join-Path $lib 'auto-update.py') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\dashboard.py') (Join-Path $lib 'dashboard.py') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\seed-leakwords.py') (Join-Path $lib 'seed-leakwords.py') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\memory-bootstrap.ps1') (Join-Path $lib 'memory-bootstrap.ps1') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\memory-bootstrap.sh')  (Join-Path $lib 'memory-bootstrap.sh')  -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\vaultdir.sh')          (Join-Path $lib 'vaultdir.sh')          -Force
-Write-Host '  ✓ lib copied (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder, model-watch engine, auto-update engine, vaultdir)'
+Write-Host '  ✓ lib copied (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder, model-watch + skill-watch engines, auto-update engine, vaultdir)'
 
 # 워크플로 (Workflow 도구의 named workflow — 모든 머신에서 Workflow({name:'expert-debate'}) 호출 가능)
 $workflows = Join-Path $dst 'workflows'
@@ -222,9 +224,13 @@ $officialPlugins = @(
 foreach ($p in $officialPlugins) { (Get-Dict $s 'enabledPlugins')["$p@claude-plugins-official"] = $true }
 # insane-search (gptaku-plugins 마켓) — 차단된 공개 사이트 자동 우회 리더. base 와 별도 마켓이라 official 루프 밖에서 추가.
 (Get-Dict $s 'enabledPlugins')['insane-search@gptaku-plugins'] = $true
-# effort 기본값 — 영구화되는 유일한 부분(xhigh). 없을 때만 설정해 사용자 선택 보존.
+# effort 기본값 — 영구화되는 바닥값(high, 적응형 이펙트 정책). 없을 때만 설정해 사용자 선택 보존.
 # (.ContainsKey 는 Hashtable·Generic Dictionary 모두 지원; .Contains 는 제네릭 Dictionary 에 없음)
-if (-not $s.ContainsKey('effortLevel')) { $s['effortLevel'] = 'xhigh' }
+if ($s.ContainsKey('effortLevel') -and [string]$s['effortLevel'] -eq 'xhigh') {
+    $s['effortLevel'] = 'high'  # 1회성 마이그레이션: 구 관리 기본값(xhigh) 정리 — 사용자가 다른 값을 골랐다면 건드리지 않음
+} elseif (-not $s.ContainsKey('effortLevel')) {
+    $s['effortLevel'] = 'high'
+}
 
 # auto 모드 기본값(연구 프리뷰) — 없을 때만 설정해 사용자 선택 보존.
 # 새 세션이 'auto mode' 로 시작: AI 안전 classifier 가 각 작업을 검사 후 거의 자동 승인.
@@ -292,7 +298,8 @@ $managedHooks = [ordered]@{
         (New-PsHook 'auto-update.ps1'     ''),
         (New-PsHook 'morning-brief.ps1'   ''),
         (New-PsHook 'memory-sync.ps1'     ' -Mode start'),
-        (New-PsHook 'hermes-sync.ps1'     '')
+        (New-PsHook 'hermes-sync.ps1'     ''),
+        (New-PsHook 'skill-watch.ps1'     '')
     )
     SessionEnd = @(
         (New-PsHook 'config-sync.ps1'     " -Mode end -Repo `"$repoDir`""),
@@ -325,7 +332,7 @@ foreach ($evt in $managedHooks.Keys) {
 # → 과거 bash-form 훅(`bash "$HOME/.claude/hooks/config-sync.sh"`)이 박힌 머신도 재실행으로 자가 치유.
 #   딱 3개 관리 파일명으로만 한정 + 호출 위치(-File "..." / bash "...")에 앵커 →
 #   사용자 자신의 bash 훅이나, 관리 경로를 인자/문구로 "언급만" 하는 훅은 보존(과잉 제거 방지).
-$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|model-watch|auto-update|morning-brief|memory-sync|guardrails|edit-track|edit-nudge|stop-metrics|filter-test-output|hermes-sync)\.(ps1|sh)\b'
+$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|model-watch|auto-update|morning-brief|memory-sync|guardrails|edit-track|edit-nudge|stop-metrics|filter-test-output|hermes-sync|skill-watch)\.(ps1|sh)\b'
 $hk = Get-Dict $s 'hooks'
 foreach ($evt in $managedHooks.Keys) {
     $existing = @(); if ($hk[$evt]) { $existing = @($hk[$evt]) }
@@ -537,5 +544,5 @@ if ($inClaudeSession) {
 } else {
     Write-Host '  ℹ claude 미설치 — 다음 세션 훅이 설치'
 }
-Write-Host '✓ 완료. effortLevel=xhigh 영구 + ultracode 자동(claude 오버라이드) + harness 자동.'
+Write-Host '✓ 완료. effortLevel=high 영구(바닥값) + ultracode 자동(claude 오버라이드) + harness 자동.'
 Write-Host '  (새 PowerShell 창을 열어야 claude 오버라이드가 적용됩니다.)'

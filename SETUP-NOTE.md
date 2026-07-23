@@ -20,7 +20,7 @@
 
 | 부분 | 위치 | 셸 의존성 |
 |---|---|---|
-| payload — xhigh · 플러그인 12종 · 훅 · CLAUDE.md · ultracode.json | `~/.claude/` (모든 셸 공용) | **없음** — 한 번 깔면 어느 셸에서 `claude` 켜든 적용 |
+| payload — high(바닥값) · 플러그인 12종 · 훅 · CLAUDE.md · ultracode.json | `~/.claude/` (모든 셸 공용) | **없음** — 한 번 깔면 어느 셸에서 `claude` 켜든 적용 |
 | `claude` → ultracode **자동 실행 래퍼** | PowerShell 프로필 **또는** `.bashrc` | **있음** — 셸별로 따로 심긴다 |
 
 즉 무거운 건 전부 공용이고, **셸을 타는 건 "자동 ultracode 래퍼" 하나뿐**이다.

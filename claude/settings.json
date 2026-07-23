@@ -138,6 +138,14 @@
             "command": "bash \"$HOME/.claude/hooks/hermes-sync.sh\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/skill-watch.sh\""
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -216,7 +224,7 @@
     "CLAUDE_MEMORY_NO_SYNC": "1",
     "CLAUDE_CONFIG_MID_MODEL": "claude-opus-4-8"
   },
-  "effortLevel": "xhigh",
+  "effortLevel": "high",
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
   "skipWorkflowUsageWarning": true,

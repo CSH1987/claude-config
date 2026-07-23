@@ -30,10 +30,11 @@ description: 품질을 깎지 않는 작업량(토큰·비용) 최적화 규칙 
 - 작업 전환 시 `/clear` (+`/rename` 후 `/resume`으로 복귀 가능). 압축 시 보존 우선순위는 전역 CLAUDE.md의 Compact instructions 참조.
 - MCP 서버는 주기 감사: `/context`로 점유 확인, 미사용 서버는 `/mcp`에서 비활성화. CLI(gh 등)가 있으면 MCP보다 우선.
 
-## 3. Effort — 품질 무손실 하한
+## 3. Effort — 적응형 이펙트 정책(모델의 적응형 플랜과 대칭)
 
-- 기본: **xhigh 밴드 + adaptive thinking**(요청별 사고량 자동 조절). 이 조합이 품질 상한 유지의 기준선.
-- 권장 하한: 코딩·에이전트 작업은 **high 이상 유지** — 근거: Sonnet 5·Fable 5의 기본 effort는 high이며, 공식 마이그레이션 가이드가 최고난도 코딩·에이전트 작업에 xhigh를 권장(강제 규정이 아닌 권장). `max`는 과사고·수익 체감 경향이 공식 문서에 명시돼 비권장.
+- 바닥값: **high + adaptive thinking**(요청별 사고량 자동 조절)이 `settings.json`에 영구 적용. 모델의 적응형 플랜(계획=최상위/실행=효율)과 대칭되게, effort도 **판단력이 결과를 좌우하는 작업(기획·설계·아키텍처·비평·근본원인 디버깅)은 `/effort xhigh`로 전환 제안**, 절차 수행형 실행 작업은 바닥값 high 유지.
+- **자동 전환 불가(사실 확인됨, [[claude-config/claude/CLAUDE.md]] 참조)**: opusplan과 달리 effortLevel엔 plan-mode phase-aware 메커니즘이 없고 훅으로도 흉내낼 수 없음(엔진 내부 모드 감지 불가 + 훅 프로세스 env가 부모 세션에 전파 안 됨) — 그래서 xhigh 전환은 매번 사용자에게 제안 후 `/effort xhigh`를 사용자가 직접 실행해야 함.
+- 근거: Sonnet 5·Fable 5의 기본 effort는 high이며, 공식 마이그레이션 가이드가 최고난도 코딩·에이전트 작업에 xhigh를 권장(강제 규정이 아닌 권장). `max`는 과사고·수익 체감 경향이 공식 문서에 명시돼 비권장.
 - 기계적 서브 작업은 low 허용 — Fable 5는 low에서도 이전 세대 xhigh급이므로 하위 티어 위임과 병행하면 품질 손실 없음.
 
 ## 4. 측정 — 변경 전후 비교 (측정 없이 조정 없음)

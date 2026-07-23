@@ -4,7 +4,7 @@
 
 이 머신과 **앞으로의 모든 새 머신(Mac · Windows · Linux)**에서 Claude Code(CLI)에:
 - **플러그인** 자동 설치·복구: `harness` + `oh-my-claudecode`(`/deep-interview`, `/ralph` 등) + `insane-search`(차단된 공개 사이트 자동 우회 리더)
-- **effortLevel=xhigh** 영구 적용 (최고 강도 추론)
+- **effortLevel=high** 영구 적용(바닥값) + 판단력 좌우 작업엔 `/effort xhigh` 전환 제안(적응형 이펙트 정책, 모델의 적응형 플랜과 대칭)
 - **`claude` 명령을 ultracode 로 자동 실행** (셸 함수 오버라이드) + ultracode/ultraplan 리마인더
 
 가 자동으로 적용되도록 하는 설정 모음.
@@ -83,12 +83,12 @@ git -C "$env:USERPROFILE\claude-config" pull; powershell -ExecutionPolicy Bypass
 
 ## 4. 작업 강도(effort) 기본값 — 정직한 한계
 
-- **영구 적용**: `effortLevel: "xhigh"` 가 settings.json 으로 설정돼 매 세션 자동 xhigh 추론. (Opus 4.7/4.8·Fable 5 필요; 미지원 모델에선 클램프)
+- **영구 적용(바닥값)**: `effortLevel: "high"` 가 settings.json 으로 설정돼 매 세션 자동 high 이상 추론. 판단력이 결과를 좌우하는 작업(기획·설계·리뷰·근본원인 디버깅)은 Claude가 `/effort xhigh` 전환을 제안(자동 전환은 불가 — opusplan과 달리 effortLevel엔 phase-aware 메커니즘이 없음). (Opus 4.7/4.8·Fable 5 필요; 미지원 모델에선 클램프)
 - **영구화 불가(Claude Code 설계)**: ultracode 의 *동적 워크플로 오케스트레이션* 과 ultraplan 은 **세션 전용**. settings.json·환경변수·훅으로 영구화할 수 없음. (`/effort` 또는 실행 시 `--settings`로만 세션 단위 적용)
 - **그래서 자동화 방식**:
   1. 설치 시 셸 프로파일에 `claude` 함수를 심어 `claude --settings ~/.claude/ultracode.json` 으로 실행 → **새 터미널의 모든 `claude` 세션이 ultracode 로 시작**.
   2. `~/.claude/CLAUDE.md` + `effort-reminder` 훅이 매 세션 Claude 에게 상태를 주입 → 혹시 ultracode 가 아니면 능동적으로 `/effort ultracode` 를 제안(사용자가 잊어도 챙김).
-- 끄고 싶은 세션: `claude` 대신 `command claude`(bash) / `& (Get-Command claude.cmd).Source`(PS) 로 직접 실행하거나 세션 중 `/effort high`.
+- 끄고 싶은 세션: `claude` 대신 `command claude`(bash) / `& (Get-Command claude.cmd).Source`(PS) 로 직접 실행하거나 세션 중 `/effort medium`.
 
 ## 5. 설정 자동 동기화 (클라우드 백업) — "깜빡해도 항상 최신"
 
@@ -170,7 +170,7 @@ claude-config/
 ├── install.ps1                     # Windows 설치 (복사+머지 + 즉시 설치)
 ├── test/fresh-install.ps1          # 설치 회귀 하네스 (Windows; 80+ 체크, Git Bash 로 bash 경로도 검증)
 └── claude/
-    ├── settings.json               # 훅·플러그인·마켓플레이스 + effortLevel:xhigh
+    ├── settings.json               # 훅·플러그인·마켓플레이스 + effortLevel:high(바닥값)
     ├── CLAUDE.md                    # 전역 세션 기본값(ultracode 넛지 + OMC 모드 안내) → ~/.claude/CLAUDE.md
     ├── ultracode.json              # {"ultracode":true} — claude --settings 로 주입
     ├── github/

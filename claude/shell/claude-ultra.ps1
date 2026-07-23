@@ -205,7 +205,7 @@ function claude-doctor {
             $s = Get-Content $sp -Raw | ConvertFrom-Json
             $pc = @($s.enabledPlugins.PSObject.Properties).Count
             if ($pc -ge 11) { _add 'OK' "enabledPlugins: $pc" } else { _add 'WARN' "enabledPlugins: $pc (expected >= 11)" 'claude-update' }
-            if ($s.effortLevel -eq 'xhigh') { _add 'OK' 'effortLevel = xhigh' } else { _add 'WARN' "effortLevel = $($s.effortLevel)" }
+            if ($s.effortLevel -eq 'high') { _add 'OK' 'effortLevel = high' } elseif ($s.effortLevel -eq 'xhigh') { _add 'WARN' 'effortLevel = xhigh (구 기본값 잔존 — 재설치 시 자동 정리됨)' 'claude-update' } else { _add 'WARN' "effortLevel = $($s.effortLevel)" }
             _add 'OK' ("hooks: SessionStart={0} SessionEnd={1}" -f @($s.hooks.SessionStart).Count, @($s.hooks.SessionEnd).Count)
         } catch { _add 'FAIL' 'settings.json invalid JSON' 'claude-update' }
     } else { _add 'FAIL' 'settings.json missing' 'run install.ps1' }

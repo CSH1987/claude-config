@@ -117,7 +117,7 @@ mode-A = `<hostname>`; GitHub Actions = `github`; Anthropic `/schedule` = `cloud
   "preferences": {
     "response_language": "ko",
     "tone": "<concise|detailed|...>",
-    "effort_default": "xhigh",
+    "effort_default": "high",
     "code_comment_language": "ko",
     "emoji": false,
     "units": "metric"
