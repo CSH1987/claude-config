@@ -44,7 +44,7 @@ if [ ! -f "$SENTINEL" ] || ! head -1 "$SENTINEL" 2>/dev/null | grep -q "에버�
   emit "[EversVault] 볼트 센티널(00_홈.md)을 찾지 못했습니다 — vaultPath 확인 필요: $VAULT"
 fi
 
-[ -f "$INDEXER" ] || exit 0
+[ -f "$INDEXER" ] || emit "[EversVault] eversvault-index.py가 없습니다 — 배포 확인 필요."
 CONTEXT_10="$(python3 "$INDEXER" "$VAULT/10_컨텍스트" 2>/dev/null)"
 [ -n "$CONTEXT_10" ] || CONTEXT_10="[EversVault 10_컨텍스트] 인덱스 생성 실패"
 
@@ -52,7 +52,9 @@ PROJECTS="$(python3 -c "
 import json, sys
 try:
     cfg = json.load(open(sys.argv[1], encoding='utf-8'))
-    print('\n'.join(cfg.get('projects', [])))
+    projs = cfg.get('projects', [])
+    if isinstance(projs, list):
+        print('\n'.join(p for p in projs if isinstance(p, str)))
 except Exception:
     pass
 " "$SCOPE_FILE" 2>/dev/null)"

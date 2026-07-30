@@ -6,15 +6,27 @@
 # 실패해도 예외를 던지지 않는다 — 상위 bash 스크립트가 빈 출력을 "0건"으로 감싸 처리.
 import sys, os, re, glob
 
-TOKEN_CHAR_BUDGET = 1500 * 4  # 1500토큰 ~ 4자/토큰 근사
+TOKEN_CHAR_BUDGET = 1500 * 2  # 1500토큰 근사 — 한글은 ~1.5~2.5자/토큰이라 보수적으로 2자/토큰 적용
 
 
-def read_frontmatter_field(text, field):
-    m = re.match(r'^---\s*\n(.*?)\n---', text, re.DOTALL)
-    if not m:
-        return None
-    fm = re.search(r'^%s:\s*(.+)$' % re.escape(field), m.group(1), re.MULTILINE)
-    return fm.group(1).strip().strip('"\'') if fm else None
+def split_frontmatter(text):
+    """(frontmatter dict, body) 반환. 라인 단위로 처음 200줄만 스캔 — lazy DOTALL 정규식의
+    quadratic 백트래킹(닫는 '---' 없는 파일에서 훅/인덱서 정지) 방지."""
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].strip() != '---':
+        return {}, text
+    fm = {}
+    end_idx = None
+    for i, line in enumerate(lines[1:201], start=1):
+        if line.strip() == '---':
+            end_idx = i
+            break
+        km = re.match(r'^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$', line)
+        if km:
+            fm[km.group(1)] = km.group(2).strip().strip('"\'')
+    if end_idx is None:
+        return fm, text
+    return fm, ''.join(lines[end_idx + 1:])
 
 
 def title_and_desc(path):
@@ -23,7 +35,7 @@ def title_and_desc(path):
             text = f.read()
     except Exception:
         return None, None, None
-    body = re.sub(r'^---\s*\n.*?\n---\s*\n', '', text, count=1, flags=re.DOTALL)
+    fm, body = split_frontmatter(text)
     h1 = re.search(r'^#\s+(.+)$', body, re.MULTILINE)
     title = h1.group(1).strip() if h1 else os.path.splitext(os.path.basename(path))[0]
     desc = ''
@@ -31,7 +43,7 @@ def title_and_desc(path):
         after = body[h1.end():].lstrip('\n')
         para = after.split('\n\n', 1)[0].strip()
         desc = re.sub(r'\s+', ' ', para)[:100]
-    updated = read_frontmatter_field(text, 'updated') or ''
+    updated = fm.get('updated', '')
     return title, desc, updated
 
 
