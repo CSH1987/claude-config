@@ -81,4 +81,10 @@ if [ "$IN_SCOPE" = "1" ]; then
 $CONTEXT_20"
 fi
 
+# 가드(guardrails.py)는 cwd 무관 전역 적용이라 IN_SCOPE=0 세션에도 이 힌트를 무조건 주입한다(의도적).
+WRITE_PROTOCOL_HINT="[EversVault] 30_결정로그/20_업무위키에 쓸 때는 claude-config 레포의 claude/protocols/eversvault-write.md 프로토콜을 따르세요(레포 위치는 ~/.claude/.config-sync-path 참고 — 신규파일=Write 직접, canonical 반영=승인된 _pending 제안 경유 patch_content)."
+FULL="$FULL
+
+$WRITE_PROTOCOL_HINT"
+
 emit "$FULL"
