@@ -60,13 +60,19 @@ except Exception:
 " "$SCOPE_FILE" 2>/dev/null)"
 
 CWD_LOWER="$(pwd | tr '[:upper:]' '[:lower:]')"
+# 앞뒤에 '/'를 붙여 모든 경로 세그먼트가 슬래시로 경계지어지게 만든다 — 순수 부분문자열 매칭은
+# project명이 다른 세그먼트 이름에 포함되기만 해도(예: "hermes"가 "nothermes"나 "my-hermes-notes"
+# 안에 있음) 오탐 주입을 일으킨다(2026-07-31 종합테스트 워크플로 실측 발견, CONFIRMED — 딥인터뷰
+# 스펙이 명시적으로 피하려던 "경로 패턴 자동판정" 오탐 위험이 그대로 재현됨). "*/proj/*" glob으로
+# project명이 정확히 하나의 경로 세그먼트와 일치할 때만 매치시킨다.
+CWD_LOWER_BOUNDED="/$CWD_LOWER/"
 IN_SCOPE=0
 if [ -n "$PROJECTS" ]; then
   while IFS= read -r proj; do
     [ -z "$proj" ] && continue
     proj_lower="$(printf '%s' "$proj" | tr '[:upper:]' '[:lower:]')"
-    case "$CWD_LOWER" in
-      *"$proj_lower"*) IN_SCOPE=1 ;;
+    case "$CWD_LOWER_BOUNDED" in
+      */"$proj_lower"/*) IN_SCOPE=1 ;;
     esac
   done <<PROJ_EOF
 $PROJECTS

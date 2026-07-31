@@ -202,6 +202,20 @@ _EV_OBSIDIAN_COPY_TOOLS = {'vault_copy'}  # source는 읽기일 뿐이라 destin
 # 예외 없이 차단(보안리뷰 M-2: Claude Code의 이 볼트 사용 패턴에 UI 커맨드가 필요한 경우가
 # 없으므로, 위협모델 안에서 전면 차단이 가장 싸고 정합적).
 _EV_OBSIDIAN_UNSCOPED_TOOLS = {'command_execute'}
+# Bash로 로컬 REST API(Obsidian Local REST API+MCP 플러그인, 127.0.0.1:27123/27124)를 직접
+# 때리면 _ev_bash_writes_to의 마커단어+vault절대경로 매칭이 전혀 안 걸린다 — curl/wget 같은
+# HTTP 클라이언트는 마커단어 집합에 없고, URL은 vault의 실제 파일시스템 절대경로를 포함하지
+# 않기 때문(2026-07-31 종합테스트 워크플로 실측 발견, CONFIRMED). 이 채널로는 정당한 용도가
+# 없다(읽기도 eversvault-obsidian MCP 도구로 이미 가능) — 메서드를 구분하려는 시도(PUT만 차단
+# 등)는 curl -X 생략시 -d로도 POST가 되는 등 우회 여지가 있어, 포트 언급 자체를 예외 없이 차단.
+# 커버 범위는 표준 표기(127.0.0.1/localhost/[::1], 대소문자 무관)까지 — 8진수·정수 IP 등 의도적
+# 우회 표기는 위협모델("협조적 에이전트의 실수 방지, 적대적 방어 아님") 밖이라 다루지 않는다
+# (보안리뷰 확인). 부수효과: 이 레포 자체를 Bash로 다룰 때(grep/sed로 포트 리터럴 검색 등)도
+# 차단되니, 이 상수를 다룰 땐 Bash 대신 Grep/Read 도구를 쓸 것(보안리뷰 LOW 대응).
+_EV_LOCAL_REST_API_RE = re.compile(
+    r'\b(?:127\.0\.0\.1|localhost)[:](?:27123|27124)\b'
+    r'|\[?::1\]?[:](?:27123|27124)\b',
+    re.IGNORECASE)  # [::1](IPv6 루프백)은 '['/':'가 단어문자가 아니라 앞선 \b가 안 걸려 별도 분기
 
 
 def _ev_obsidian_normalize_rel(fp, vault, is_obsidian_tool):
@@ -214,6 +228,28 @@ def _ev_obsidian_normalize_rel(fp, vault, is_obsidian_tool):
     if is_obsidian_tool and fp.startswith('/'):
         fp = fp.lstrip('/')
     return _ev_normalize_rel(fp, vault)
+
+
+def _ev_is_parent_escape(rel):
+    """rel이 실제로 상위 디렉터리로 이탈하는 표기('..' 자체 또는 '../'로 시작)인지 판정.
+    단순 rel.startswith('..')는 '..drafts/x.md'처럼 두 점으로 시작하는 정상 파일/디렉터리명도
+    오분류한다(보안리뷰 LOW 대응 — 실사용 영향은 사실상 없지만 정밀화)."""
+    return rel == '..' or rel.startswith('../')
+
+
+def _ev_obsidian_escape_block(rel, fp, is_obsidian_tool):
+    """rel이 '..'로 시작하면(볼트 밖으로 나가는 경로) 어떻게 취급할지 결정.
+    eversvault-obsidian 툴은 스키마상 경로가 항상 vault-relative이므로(각 툴 설명: 'File path
+    relative to vault root') '..'가 남는 입력 자체가 원천적으로 무의미/의심스럽다 — 그런데도
+    기존 코드는 이를 '볼트 밖이라 해당없음(allow)'으로 그냥 통과시켰다(2026-07-31 종합테스트
+    워크플로 실측 발견, CONFIRMED: vault_write에 '../10_컨텍스트/x.md'를 주면 무검사 통과).
+    이 함수는 그 경우 차단 사유 문자열을, 통과시켜야 하면 None을 반환한다. 다른 MCP 서버(예:
+    범용 filesystem MCP)는 절대경로 의미론이라 볼트 밖 경로가 실제로 무관할 수 있으므로 그
+    경우엔 여전히 None(허용)을 반환 — 이 완화는 is_obsidian_tool=True일 때만 적용한다."""
+    if is_obsidian_tool:
+        return ("eversvault-obsidian 경로는 스키마상 항상 vault-relative입니다 — '..'로 볼트 "
+                "밖을 가리키는 경로는 무조건 차단됩니다 (%s)" % fp)
+    return None
 
 
 def _ev_check_target(vault, rel, is_append):
@@ -244,6 +280,9 @@ def _ev_guard(tool, ti):
 
     if tool == 'Bash':
         cmd = str(ti.get('command', ''))
+        if _EV_LOCAL_REST_API_RE.search(cmd):
+            return ("Bash를 통한 Obsidian Local REST API(127.0.0.1:27123/27124) 직접 접근은 "
+                    "차단됩니다 — eversvault-obsidian MCP 도구(vault_read/vault_write 등)를 사용하세요")
         if _ev_bash_writes_to(cmd, vault):
             return ("Bash를 통한 볼트 쓰기는 차단됩니다 "
                     "(10_컨텍스트/90_Hermes/20_업무위키는 Write/Edit/patch_content 채널로만 쓰기 가능)")
@@ -273,8 +312,14 @@ def _ev_guard(tool, ti):
             if not fp:
                 continue
             rel = _ev_obsidian_normalize_rel(fp, vault, is_ev_obsidian)
-            if rel is not None and not rel.startswith('..'):
-                return "삭제/이동은 볼트 전체에서 예외 없이 차단됩니다 (%s)" % rel
+            if rel is None:
+                continue
+            if _ev_is_parent_escape(rel):
+                blocked = _ev_obsidian_escape_block(rel, fp, is_ev_obsidian)
+                if blocked:
+                    return blocked
+                continue
+            return "삭제/이동은 볼트 전체에서 예외 없이 차단됩니다 (%s)" % rel
         return None
 
     # 복사류(vault_copy) — source는 읽기일 뿐이라 destination만 폴더 규칙 대상.
@@ -283,8 +328,10 @@ def _ev_guard(tool, ti):
         if not fp:
             return None
         rel = _ev_obsidian_normalize_rel(fp, vault, is_ev_obsidian)
-        if rel is None or rel.startswith('..'):
+        if rel is None:
             return None
+        if _ev_is_parent_escape(rel):
+            return _ev_obsidian_escape_block(rel, fp, is_ev_obsidian)
         return _ev_check_target(vault, rel, is_append=False)
 
     # 쓰기류로 취급할 도구: Write/Edit/MultiEdit + MCP의 patch_content/write_file/edit_file/
@@ -303,8 +350,10 @@ def _ev_guard(tool, ti):
     if not fp:
         return None
     rel = _ev_obsidian_normalize_rel(fp, vault, is_ev_obsidian)
-    if rel is None or rel.startswith('..'):
+    if rel is None:
         return None
+    if _ev_is_parent_escape(rel):
+        return _ev_obsidian_escape_block(rel, fp, is_ev_obsidian)
 
     return _ev_check_target(vault, rel, is_append)
 
