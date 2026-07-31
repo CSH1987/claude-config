@@ -187,6 +187,55 @@ def _ev_extract_path(ti):
     return ''
 
 
+# 실제 등록된 eversvault-obsidian MCP 서버(Obsidian Local REST API+MCP 플러그인)는 파일시스템
+# MCP와 명명 관례가 달라(vault_write/vault_patch/vault_append/vault_delete/vault_move/vault_copy)
+# 위 write_file/patch_content/append_content/delete_file/move_file 부분문자열 매칭이 이 서버의
+# 실제 툴 이름과 전혀 겹치지 않았다 — 2026-07-30 실측으로 발견: 미승인 vault_write가 20_업무위키
+# canonical에 그대로 성공, 90_Hermes에도 그대로 성공, vault_delete도 무검사 통과. 서버 접두사로
+# 한정한 명시적 분류를 별도로 추가한다(다른 MCP 서버의 기존 부분문자열 매칭엔 영향 없음).
+_EV_OBSIDIAN_PREFIX = 'mcp__eversvault-obsidian__'
+_EV_OBSIDIAN_WRITE_TOOLS = {'vault_write', 'vault_patch', 'open_file'}  # open_file: 대상 없으면 새 문서 생성
+_EV_OBSIDIAN_APPEND_TOOLS = {'vault_append'}
+_EV_OBSIDIAN_DELETE_MOVE_TOOLS = {'vault_delete', 'vault_move'}
+_EV_OBSIDIAN_COPY_TOOLS = {'vault_copy'}  # source는 읽기일 뿐이라 destination만 취급
+# 경로 파라미터가 없어(활성 파일 기준으로 동작) 폴더 규칙 적용이 원천적으로 불가능한 도구 —
+# 예외 없이 차단(보안리뷰 M-2: Claude Code의 이 볼트 사용 패턴에 UI 커맨드가 필요한 경우가
+# 없으므로, 위협모델 안에서 전면 차단이 가장 싸고 정합적).
+_EV_OBSIDIAN_UNSCOPED_TOOLS = {'command_execute'}
+
+
+def _ev_obsidian_normalize_rel(fp, vault, is_obsidian_tool):
+    """is_obsidian_tool=True면 eversvault-obsidian 스키마상 경로는 항상 vault-relative이므로
+    선행 슬래시를 벗겨 상대경로로 강제 해석한다(보안리뷰 M-1 대응 — 선행 슬래시가 있으면
+    os.path.isabs가 참이 돼 _ev_normalize_rel이 실제 파일시스템 절대경로로 오인, vault 밖으로
+    계산되는 relpath('..'로 시작)가 나와 보호검사를 면제받는 갭이 실측으로 확인됨). 다른 MCP
+    서버(예: 범용 filesystem MCP)의 절대경로 의미론은 그대로 유지 — 이 함수는 eversvault-obsidian
+    분기에서만 호출된다."""
+    if is_obsidian_tool and fp.startswith('/'):
+        fp = fp.lstrip('/')
+    return _ev_normalize_rel(fp, vault)
+
+
+def _ev_check_target(vault, rel, is_append):
+    """rel(볼트 상대경로)에 폴더별 규칙 적용. 차단 사유 문자열 또는 None.
+    쓰기류/복사류(destination)가 공유하는 판정 로직 — 중복·드리프트 방지를 위해 분리."""
+    if rel.lower() == '00_홈.md':
+        return "00_홈.md(볼트 센티널)는 가드 자기보호를 위해 쓰기 금지입니다"
+    if _ev_rel_under(rel, '10_컨텍스트'):
+        return "10_컨텍스트는 사람 정본입니다 — Claude Code 자동쓰기 절대 금지 (%s)" % rel
+    if _ev_rel_under(rel, '90_Hermes'):
+        return "90_Hermes는 Hermes 전용 자동산출물입니다 — Claude Code 쓰기 금지, 읽기는 승격목적으로만 허용 (%s)" % rel
+    if _ev_rel_under(rel, '20_업무위키'):
+        if is_append:
+            return "20_업무위키에 append_content는 예외없이 차단됩니다(큐 우회 벡터) (%s)" % rel
+        if _ev_rel_under(rel, '20_업무위키/_pending'):
+            return None  # 신규 제안 생성 및 기존 제안파일 Edit(status 전환 포함)은 항상 허용
+        if _ev_has_approved_proposal(vault, rel):
+            return None
+        return "20_업무위키 canonical 노트는 승인된 제안(_pending, status:approved) 경유로만 반영 가능합니다 (%s)" % rel
+    return None
+
+
 def _ev_guard(tool, ti):
     """차단 사유 문자열 또는 None. 호출부에서 이미 맥미니 확인 후 try/except로 감싸 호출."""
     vault = _ev_config()
@@ -201,58 +250,63 @@ def _ev_guard(tool, ti):
         return None
 
     is_mcp = tool.startswith('mcp__')
+    ev_obsidian_tool = tool[len(_EV_OBSIDIAN_PREFIX):] if tool.startswith(_EV_OBSIDIAN_PREFIX) else None
+    is_ev_obsidian = ev_obsidian_tool is not None
 
-    # 삭제류(delete_file) — 볼트 전체에서 예외 없이 차단(코드리뷰 확인: 다른 서버명이라도 이름에
-    # delete_file이 들어가면 매치). move_file은 delete+create 조합이므로 source/destination 둘 다
-    # 같은 취급(코드리뷰 HIGH#1 대응 — filesystem MCP의 move_file은 canonical 삭제 우회 경로였음).
-    if is_mcp and ('delete_file' in tool or 'move_file' in tool):
-        candidates = [_ev_extract_path(ti)]
-        if 'move_file' in tool:
+    # 경로 파라미터가 없는 잔여 벡터(command_execute) — 폴더 규칙 판정 자체가 불가능하므로 조기 차단.
+    if ev_obsidian_tool in _EV_OBSIDIAN_UNSCOPED_TOOLS:
+        return ("command_execute는 활성 파일 기준으로 동작해 폴더 규칙을 적용할 경로 파라미터가 "
+                "없습니다 — 예외 없이 차단(필요 시 commandId allowlist 도입 검토)")
+
+    # 삭제/이동류(delete_file/move_file 부분문자열 매칭 + eversvault-obsidian 실제 툴명) — 볼트
+    # 전체에서 예외 없이 차단. move_file/vault_move는 delete+create 조합이므로 source/destination
+    # 둘 다 같은 취급(코드리뷰 HIGH#1 대응 — filesystem MCP의 move_file은 canonical 삭제 우회 경로였음).
+    if is_mcp and (('delete_file' in tool or 'move_file' in tool)
+                   or ev_obsidian_tool in _EV_OBSIDIAN_DELETE_MOVE_TOOLS):
+        if ev_obsidian_tool == 'vault_move':
+            candidates = [_ev_extract_path(ti), str(ti.get('destination') or '')]
+        elif 'move_file' in tool:
             candidates = [str(ti.get('source') or ''), str(ti.get('destination') or '')]
+        else:
+            candidates = [_ev_extract_path(ti)]
         for fp in candidates:
             if not fp:
                 continue
-            rel = _ev_normalize_rel(fp, vault)
+            rel = _ev_obsidian_normalize_rel(fp, vault, is_ev_obsidian)
             if rel is not None and not rel.startswith('..'):
-                return "delete_file/move_file은 볼트 전체에서 예외 없이 차단됩니다 (%s)" % rel
+                return "삭제/이동은 볼트 전체에서 예외 없이 차단됩니다 (%s)" % rel
         return None
+
+    # 복사류(vault_copy) — source는 읽기일 뿐이라 destination만 폴더 규칙 대상.
+    if is_mcp and ev_obsidian_tool in _EV_OBSIDIAN_COPY_TOOLS:
+        fp = str(ti.get('destination') or '')
+        if not fp:
+            return None
+        rel = _ev_obsidian_normalize_rel(fp, vault, is_ev_obsidian)
+        if rel is None or rel.startswith('..'):
+            return None
+        return _ev_check_target(vault, rel, is_append=False)
 
     # 쓰기류로 취급할 도구: Write/Edit/MultiEdit + MCP의 patch_content/write_file/edit_file/
     # create_directory(코드리뷰 HIGH#1 대응 — filesystem MCP의 write_file/edit_file이 원래
-    # 미커버였음). append_content는 아래에서 20_업무위키 전용 규칙으로 별도 처리.
+    # 미커버였음) + eversvault-obsidian 실제 툴명(vault_write/vault_patch/open_file). append_content/
+    # vault_append는 아래에서 20_업무위키 전용 규칙으로 별도 처리.
     write_like = (tool in ('Edit', 'Write', 'MultiEdit') or
                   (is_mcp and any(k in tool for k in
-                                  ('patch_content', 'write_file', 'edit_file', 'create_directory'))))
-    is_append = is_mcp and 'append_content' in tool
+                                  ('patch_content', 'write_file', 'edit_file', 'create_directory'))) or
+                  (ev_obsidian_tool in _EV_OBSIDIAN_WRITE_TOOLS))
+    is_append = (is_mcp and 'append_content' in tool) or (ev_obsidian_tool in _EV_OBSIDIAN_APPEND_TOOLS)
     if not (write_like or is_append):
         return None
 
     fp = _ev_extract_path(ti)
     if not fp:
         return None
-    rel = _ev_normalize_rel(fp, vault)
+    rel = _ev_obsidian_normalize_rel(fp, vault, is_ev_obsidian)
     if rel is None or rel.startswith('..'):
         return None
 
-    # 센티널 자기무장해제 방지(코드리뷰 MEDIUM 대응 — 00_홈.md를 건드리면 다음 호출부터 vault가
-    # None이 돼 가드 전체가 무음 비활성화됨).
-    if rel.lower() == '00_홈.md':
-        return "00_홈.md(볼트 센티널)는 가드 자기보호를 위해 쓰기 금지입니다"
-
-    if _ev_rel_under(rel, '10_컨텍스트'):
-        return "10_컨텍스트는 사람 정본입니다 — Claude Code 자동쓰기 절대 금지 (%s)" % rel
-    if _ev_rel_under(rel, '90_Hermes'):
-        return "90_Hermes는 Hermes 전용 자동산출물입니다 — Claude Code 쓰기 금지, 읽기는 승격목적으로만 허용 (%s)" % rel
-    if _ev_rel_under(rel, '20_업무위키'):
-        if is_append:
-            return "20_업무위키에 append_content는 예외없이 차단됩니다(큐 우회 벡터) (%s)" % rel
-        if _ev_rel_under(rel, '20_업무위키/_pending'):
-            return None  # 신규 제안 생성 및 기존 제안파일 Edit(status 전환 포함)은 항상 허용
-        if _ev_has_approved_proposal(vault, rel):
-            return None
-        return "20_업무위키 canonical 노트는 승인된 제안(_pending, status:approved) 경유로만 반영 가능합니다 (%s)" % rel
-
-    return None
+    return _ev_check_target(vault, rel, is_append)
 
 
 def main():
