@@ -84,6 +84,11 @@ def _ev_config():
         if not vault or not isinstance(vault, str):
             return None
         vault = os.path.expanduser(vault)
+        if not os.path.isabs(vault):
+            # 상대경로면 실제 참조지점이 '이 프로세스의 cwd'가 돼 세션마다 비결정적으로 동작하고,
+            # cwd에 우연히 같은 이름+센티널을 가진 무관 디렉터리가 있으면 경고 없이 그걸 볼트로
+            # 오인할 위험이 있다(종합테스트 워크플로 실측 발견) — 절대경로만 유효한 vaultPath로 인정.
+            return None
         with open(os.path.join(vault, '00_홈.md'), 'r', encoding='utf-8') as f:
             first_line = f.readline()
         if '에버스 위키 홈' not in first_line:
@@ -289,7 +294,11 @@ def _ev_guard(tool, ti):
         return None
 
     is_mcp = tool.startswith('mcp__')
-    ev_obsidian_tool = tool[len(_EV_OBSIDIAN_PREFIX):] if tool.startswith(_EV_OBSIDIAN_PREFIX) else None
+    # .lower() — 경로 비교(_ev_rel_under)는 이미 대소문자 무시인데 툴명 비교만 구분해 일관성이
+    # 깨져 있었다(보안리뷰 MEDIUM 대응, defense-in-depth — 실제 MCP 프로토콜상 툴명은 서버가
+    # 고정 등록하므로 공격자가 대소문자를 바꿔치기할 실질 경로는 없지만 비용이 거의 없는 강화).
+    ev_obsidian_tool = (tool[len(_EV_OBSIDIAN_PREFIX):].lower()
+                        if tool.lower().startswith(_EV_OBSIDIAN_PREFIX) else None)
     is_ev_obsidian = ev_obsidian_tool is not None
 
     # 경로 파라미터가 없는 잔여 벡터(command_execute) — 폴더 규칙 판정 자체가 불가능하므로 조기 차단.

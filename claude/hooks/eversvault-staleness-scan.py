@@ -15,6 +15,12 @@ PENDING_APPROVED_STALE_DAYS = 7   # status:approved 미반영 경고 임계 — 
                                    # approved는 guard가 무기한 유효한 반영 티켓으로 인정하는 상태라
                                    # proposed보다 짧은 임계로 더 빨리 표면화해야 함(살아있는 쓰기
                                    # 권한이 방치되는 쪽이 검토 대기보다 더 급함).
+PENDING_APPLIED_STALE_DAYS = 90   # status:applied/rejected 정리후보 임계 — 종합테스트 워크플로
+                                   # 발견 대응: 반영/거부가 끝난 _pending 파일은 나이가 아무리
+                                   # 지나도 어떤 도구도 다시 언급하지 않아 조용히 무한 누적된다.
+                                   # 삭제 채널은 볼트 전체에서 예외 없이 차단이라(의도된 설계)
+                                   # Claude Code가 스스로 정리할 수 없음 — 사람이 판단할 수 있게
+                                   # "정리후보"로만 나열한다.
 OVERSIZED_LINES = 300     # 이 줄수 넘으면 "비대 노트" 후보
 OVERSIZED_BYTES = 20_000  # 또는 이 바이트수 넘으면
 
@@ -156,12 +162,17 @@ def scan_canonical(vault, category_root, all_basenames, backlink_index, today):
 
 
 def scan_pending(vault, today):
-    """20_업무위키/_pending 방치 제안. status:proposed(검토 대기)와 status:approved(반영 대기 —
-    guard가 무기한 유효한 쓰기 티켓으로 인정하는 상태라 더 짧은 임계로 본다, 코드리뷰 MEDIUM 대응)
-    를 각각 별도 리스트로 반환: (proposed_stale, approved_stale). 나이는 파일 mtime 기준 —
-    _pending 안 편집은 프로토콜상 항상 허용이라 status 전환 자체가 시계를 리셋시킨다는 한계가
-    있음(코드리뷰 LOW 대응, 문서 §4에 명시)."""
-    proposed_stale, approved_stale = [], []
+    """20_업무위키/_pending 전수 스캔. 반환: (status_counts, proposed_stale, approved_stale,
+    cleanup_candidates).
+    - status_counts: 나이 무관 전체 건수({status: 개수}) — 종합테스트 워크플로 발견 대응:
+      "지금 검토대기 몇 건인지"를 한눈에 볼 방법이 어디에도 없었다(방치된 것만 보였음).
+    - proposed_stale/approved_stale: 기존과 동일(임계 초과만).
+    - cleanup_candidates: status:applied/rejected가 PENDING_APPLIED_STALE_DAYS 이상 지난 것 —
+      Claude Code가 스스로 정리할 수 없으니(삭제 채널 전면 차단) 사람 판단용으로만 나열.
+    나이는 파일 mtime 기준 — _pending 안 편집은 프로토콜상 항상 허용이라 status 전환 자체가
+    시계를 리셋시킨다는 한계가 있음(코드리뷰 LOW 대응, 문서 §4에 명시)."""
+    status_counts = {}
+    proposed_stale, approved_stale, cleanup_candidates = [], [], []
     for path in glob.glob(os.path.join(vault, '20_업무위키', '_pending', '*', '*.md')):
         try:
             with open(path, 'r', encoding='utf-8') as fh:
@@ -169,9 +180,8 @@ def scan_pending(vault, today):
         except Exception:
             continue
         fm, _ = _split_frontmatter(text)
-        status = fm.get('status')
-        if status not in ('proposed', 'approved'):
-            continue
+        status = fm.get('status') or '(status 없음)'
+        status_counts[status] = status_counts.get(status, 0) + 1
         try:
             mtime = date.fromtimestamp(os.path.getmtime(path))
         except Exception:
@@ -182,12 +192,22 @@ def scan_pending(vault, today):
             proposed_stale.append((rel, age))
         elif status == 'approved' and age > PENDING_APPROVED_STALE_DAYS:
             approved_stale.append((rel, age))
-    return proposed_stale, approved_stale
+        elif status in ('applied', 'rejected') and age > PENDING_APPLIED_STALE_DAYS:
+            cleanup_candidates.append((rel, age, status))
+    return status_counts, proposed_stale, approved_stale, cleanup_candidates
 
 
-def format_report(result, proposed_stale, approved_stale, today):
+def format_report(result, status_counts, proposed_stale, approved_stale, cleanup_candidates, today):
     lines = ["[EversVault 노후화 스캔] %s 기준" % today.isoformat()]
-    total = sum(len(v) for v in result.values()) + len(proposed_stale) + len(approved_stale)
+
+    if status_counts:
+        counts_str = ', '.join('%s %d건' % (k, v) for k, v in sorted(status_counts.items()))
+        lines.append("_pending 현재 현황(나이 무관): %s" % counts_str)
+    else:
+        lines.append("_pending 현재 현황: 0건")
+
+    total = (sum(len(v) for v in result.values()) + len(proposed_stale)
+             + len(approved_stale) + len(cleanup_candidates))
     if total == 0:
         lines.append("이상 없음 — 4종 후보 전부 0건, _pending 노후 제안도 0건")
         return '\n'.join(lines)
@@ -219,6 +239,12 @@ def format_report(result, proposed_stale, approved_stale, today):
                       % (PENDING_APPROVED_STALE_DAYS, len(approved_stale)))
         for rel, days in sorted(approved_stale, key=lambda x: -x[1]):
             lines.append("- %s (%d일 경과)" % (rel, days))
+    if cleanup_candidates:
+        lines.append("\n## _pending 정리후보 (status:applied/rejected, >%d일 경과, %d건 — "
+                      "Claude Code는 삭제 불가, 필요하면 사람이 직접 정리)"
+                      % (PENDING_APPLIED_STALE_DAYS, len(cleanup_candidates)))
+        for rel, days, status in sorted(cleanup_candidates, key=lambda x: -x[1]):
+            lines.append("- %s (%s, %d일 경과)" % (rel, status, days))
 
     lines.append("\n(전부 후보 나열일 뿐입니다 — 삭제/수정은 사람이 직접 판단)")
     return '\n'.join(lines)
@@ -237,8 +263,8 @@ def main():
     all_basenames = _all_vault_basenames(vault)
     backlink_index = _build_backlink_index(vault)
     result = scan_canonical(vault, category_root, all_basenames, backlink_index, today)
-    proposed_stale, approved_stale = scan_pending(vault, today)
-    print(format_report(result, proposed_stale, approved_stale, today))
+    status_counts, proposed_stale, approved_stale, cleanup_candidates = scan_pending(vault, today)
+    print(format_report(result, status_counts, proposed_stale, approved_stale, cleanup_candidates, today))
 
 
 if __name__ == '__main__':

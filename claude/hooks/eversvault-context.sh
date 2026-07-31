@@ -39,6 +39,14 @@ except Exception:
 " "$SCOPE_FILE" 2>/dev/null)"
 [ -n "$VAULT" ] || emit "[EversVault] eversvault-scope.json의 vaultPath가 비어있거나 파싱 실패."
 
+# 상대경로면 실제 참조지점이 이 프로세스의 cwd가 돼 세션마다 비결정적으로 동작하고, cwd에
+# 우연히 같은 이름+센티널의 무관 디렉터리가 있으면 경고 없이 그걸 볼트로 오인할 위험이 있다
+# (종합테스트 워크플로 실측 발견 — guardrails.py의 _ev_config()도 동일 검증을 추가함).
+case "$VAULT" in
+  /*) : ;;
+  *) emit "[EversVault] eversvault-scope.json의 vaultPath는 절대경로여야 합니다 (현재: $VAULT)" ;;
+esac
+
 SENTINEL="$VAULT/00_홈.md"
 if [ ! -f "$SENTINEL" ] || ! head -1 "$SENTINEL" 2>/dev/null | grep -q "에버스 위키 홈"; then
   emit "[EversVault] 볼트 센티널(00_홈.md)을 찾지 못했습니다 — vaultPath 확인 필요: $VAULT"
