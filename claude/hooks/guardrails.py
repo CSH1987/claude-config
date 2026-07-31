@@ -63,6 +63,14 @@ _EV_WRITE_MARKER_WORDS = {
 # 흔히 쓰이는 관용구(거의 모든 Bash 명령에 등장)를 오탐하면 정당한 읽기 작업까지 막아버린다
 # (실측으로 발견: 순수 `ls ... 2>/dev/null`이 차단됐었음 — 반드시 고쳐야 하는 회귀였다).
 _EV_REDIRECT_RE = re.compile(r'(?:\d*|&)>{1,2}(?!\s*&)\s*(?!/dev/null\b)\S')
+# `python3 -c "os.chmod(...)"` 같은 dotted-call은 shlex 토큰화에서 'os.chmod('가 하나의 토큰이 돼
+# _EV_WRITE_MARKER_WORDS의 정확 일치('chmod')에 안 걸린다(2026-07-31 실측 발견 — 직접 `chmod`
+# 명령은 차단되는데 python으로 감싸면 통과). 마커단어 집합 전체를 느슨한 부분문자열/단어경계로
+# 넓히면 오탐이 커지므로(예: 'dd'/'mv'/'cp'/'ln'처럼 흔한 변수명과 겹침), 실제 악용 가능한
+# 파이썬 파일조작 함수만 별도의 좁은 패턴으로 잡는다.
+_EV_PYTHON_WRITE_CALL_RE = re.compile(
+    r'\b(?:os\.(?:chmod|chown|lchown|remove|unlink|rename|replace|rmdir|removedirs)'
+    r'|shutil\.(?:chown|rmtree|move|copy2?|copytree|copyfile))\s*\(')
 
 
 def _ev_is_mac_mini():
@@ -165,10 +173,13 @@ def _ev_bash_writes_to(cmd, vault):
         tokens = shlex.split(cmd)
     except ValueError:
         tokens = cmd.split()
-    has_marker = _EV_REDIRECT_RE.search(cmd) is not None or any(
-        t in _EV_WRITE_MARKER_WORDS for t in tokens)
+    has_marker = (_EV_REDIRECT_RE.search(cmd) is not None
+                  or any(t in _EV_WRITE_MARKER_WORDS for t in tokens)
+                  or _EV_PYTHON_WRITE_CALL_RE.search(cmd) is not None)
     if not has_marker:
         return False
+    import unicodedata
+    vault_norm = unicodedata.normalize('NFC', vault).lower().rstrip('/')
     for tok in tokens:
         tok = tok.strip('\'"')
         if vault.lower() not in tok.lower():
@@ -182,6 +193,21 @@ def _ev_bash_writes_to(cmd, vault):
             # 안 걸려 무검사 통과했음. -R 같은 재귀 플래그 유무를 안정적으로 파싱해 구분하는
             # 대신, 루트 대상 쓰기표시 명령 자체를 보수적으로 전부 차단 — 협조적 에이전트가
             # 볼트 루트를 non-recursive로만 건드릴 정당한 이유는 거의 없다).
+            return True
+        # 폴백: 토큰이 `python3 -c "...os.chmod(<경로>)..."`처럼 경로를 감싼 코드 전체인 경우
+        # _ev_normalize_rel이 그 토큰 전체를 하나의(무의미한) 경로로 취급해 실패한다(2026-07-31
+        # 실측 발견 — _EV_PYTHON_WRITE_CALL_RE가 has_marker는 잡아내는데 정규화 기반 매칭은
+        # 그 뒤에서 못 잡아 결과적으로 무검사 통과했었음). 정규화 대신 원문 부분문자열로 대략
+        # 확인 — vault_norm 뒤에 보호폴더 접두사가 그대로 이어붙는지, 또는 vault 자체를
+        # 가리키는지(재귀 삭제/변경 등).
+        tok_norm = unicodedata.normalize('NFC', tok).lower()
+        if any((vault_norm + '/' + p) in tok_norm
+               for p in ('10_컨텍스트', '90_hermes', '20_업무위키', '00_홈.md')):
+            return True
+        # 볼트 루트 자체를 가리키는 경우 — 경로 인자가 vault_norm에서 "끝나는"지 확인(트레일링
+        # 슬래시 하나는 허용하되 그 뒤에 하위경로 세그먼트가 있으면 안 됨: 따옴표·괄호·쉼표·
+        # 공백·문자열끝만 경계로 인정). 하위경로가 이어지면 위 4개 접두사 검사가 담당.
+        if re.search(re.escape(vault_norm) + r'/?(?:[^/a-z0-9_-]|$)', tok_norm):
             return True
     return False
 
