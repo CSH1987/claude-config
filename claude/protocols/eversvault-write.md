@@ -30,7 +30,11 @@ design (plan Phase 2 note, "Round 1 확정에서의 이탈").
 | `90_Hermes` | none — Claude Code never writes here | always deny (읽기는 승격목적 허용) |
 | `30_결정로그` | Write tool, direct | no folder-specific rule — but the vault-wide `delete_file`/`move_file` block and the `00_홈.md` block still apply here too |
 | `20_업무위키/_pending/<id>/` | Write tool, direct | always allow (new file, or edit of an existing proposal's frontmatter) |
-| `20_업무위키/<category>/*.md` (canonical) | MCP `patch_content` (this doc's convention — the guard itself also passes Write/Edit/MultiEdit/`write_file`/`edit_file` when the ticket matches, but only `patch_content` does a targeted surgical edit instead of a full overwrite) | allowed only when a matching `_pending` proposal has `status: approved` and `target:` normalizes to the same path |
+| `20_업무위키/<category>/*.md` (canonical) | MCP `patch_content`[^1] (this doc's convention — the guard itself also passes Write/Edit/MultiEdit when the ticket matches, but only a targeted patch does a surgical edit instead of a full overwrite) | allowed only when a matching `_pending` proposal has `status: approved` and `target:` normalizes to the same path |
+
+[^1]: "`patch_content`" is this doc's generic name for the operation (matches `guardrails.py`'s
+older substring-matching naming). The actual registered MCP tool is `eversvault-obsidian`'s
+`vault_patch` — see §3.
 
 `00_홈.md` (vault sentinel) is never written by Claude Code under any circumstance —
 the guard blocks it unconditionally to protect its own self-check.
@@ -113,6 +117,43 @@ not erroring loudly). Put any explanatory note in the note body, never on the
 Never use `append_content` or `delete_file` against `20_업무위키` — both are
 unconditionally blocked by the guard (no legitimate path exists; that is intentional).
 
+### 2c. Promoting from `90_Hermes` (Phase 3 governance)
+
+Plan: `~/.omc/plans/eversvault-llm-wiki.md` Phase 3. Claude Code may **read** `90_Hermes`
+freely (the guard allows it — "읽기는 승격목적으로만 허용") to look for durable, reusable
+knowledge worth folding into `20_업무위키`. It may never write there under any
+circumstance — that stays exclusively Hermes's write domain, unconditionally, including
+for staging or simulating content.
+
+When a `90_Hermes` file contains something worth promoting, follow the exact same
+proposing flow as §2a, with one addition: record provenance so the human reviewer knows
+this originated from an automated Hermes output, not a Claude Code observation.
+
+```yaml
+---
+status: proposed
+target: 20_업무위키/<category>/<note>.md
+source: 90_Hermes/<original-path>.md
+---
+```
+
+Everything else — approval, reflection, `applied` transition, replay protection — is
+identical to §2b: `patch_content` (§0 footnote 1) for a surgical edit to an **existing**
+canonical note; `vault_write` only when `target:` names a note that does not exist yet
+(patch_content edits a document's structure, it cannot create the file itself — see the
+plan's Phase 1 note, "승인된 신규개념의 최초 생성도 동일 규칙으로 커버"). Never use
+`vault_write` to blanket-overwrite an existing canonical note when a targeted patch would
+do. There is no separate promotion mechanism; `source:` is purely informational metadata
+for the human approving the proposal.
+
+**Verification note (2026-07-30):** live end-to-end promotion could not be demonstrated
+because `90_Hermes` currently has zero files — Hermes has not written any output to this
+vault yet. This is a legitimate blocker, not a design gap: the read/propose codepath is
+identical to the already-verified §2a/2b flow (same guard rules, same `_pending` staging),
+so there is no new mechanism left un-exercised — only the trigger condition (an actual
+Hermes artifact to read) is currently absent. Re-verify with a real file once Hermes
+starts producing output here.
+
 **Cleanup of `applied` proposals is out of scope for Claude Code by design.** Every
 delete/move channel into `_pending/` is blocked vault-wide (MCP `delete_file` always;
 Bash writes anywhere under `20_업무위키` always), so old `applied` proposal files
@@ -139,11 +180,29 @@ broken.
 
 ---
 
-## 4. Cross-references
+## 4. Staleness scan (Phase 3 governance)
+
+`claude/hooks/eversvault-staleness-scan.py <vaultPath>` — on-demand, not auto-injected
+into SessionStart (a staleness sweep is a deliberate/periodic action, not something
+every session needs). Filesystem-only (works with Obsidian closed). Scans
+`20_업무위키` canonical notes for four candidate defects — stale `updated` field
+(>90 days; falls back to file mtime, flagged as such, when the field is missing or
+unparseable), broken `[[wikilinks]]` (vault-wide basename resolution; embeds of non-note
+attachments like `![[image.png]]` are excluded, not treated as broken), orphan notes
+(nothing links to it), oversized notes (>300 lines or >20KB) — plus `20_업무위키/_pending`
+proposals stuck at `status: proposed` for >30 days or at `status: approved` (a live,
+unexpired write ticket — treated as more urgent) for >7 days. Age for both is measured by
+file mtime, not a `created:` field (proposals don't have one) — any permitted edit inside
+`_pending/` (including the `proposed`→`approved` transition itself) resets the clock. It
+only reports candidates; it never deletes or edits anything (that stays a human decision,
+same principle as everywhere else in this protocol).
+
+## 5. Cross-references
 
 - Guard rules (source of truth for allow/deny) → `claude/hooks/guardrails.py`
   (`_ev_guard` and helpers).
 - Read-side index injection → `claude/hooks/eversvault-context.sh`,
   `claude/hooks/eversvault-index.py`.
+- Staleness scan → `claude/hooks/eversvault-staleness-scan.py` (§4 above).
 - Vault path + in-scope project list (local-only) → `~/.claude/eversvault-scope.json`.
-- Full plan, ADR, and Phase 2 verification matrix → `~/.omc/plans/eversvault-llm-wiki.md`.
+- Full plan, ADR, and Phase 2/3 verification matrices → `~/.omc/plans/eversvault-llm-wiki.md`.
