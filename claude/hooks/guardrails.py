@@ -168,10 +168,66 @@ def _ev_has_approved_proposal(vault, target_rel):
     return False
 
 
+def _ev_split_subcommands(cmd):
+    """cmd를 셸 구분자(';', '&&', '||', 단일 '|'/'&', 개행) 경계에서 원문 그대로 서브커맨드로
+    쪼갠다(따옴표 안의 구분자는 무시 — 문자 단위 상태기계, 이스케이프 문자도 건너뜀). 실패해도
+    예외 없이 [cmd] 하나로 폴백(기존 '전체 문자열 하나로 검사' 동작과 동일 — fail 방향이 더
+    보수적이라 안전). 여러 서브커맨드를 하나로 뭉쳐 검사하면 무관한 서브커맨드의 마커단어가
+    다른 무관한 서브커맨드의 vault 경로 언급과 잘못 결합돼 오탐이 생긴다(2026-08-01 실측 발견 —
+    'hermes status | sed ...' 처럼 무관한 'sed'와, 완전히 다른 서브커맨드에서 읽기전용으로 볼트
+    루트 경로를 인자로 넘기는 것뿐인 호출이 같은 한 줄에 있다는 이유만으로 차단됐음)."""
+    parts, buf, i, n = [], [], 0, len(cmd)
+    quote = None
+    while i < n:
+        c = cmd[i]
+        if quote:
+            buf.append(c)
+            if c == quote and cmd[i - 1] != '\\':
+                quote = None
+            i += 1
+            continue
+        if c in ('"', "'"):
+            quote = c
+            buf.append(c)
+            i += 1
+            continue
+        if c == '\\' and i + 1 < n:
+            buf.append(c)
+            buf.append(cmd[i + 1])
+            i += 2
+            continue
+        if cmd[i:i + 2] in ('&&', '||'):
+            parts.append(''.join(buf))
+            buf = []
+            i += 2
+            continue
+        if c in (';', '|', '&', '\n'):
+            parts.append(''.join(buf))
+            buf = []
+            i += 1
+            continue
+        buf.append(c)
+        i += 1
+    parts.append(''.join(buf))
+    return [p for p in parts if p.strip()] or [cmd]
+
+
 def _ev_bash_writes_to(cmd, vault):
+    """cmd를 서브커맨드로 나눠 각각 독립적으로 검사 — 하나라도 걸리면 차단."""
+    try:
+        subs = _ev_split_subcommands(cmd)
+    except Exception:
+        subs = [cmd]
+    return any(_ev_bash_subcommand_writes_to(sub, vault) for sub in subs)
+
+
+def _ev_bash_subcommand_writes_to(cmd, vault):
     """쓰기표시 토큰(마커 단어 또는 리다이렉션)이 있고, 어떤 토큰이든 vault 보호경로로 정규화되면
     차단(코드리뷰 HIGH#2·3·4 대응 — shlex 토큰 전체 스캔이라 rm/cp -r/mv -f/chmod -R/BSD sed -i ''
-    전부 위치 무관하게 잡힘). vault 절대경로가 토큰에 실제 포함돼야 하므로 무관 경로 오탐은 없음."""
+    전부 위치 무관하게 잡힘). vault 절대경로가 토큰에 실제 포함돼야 하므로 무관 경로 오탐은 없음.
+    호출부(_ev_bash_writes_to)가 이미 셸 구분자로 서브커맨드를 나눈 뒤 이 함수를 서브커맨드
+    단위로 호출한다 — 이 함수 자체는 "한 서브커맨드 안에서는 마커·경로 위치가 뒤섞여도 전부
+    잡는다"는 기존 설계를 그대로 유지."""
     import shlex
     try:
         tokens = shlex.split(cmd)
