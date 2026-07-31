@@ -42,7 +42,13 @@ about or opted to remove:
   vault-relative; a leftover `..` is never legitimate regardless of write policy).
 - `00_홈.md` sentinel self-protection — not approval friction, a structural safety valve
   (`_ev_config()`'s sentinel check depends on this file; corrupting it fail-opens the
-  *entire* EversVault guard block, including the safeguards above).
+  *entire* EversVault guard block, including the safeguards above). The sentinel check
+  itself requires the first line to be an actual Markdown H1 (`^#\s.*에버스 위키 홈`), not
+  just a substring match anywhere in the line — tightened 2026-08-01 to match the
+  original deep-interview spec (a bare substring match was weaker than intended, though
+  low practical risk since a stray file happening to contain that exact phrase is
+  unlikely). `_ev_config()` **fail-opens** on a sentinel mismatch — see the Claude-side
+  check in §2a step 3, which is the only defense in exactly that failure scenario.
 
 **Known gap this change does *not* by itself close:** `10_컨텍스트`'s files/directory
 were set to `444`/`555` (read-only, no-write-even-for-owner) at the OS level back in
@@ -153,9 +159,16 @@ staged review is still wanted — it is just no longer required.
    ---
    ```
 2. Get human approval, then edit the proposal: `status: proposed` → `status: approved`.
-3. Call `eversvault-obsidian`'s `vault_patch` (surgical edit) or `vault_write` (only if
+3. **Sentinel check before touching canonical content:** read `00_홈.md`, confirm the
+   first line is a Markdown H1 containing "에버스 위키 홈" (`^#\s.*에버스 위키 홈`). If it
+   doesn't match, stop — do not reflect. `_ev_config()` performs the same check
+   internally but **fail-opens** on a mismatch (the whole EversVault guard block goes
+   silent rather than blocking), so in exactly the scenario where the sentinel is wrong,
+   the guard isn't checking anything — this Claude-side check is the only defense at
+   that point.
+4. Call `eversvault-obsidian`'s `vault_patch` (surgical edit) or `vault_write` (only if
    `target:` doesn't exist yet) against the `target:` path.
-4. Edit the proposal again: `status: approved` → `status: applied` (or `rejected` if
+5. Edit the proposal again: `status: approved` → `status: applied` (or `rejected` if
    declined). This is now just a record-keeping convention — the guard no longer checks
    or requires any of these transitions before allowing a canonical write.
 
@@ -193,6 +206,19 @@ Do not use `vault_list` to check "does this folder exist / is it really empty" �
 filesystem `Read`/`glob` (the same approach `eversvault-index.py`/
 `eversvault-staleness-scan.py` already use) for that.
 
+**Token rotation.** The bearer token is a static literal in `~/.claude.json`'s
+`eversvault-obsidian` entry — it does not auto-refresh. If the plugin re-issues a token
+(manual re-generation in plugin settings, plugin reinstall, or vault re-registration),
+every `eversvault-obsidian` call starts failing with an auth error. Re-registration
+procedure:
+1. Read the new key from the plugin's `data.json` (`EversVault/.obsidian/plugins/
+   obsidian-local-rest-api/data.json`, `apiKey` field) — Obsidian must be running for
+   this file to be current.
+2. Replace the `Authorization: Bearer <token>` value in `~/.claude.json`'s
+   `eversvault-obsidian` entry with the new key (this file is machine-local, not
+   config-synced — edit it directly on the affected machine).
+3. Restart the Claude Code session — a running session won't pick up the change.
+
 ---
 
 ## 4. Staleness scan (governance, unaffected by the 2026-07-31 policy change)
@@ -214,7 +240,29 @@ days, listed as cleanup candidates (Claude Code cannot delete them). Age for the
 age-based listings is measured by file mtime, not a `created:` field — any edit inside
 `_pending/` resets the clock. The status-count summary itself has no age dimension.
 
-## 5. Cross-references
+## 5. Known low-priority items, deliberately not fixed
+
+From the 2026-07-31 full-system test workflow, kept as documented trade-offs rather than
+fixed:
+
+- **Bash `cp`/`mv` reading *out of* a protected folder is over-blocked.** `_ev_bash_writes_to`
+  scans every token uniformly (by design — a prior fix moved away from position-dependent
+  capture specifically to avoid `rm -rf`/`cp -r`/`chmod -R` flag-position bugs), so
+  `cp <protected-file> /tmp/x` gets treated as a vault write even though the vault path is
+  only the *source*, not the destination. Reintroducing "only the last positional arg is
+  the write target" for `cp`/`mv` specifically would reopen exactly the class of bug the
+  position-independent rewrite fixed. Workaround: use the `Read` tool instead of Bash `cp`
+  to get vault content out — always available, no reason to hit this in practice.
+- **`_ev_frontmatter`'s 200-line-from-disk read vs. `eversvault-index.py`/
+  `eversvault-staleness-scan.py`'s whole-file-read-then-200-line-scan are inconsistent.**
+  Currently moot: `_ev_frontmatter`'s only caller, `_ev_has_approved_proposal`, is unreachable
+  since the 2026-07-31 gate removal (see above) — revisit if the gated policy is ever
+  reinstated.
+- **`search_query`'s regex resilience at scale is unverified.** Confirmed safe against small
+  test inputs; large-corpus (tens of KB+) ReDoS behavior was out of scope for a review that
+  couldn't risk hanging a shared session. Not expected to matter at this vault's actual size.
+
+## 6. Cross-references
 
 - Guard rules (source of truth for allow/deny) → `claude/hooks/guardrails.py`
   (`_ev_guard`, `_ev_check_target`, and helpers — see the inline comment on

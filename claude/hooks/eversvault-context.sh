@@ -48,7 +48,8 @@ case "$VAULT" in
 esac
 
 SENTINEL="$VAULT/00_홈.md"
-if [ ! -f "$SENTINEL" ] || ! head -1 "$SENTINEL" 2>/dev/null | grep -q "에버스 위키 홈"; then
+# guardrails.py의 _ev_config()와 동일하게 마크다운 H1 마커까지 요구(스펙 강화, 종합테스트 발견).
+if [ ! -f "$SENTINEL" ] || ! head -1 "$SENTINEL" 2>/dev/null | grep -qE '^#[[:space:]].*에버스 위키 홈'; then
   emit "[EversVault] 볼트 센티널(00_홈.md)을 찾지 못했습니다 — vaultPath 확인 필요: $VAULT"
 fi
 

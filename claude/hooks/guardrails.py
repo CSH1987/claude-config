@@ -99,7 +99,11 @@ def _ev_config():
             return None
         with open(os.path.join(vault, '00_홈.md'), 'r', encoding='utf-8') as f:
             first_line = f.readline()
-        if '에버스 위키 홈' not in first_line:
+        # 딥인터뷰 스펙은 "헤딩 텍스트(# 에버스 위키 홈) 포함 여부"까지 요구했는데 기존 구현은
+        # 단순 부분문자열 검사라 그보다 약했다(종합테스트 워크플로 발견) — 마크다운 H1 마커까지
+        # 요구하도록 강화. 위험은 낮았지만(어차피 다른 우연한 파일이 이 문구를 담을 확률은
+        # 낮음) 스펙 의도를 실제로 구현하는 정밀화.
+        if not re.match(r'^#\s.*에버스 위키 홈', first_line):
             return None
         return vault
     except Exception:
