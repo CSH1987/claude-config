@@ -6,38 +6,84 @@
 
 # EversVault Write Protocol (PUBLIC · canonical)
 
-Plan: `~/.omc/plans/eversvault-llm-wiki.md` (Phase 2 — 쓰기배선).
-Enforcement: `claude/hooks/guardrails.py` EversVault block. Below, the **Gate** column
-is what the guard actually enforces (deny/allow by approval-ticket state — it does not
-distinguish which tool/MCP-call performed the write); the **Channel** column is a
-behavioral convention this document defines on top of that, not a separate
-enforcement layer. Read-side index injection: `claude/hooks/eversvault-context.sh` +
-`eversvault-index.py`.
+Plan: `~/.omc/plans/eversvault-llm-wiki.md`.
+Enforcement: `claude/hooks/guardrails.py` EversVault block (`_ev_guard`/`_ev_check_target`).
+Read-side index injection: `claude/hooks/eversvault-context.sh` + `eversvault-index.py`.
 
-**Not the same contract as `memory-promotion.md`.** That protocol governs
-`claude-memory` (`profile/`, `decisions/<machineId>/`, `_pending/` hop1/hop2). This
-protocol governs EversVault (Obsidian) vault paths only. Do not conflate the two
-`_pending/` staging areas or the two promotion/approval flows — they are isolated by
-design (plan Phase 2 note, "Round 1 확정에서의 이탈").
+## 2026-07-31 policy change — approval gates removed by explicit user decision
+
+Through 2026-07-30, `10_컨텍스트` and `90_Hermes` were write-blocked for Claude Code
+unconditionally, and `20_업무위키` canonical notes required a staged, human-approved
+`_pending` proposal before any reflection. **The user explicitly decided to remove all
+three restrictions**, for self-evolution ("자가발전") — Claude (and, separately, Hermes)
+should be able to modify any part of the vault directly, without a staged-approval
+round-trip. This was a deliberate, informed choice: the risks (compounding drift/
+corruption of the `10_컨텍스트` "사람 정본" layer that every session calibrates against,
+loss of the `90_Hermes` provenance guarantee — "this was genuinely produced by Hermes,
+not written by Claude and mislabeled" — and the general loss of a backstop against
+honest mistakes) were laid out and the user confirmed the maximal scope on both axes
+(fold in `10_컨텍스트`/`90_Hermes`, and remove the `20_업무위키` gate entirely, not just
+loosen it) via an explicit multi-choice confirmation.
+
+**What stayed, because it isn't "approval friction" — it's a separate safety category**
+(data-loss prevention / out-of-band bypass prevention), not something the user was asked
+about or opted to remove:
+- Vault-wide `delete_file`/`move_file` block (still unconditional, everywhere).
+- `command_execute` block (no path parameter to apply any rule to).
+- The Bash-channel block on the local Obsidian REST API host/port.
+- **The Bash-channel block on direct filesystem writes into protected folders** — Bash
+  `tee`/`>`/`cp`/`sed -i`/`chmod`/etc. targeting `10_컨텍스트`/`90_Hermes`/`20_업무위키`/
+  `00_홈.md` (or the vault root itself — see below) are still blocked even though the
+  guard-level gate is gone; the only allowed write channels remain Write/Edit/MultiEdit
+  and the `eversvault-obsidian` MCP tools. If a Bash write to a protected path is denied
+  even though this document says direct writes are allowed, this is why — switch to one
+  of those two channels.
+- The `'..'`-escape block for `eversvault-obsidian` tools (paths are schema-guaranteed
+  vault-relative; a leftover `..` is never legitimate regardless of write policy).
+- `00_홈.md` sentinel self-protection — not approval friction, a structural safety valve
+  (`_ev_config()`'s sentinel check depends on this file; corrupting it fail-opens the
+  *entire* EversVault guard block, including the safeguards above).
+
+**Known gap this change does *not* by itself close:** `10_컨텍스트`'s files/directory
+were set to `444`/`555` (read-only, no-write-even-for-owner) at the OS level back in
+Phase 1, independently of the guard. Removing the guard-level block does **not** revert
+that — an actual write attempt there still fails with `EACCES` (confirmed empirically:
+`Write` to a new file under `10_컨텍스트` throws `EACCES` even with the code-level gate
+removed). Claude Code cannot revert this itself either — the Bash-channel `chmod`
+protection (kept, see above) blocks any `chmod` command whose target path normalizes
+under a protected folder, **and** (after a follow-up fix — the vault root itself was
+initially a gap here, since it doesn't normalize *under* any specific protected prefix)
+any write-marker command targeting the vault root, so a `chmod -R` on the whole vault is
+blocked too, not just one aimed directly at `10_컨텍스트`. **If the intent is for
+`10_컨텍스트` to be genuinely writable, the human needs to manually run**
+`chmod -R u+w` (or `644`/`755`) **on it** the same way they manually set it to `444`/`555`
+during Phase 1. Until then, the guard *permits* the write attempt but the filesystem
+still rejects it.
+
+`_ev_has_approved_proposal` (the old gate-check function) and the staged `_pending`
+workflow described below are **not deleted** — they're simply no longer *required*.
+Reverting to the gated policy means restoring the folder-specific branches in
+`_ev_check_target` (see the inline comment in `guardrails.py` for the exact code to
+restore) and re-enabling the sections below.
 
 ---
 
-## 0. Channels
+## 0. Channels (current policy)
 
-| Vault path | Write channel (convention) | Gate (guard-enforced) |
+| Vault path | Write channel | Gate |
 |---|---|---|
-| `10_컨텍스트` | none — Claude Code never writes here | always deny (사람 정본) |
-| `90_Hermes` | none — Claude Code never writes here | always deny (읽기는 승격목적 허용) |
-| `30_결정로그` | Write tool, direct | no folder-specific rule — but the vault-wide `delete_file`/`move_file` block and the `00_홈.md` block still apply here too |
-| `20_업무위키/_pending/<id>/` | Write tool, direct | always allow (new file, or edit of an existing proposal's frontmatter) |
-| `20_업무위키/<category>/*.md` (canonical) | MCP `patch_content`[^1] (this doc's convention — the guard itself also passes Write/Edit/MultiEdit when the ticket matches, but only a targeted patch does a surgical edit instead of a full overwrite) | allowed only when a matching `_pending` proposal has `status: approved` and `target:` normalizes to the same path |
+| `10_컨텍스트` | Write/Edit/MultiEdit, or `eversvault-obsidian` `vault_write`/`vault_patch`/`open_file`/`vault_append` | none — direct write allowed (see OS-permission caveat above) |
+| `90_Hermes` | same as above | none — direct write allowed (no longer Hermes-exclusive; provenance is no longer guaranteed) |
+| `30_결정로그` | Write tool, direct | none (unchanged from before) |
+| `20_업무위키/_pending/<id>/` | Write tool, direct | none — Write channel unchanged from before; `vault_append` here was blocked pre-2026-07-31 ("예외없이") and is now allowed along with everything else, since that block existed only to protect the now-removed approval queue |
+| `20_업무위키/<category>/*.md` (canonical) | any of the above | none — direct write allowed, no `_pending` approval required |
+| `00_홈.md` | — | always deny (self-protection, kept) |
 
-[^1]: "`patch_content`" is this doc's generic name for the operation (matches `guardrails.py`'s
-older substring-matching naming). The actual registered MCP tool is `eversvault-obsidian`'s
-`vault_patch` — see §3.
-
-`00_홈.md` (vault sentinel) is never written by Claude Code under any circumstance —
-the guard blocks it unconditionally to protect its own self-check.
+Vault-wide, regardless of path: `delete_file`/`move_file`/`command_execute` always deny;
+Bash commands referencing the local REST API host:port always deny; Bash file-write
+commands (`tee`/`>`/`cp`/`sed -i`/`chmod`/etc.) targeting a protected folder *or the vault
+root itself* always deny (Write/Edit/MultiEdit and the MCP tools are the only write
+channels); `eversvault-obsidian` paths with a leftover `'..'` always deny.
 
 ---
 
@@ -58,163 +104,72 @@ One note per confirmed decision (vault's own convention, `00_홈.md`: "날짜별
   ```
 - **When:** only when the human has actually confirmed a decision in the current
   turn — this is a log of what was decided, not a place to stage drafts.
-- No approval step, no MCP call needed to write here. Note the vault-wide blocks still
-  apply: MCP `delete_file`/`move_file` are blocked everywhere in the vault, and
-  `00_홈.md` can never be touched — this folder just has no *folder-specific* rule.
+- The vault-wide blocks still apply: MCP `delete_file`/`move_file` are blocked
+  everywhere, and `00_홈.md` can never be touched.
 
-## 2. `20_업무위키` — propose then reflect
+## 2. `20_업무위키` and `10_컨텍스트`/`90_Hermes` — direct write
 
-### 2a. Proposing (always allowed, no approval needed to draft)
+As of 2026-07-31 there is no approval gate: write, edit, or append directly with
+Write/Edit/MultiEdit or the `eversvault-obsidian` MCP tools, same as any other file.
+Still worth doing well even without enforcement:
 
-Create `20_업무위키/_pending/<runId>/<slug>.md` via Write tool.
+- **Canonical note frontmatter** (7-field schema, convention only, not guard-enforced):
+  ```yaml
+  ---
+  title: <string>
+  created: YYYY-MM-DD
+  updated: YYYY-MM-DD
+  category: <채널운영|시술가격|프로세스|FAQ>
+  status: pristine | user_modified | approved
+  tags: [...]
+  related: [...]
+  ---
+  ```
+  This `status` is unrelated to the `_pending` proposal `status` field described below
+  (same key name, different file, different meaning) — don't conflate them.
+- **`10_컨텍스트` is still the "사람 정본" layer** by convention even though it's no
+  longer guard-enforced — every session calibrates against it, so a careless or
+  hallucinated edit here has an outsized, compounding downside compared to `20_업무위키`.
+  Treat edits here with more care than the removed gate now technically requires:
+  prefer surfacing a proposed change to the user before writing when the edit is
+  substantive (not just a typo fix), even though nothing forces this.
+- **`90_Hermes` no longer has a provenance guarantee.** Before this change, a file there
+  being present meant "Hermes actually produced this." That's no longer true — Claude
+  can write there too. If preserving that distinction still matters for a given note, say
+  who/what actually produced it in the note itself (e.g. a `source:` field) rather than
+  relying on folder location alone.
 
-Required frontmatter:
-```yaml
----
-status: proposed
-target: 20_업무위키/<category>/<note>.md
----
-```
-`target:` is mandatory — the guard normalizes both this value and the MCP call's path
-to vault-relative form and string-matches them. A proposal without `target:` can never
-be reflected.
+### 2a. Optional: staged review via `_pending` (previous policy, pre-2026-07-31)
 
-**Canonical note frontmatter (what the reflected `target:` file itself should contain,**
-**not the proposal file)** — the deep-interview spec's 7-field schema, previously agreed
-but never written down here (gap found by the 2026-07-31 test workflow):
-```yaml
----
-title: <string>
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-category: <채널운영|시술가격|프로세스|FAQ>
-status: pristine | user_modified | approved
-tags: [...]
-related: [...]
----
-```
-**This `status` field is a completely different concept from the `_pending` proposal's**
-**`status` field** (`proposed`/`approved`/`applied`/`rejected` — see §2b) — same key name,
-different vault location, different meaning (one describes the canonical note's own
-editorial state, the other describes a staged proposal's approval lifecycle). Do not
-conflate them.
+The old propose→approve→reflect workflow still works mechanically (nothing in the guard
+prevents it) and remains available as an *opt-in* paper trail for any specific edit where
+staged review is still wanted — it is just no longer required.
 
-**This schema is documentation/convention only, not guard-enforced.** The guard parses
-frontmatter solely for the `_pending` proposal's `target:`/`status:` fields when deciding
-allow/deny (§0) — it never validates a canonical note's own frontmatter against this
-7-field list. A canonical note missing some of these fields, or with extra ones, is not
-blocked by anything.
+1. Create `20_업무위키/_pending/<runId>/<slug>.md` via Write tool with:
+   ```yaml
+   ---
+   status: proposed
+   target: 20_업무위키/<category>/<note>.md
+   ---
+   ```
+2. Get human approval, then edit the proposal: `status: proposed` → `status: approved`.
+3. Call `eversvault-obsidian`'s `vault_patch` (surgical edit) or `vault_write` (only if
+   `target:` doesn't exist yet) against the `target:` path.
+4. Edit the proposal again: `status: approved` → `status: applied` (or `rejected` if
+   declined). This is now just a record-keeping convention — the guard no longer checks
+   or requires any of these transitions before allowing a canonical write.
 
-**Do not add an inline `#` comment on the `target:` line.** The guard's frontmatter
-parser (`_ev_frontmatter` in guardrails.py) only strips surrounding quotes, not trailing
-comments — a value like `20_업무위키/x.md   # some note` is taken literally, will never
-normalize-match the real path, and the proposal will be silently unreflectable (blocked,
-not erroring loudly). Put any explanatory note in the note body, never on the
-`target:` line itself.
+Since this path is opt-in now rather than enforced, the previously-documented race
+condition (`_ev_has_approved_proposal` has no atomic claim on a ticket, so two sessions
+reflecting the same `approved` proposal near-simultaneously could both succeed) matters
+less as a *gate* concern, but the same double-write risk exists for **any** concurrent
+direct edit to the same canonical note now, staged or not — there is no locking anywhere
+in this system. If that ever matters in practice, treat it as a fresh problem to solve,
+not something the removed gate was protecting against.
 
-### 2b. Approval reflection (only after explicit human approval this turn)
-
-1. Human approves the specific proposal in the current conversation turn.
-2. Edit the proposal file: `status: proposed` → `status: approved`. (Always allowed —
-   edits inside `_pending/` are unconditionally permitted, including this transition.)
-3. **Sentinel check before touching canonical content:** read `00_홈.md`, confirm the
-   first line contains "에버스 위키 홈". If it does not match, stop — do not call
-   `patch_content`. The guard performs the same check internally, but `_ev_config`
-   **fail-opens** on a sentinel mismatch (the whole EversVault guard block goes silent
-   rather than blocking) — so in exactly the scenario where the sentinel is wrong, the
-   guard is not checking anything. This Claude-side check is the *only* defense at that
-   point, not a redundant second layer.
-4. **If the proposal is already `approved` from a previous, interrupted attempt**
-   (e.g. resuming after a crash), read the target note first and check whether the
-   intended change is already present before calling `patch_content` again — a prior
-   attempt may have applied it but died before step 5 recorded that. If already present,
-   skip straight to step 5. This is the only way to detect that case, since the guard
-   only sees the frontmatter status, not the note content.
-5. Call the `eversvault-obsidian` MCP server's `patch_content` tool against the
-   proposal's `target:` path, targeting the appropriate heading/block.
-6. **On success:** edit the proposal file again, `status: approved` → `status: applied`.
-   This is what prevents replay — the guard only treats `status: approved` as a valid
-   reflection ticket, so an already-applied proposal cannot be reflected a second time
-   without a fresh, explicitly re-approved proposal. (This step is what step 4 exists to
-   protect against skipping when resumed mid-flight.)
-7. **On failure:** leave `status: approved` as-is (so a retry is still possible) and
-   surface the error to the user — do not silently mark it `applied`.
-
-**Rejection:** if the human declines a `proposed` (or `approved`-but-not-yet-reflected)
-proposal, edit its frontmatter to `status: rejected` — always allowed, same as any other
-edit inside `_pending/`. This is a terminal state (like `applied`): the guard's approval
-check only ever recognizes `status: approved`, so a `rejected` proposal can never be
-reflected without a fresh, re-approved proposal.
-
-**Same-turn shortcut (gap found by the 2026-07-31 test workflow — guardrails.py has no**
-**concept of a "turn", it only reads frontmatter state, so nothing technically stops**
-**steps 1–6 from running back-to-back in one response; this document just never said**
-**when that's appropriate).** If the user's own request already combines the content
-change with explicit reflect-now intent ("고쳐서 반영해", "확정해서 올려줘", or similarly
-unambiguous), steps 1–6 may run in the same turn without a separate confirmation
-round-trip — the human's request *is* the approval required by step 1. If the request is
-ambiguous about whether it wants a draft or an immediate reflection, or touches
-substantive content (pricing, policy, anything a person should sanity-check before it
-becomes canonical), stop after step 1 (create the proposal) and wait for an explicit
-approval before continuing.
-
-**No atomic claim on an approved ticket (gap found by the 2026-07-31 test workflow) —**
-**a real, if narrow, race condition.** `_ev_has_approved_proposal` re-globs and re-parses
-`_pending/` on every single guard call; nothing marks a ticket "being consumed right now."
-If two sessions (e.g. a manual Claude Code session and some separate automation) reflect
-the same `approved` proposal at nearly the same moment, both can pass the guard and both
-can call `patch_content`. Mitigation available today, not a fix: step 4's "check whether
-the intended change is already present before patching" is written for the
-resume-after-crash case, but apply the same check as a matter of course immediately
-before every `patch_content` call, not only when resuming — it is the only defense against
-double-application until a real claim/lock mechanism exists (not yet built).
-
-Never use `append_content` or `delete_file` against `20_업무위키` — both are
-unconditionally blocked by the guard (no legitimate path exists; that is intentional).
-
-### 2c. Promoting from `90_Hermes` (Phase 3 governance)
-
-Plan: `~/.omc/plans/eversvault-llm-wiki.md` Phase 3. Claude Code may **read** `90_Hermes`
-freely (the guard allows it — "읽기는 승격목적으로만 허용") to look for durable, reusable
-knowledge worth folding into `20_업무위키`. It may never write there under any
-circumstance — that stays exclusively Hermes's write domain, unconditionally, including
-for staging or simulating content.
-
-When a `90_Hermes` file contains something worth promoting, follow the exact same
-proposing flow as §2a, with one addition: record provenance so the human reviewer knows
-this originated from an automated Hermes output, not a Claude Code observation.
-
-```yaml
----
-status: proposed
-target: 20_업무위키/<category>/<note>.md
-source: 90_Hermes/<original-path>.md
----
-```
-
-Everything else — approval, reflection, `applied` transition, replay protection — is
-identical to §2b: `patch_content` (§0 footnote 1) for a surgical edit to an **existing**
-canonical note; `vault_write` only when `target:` names a note that does not exist yet
-(patch_content edits a document's structure, it cannot create the file itself — see the
-plan's Phase 1 note, "승인된 신규개념의 최초 생성도 동일 규칙으로 커버"). Never use
-`vault_write` to blanket-overwrite an existing canonical note when a targeted patch would
-do. There is no separate promotion mechanism; `source:` is purely informational metadata
-for the human approving the proposal.
-
-**Verification note (2026-07-30):** live end-to-end promotion could not be demonstrated
-because `90_Hermes` currently has zero files — Hermes has not written any output to this
-vault yet. This is a legitimate blocker, not a design gap: the read/propose codepath is
-identical to the already-verified §2a/2b flow (same guard rules, same `_pending` staging),
-so there is no new mechanism left un-exercised — only the trigger condition (an actual
-Hermes artifact to read) is currently absent. Re-verify with a real file once Hermes
-starts producing output here.
-
-**Cleanup of `applied` proposals is out of scope for Claude Code by design.** Every
-delete/move channel into `_pending/` is blocked vault-wide (MCP `delete_file` always;
-Bash writes anywhere under `20_업무위키` always), so old `applied` proposal files
-accumulate indefinitely. This is intentional, not an oversight — a human clears them
-manually from Finder or Obsidian when `_pending/` grows large enough to matter (it only
-affects the guard's `_pending` glob-scan cost, not correctness).
+Cleanup of `applied`/`rejected` `_pending` files is still out of scope for Claude Code —
+the vault-wide `delete_file`/`move_file` block still applies to them. A human clears them
+manually when `_pending/` grows large enough to matter.
 
 ---
 
@@ -222,61 +177,52 @@ affects the guard's `_pending` glob-scan cost, not correctness).
 
 Registered locally (NOT config-synced — `~/.claude.json` is machine-local) as
 `eversvault-obsidian`, pointing at the Obsidian Local REST API with MCP plugin's
-HTTPS endpoint on the machine that hosts the vault. The machine gate itself is
-hostname-based (`_ev_is_mac_mini` in guardrails.py, mirrored in
-`eversvault-context.sh`'s `*macmini*` case) — `eversvault-scope.json` isn't a gate
-mechanism, it's just a file that only happens to exist on that machine. The bearer
-token lives only in that local `~/.claude.json` entry and in the plugin's own
-`data.json`; it is never written to this repo.
+endpoint on the machine that hosts the vault. The machine gate itself is hostname-based
+(`_ev_is_mac_mini` in guardrails.py, mirrored in `eversvault-context.sh`'s `*macmini*`
+case) — `eversvault-scope.json` isn't a gate mechanism, it's just a file that only
+happens to exist on that machine. The bearer token lives only in that local
+`~/.claude.json` entry and in the plugin's own `data.json`; it is never written to this
+repo.
 
-A newly-registered MCP server only loads for sessions started after registration —
-if `patch_content` is unavailable, restart the session before assuming something is
-broken.
+A newly-registered MCP server only loads for sessions started after registration — if
+its tools are unavailable, restart the session before assuming something is broken.
 
-**`vault_list` silently omits folders it hasn't indexed (found by the 2026-07-31 test**
-**workflow, real vault measurement)** — an empty or newly-created folder (e.g. `90_Hermes`
-before Hermes has written anything there) does not appear in `vault_list`'s output at all,
-even though it exists on disk. Do not use `vault_list` to check "does this folder exist /
-is it really empty" — use filesystem `Read`/`glob` (the same approach
-`eversvault-index.py`/`eversvault-staleness-scan.py` already use) for that, and reserve
-`vault_list` for browsing folders already known to have content.
+**`vault_list` silently omits folders it hasn't indexed** — an empty or newly-created
+folder does not appear in `vault_list`'s output at all, even though it exists on disk.
+Do not use `vault_list` to check "does this folder exist / is it really empty" — use
+filesystem `Read`/`glob` (the same approach `eversvault-index.py`/
+`eversvault-staleness-scan.py` already use) for that.
 
 ---
 
-## 4. Staleness scan (Phase 3 governance)
+## 4. Staleness scan (governance, unaffected by the 2026-07-31 policy change)
 
 `claude/hooks/eversvault-staleness-scan.py <vaultPath>` — on-demand, not auto-injected
-into SessionStart (a staleness sweep is a deliberate/periodic action, not something
-every session needs). Filesystem-only (works with Obsidian closed). Scans
-`20_업무위키` canonical notes for four candidate defects — stale `updated` field
-(>90 days; falls back to file mtime, flagged as such, when the field is missing or
-unparseable), broken `[[wikilinks]]` (vault-wide basename resolution; embeds of non-note
-attachments like `![[image.png]]` are excluded, not treated as broken), orphan notes
-(nothing links to it), oversized notes (>300 lines or >20KB). It only reports candidates;
-it never deletes or edits anything (that stays a human decision, same principle as
-everywhere else in this protocol).
+into SessionStart. Filesystem-only (works with Obsidian closed). Scans `20_업무위키`
+canonical notes for four candidate defects — stale `updated` field (>90 days; falls back
+to file mtime, flagged as such, when the field is missing or unparseable), broken
+`[[wikilinks]]` (vault-wide basename resolution; embeds of non-note attachments like
+`![[image.png]]` are excluded, not treated as broken), orphan notes (nothing links to
+it), oversized notes (>300 lines or >20KB). It only reports candidates; it never deletes
+or edits anything.
 
-`20_업무위키/_pending` gets three additional, separate reports (2026-07-31 additions —
-a gap where "how many proposals are waiting right now" had no answer anywhere in the
-system): a status-count summary covering **every** file regardless of age (so a
-just-created proposal shows up immediately, not only once it's stale); proposals stuck at
-`status: proposed` for >30 days or at `status: approved` (a live, unexpired write ticket —
-treated as more urgent) for >7 days; and `status: applied`/`rejected` files older than
-90 days, listed as cleanup candidates (Claude Code cannot delete them — the vault-wide
-`delete_file`/`move_file` block applies here too — so this is purely informational for a
-human to act on). Age for these two age-based listings is measured by file mtime, not a
-`created:` field (proposals don't have one) — any permitted edit inside `_pending/`
-(including the `proposed`→`approved` transition itself) resets the clock. The status-count
-summary itself has no age dimension — it counts every file regardless of mtime.
+`20_업무위키/_pending` gets three additional reports (still meaningful even though
+staging is now optional rather than required): a status-count summary covering every
+file regardless of age; proposals stuck at `status: proposed` for >30 days or
+`status: approved` for >7 days; and `status: applied`/`rejected` files older than 90
+days, listed as cleanup candidates (Claude Code cannot delete them). Age for the two
+age-based listings is measured by file mtime, not a `created:` field — any edit inside
+`_pending/` resets the clock. The status-count summary itself has no age dimension.
 
 ## 5. Cross-references
 
 - Guard rules (source of truth for allow/deny) → `claude/hooks/guardrails.py`
-  (`_ev_guard` and helpers).
+  (`_ev_guard`, `_ev_check_target`, and helpers — see the inline comment on
+  `_ev_check_target` for exactly what to restore if the gated policy is reinstated).
 - Read-side index injection → `claude/hooks/eversvault-context.sh`,
   `claude/hooks/eversvault-index.py` (also surfaces `10_컨텍스트` `review:` cadence
-  overdue warnings as of 2026-07-31 — read-only alerting, not enforcement; `review:
-  on-change` is event-triggered and intentionally never flagged as overdue).
+  overdue warnings — read-only alerting, not enforcement; `review: on-change` is
+  event-triggered and intentionally never flagged as overdue).
 - Staleness scan → `claude/hooks/eversvault-staleness-scan.py` (§4 above).
 - Vault path + in-scope project list (local-only) → `~/.claude/eversvault-scope.json`.
-- Full plan, ADR, and Phase 2/3 verification matrices → `~/.omc/plans/eversvault-llm-wiki.md`.
+- Full plan, ADR, and verification history → `~/.omc/plans/eversvault-llm-wiki.md`.

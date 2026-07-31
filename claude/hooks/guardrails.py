@@ -175,7 +175,13 @@ def _ev_bash_writes_to(cmd, vault):
             continue
         rel = _ev_normalize_rel(tok, vault)
         if rel and (_ev_rel_under(rel, '10_컨텍스트') or _ev_rel_under(rel, '90_Hermes')
-                    or _ev_rel_under(rel, '20_업무위키') or rel.lower() == '00_홈.md'):
+                    or _ev_rel_under(rel, '20_업무위키') or rel.lower() == '00_홈.md'
+                    or rel == '.'):
+            # rel == '.' — 볼트 루트 자체를 겨냥한 명령(코드리뷰 MEDIUM 대응: 실측으로 발견
+            # — `chmod -R u+w <볼트>`처럼 루트를 대상으로 하면 위 4개 prefix 매칭에 전혀
+            # 안 걸려 무검사 통과했음. -R 같은 재귀 플래그 유무를 안정적으로 파싱해 구분하는
+            # 대신, 루트 대상 쓰기표시 명령 자체를 보수적으로 전부 차단 — 협조적 에이전트가
+            # 볼트 루트를 non-recursive로만 건드릴 정당한 이유는 거의 없다).
             return True
     return False
 
@@ -259,21 +265,39 @@ def _ev_obsidian_escape_block(rel, fp, is_obsidian_tool):
 
 def _ev_check_target(vault, rel, is_append):
     """rel(볼트 상대경로)에 폴더별 규칙 적용. 차단 사유 문자열 또는 None.
-    쓰기류/복사류(destination)가 공유하는 판정 로직 — 중복·드리프트 방지를 위해 분리."""
+    쓰기류/복사류(destination)가 공유하는 판정 로직 — 중복·드리프트 방지를 위해 분리.
+
+    2026-07-31 사용자 명시적 결정(자가발전 목적, "전체적으로 승인문턱을 전부 낮춰" → 범위확인
+    질문에 "10_컨텍스트/90_Hermes도 포함 전체" + "20_업무위키 승인게이트 자체를 제거" 선택)으로
+    10_컨텍스트·90_Hermes 쓰기금지와 20_업무위키 승인게이트(_ev_has_approved_proposal 경유)를
+    전부 해제. 위험(사람 정본 오염 가능성, 90_Hermes의 "Hermes가 실제로 만들었다"는 출처 구분
+    소실, 되돌리기 어려운 드리프트 축적)은 결정 전 명시적으로 고지·확인됨.
+
+    정확한 복원은 git revert가 정본이다(이 함수 본문 + eversvault-write.md의 대응 절 — 커밋
+    메시지에서 "policy change" 이전 커밋 참조). 아래는 그 커밋이 담고 있던 로직의 요약일
+    뿐이며 곧이곧대로 베끼면 안 된다(코드리뷰 MEDIUM 대응 — is_append 체크가 _pending 여부와
+    무관하게 20_업무위키 전체에 "예외없이" 먼저 걸렸다는 순서가 중요):
+        if rel.lower() == '00_홈.md': return "00_홈.md(볼트 센티널)는 ..."
+        if _ev_rel_under(rel, '10_컨텍스트'): return "10_컨텍스트는 사람 정본입니다 ..."
+        if _ev_rel_under(rel, '90_Hermes'): return "90_Hermes는 Hermes 전용 ..."
+        if _ev_rel_under(rel, '20_업무위키'):
+            if is_append: return "...예외없이 차단..."  # _pending 포함, 큐 우회 벡터라 무조건
+            if _ev_rel_under(rel, '20_업무위키/_pending'): return None
+            if not _ev_has_approved_proposal(vault, rel): return "...승인된 제안 경유로만..."
+
+    (`_ev_has_approved_proposal`·`_ev_frontmatter`는 삭제하지 않고 남겨둠 — 재도입 시 그대로
+    재사용 가능. 둘 다 현재는 이 함수에서 호출 안 해 실행경로상 도달 불가능한 상태.)
+    is_append 파라미터는 이 함수 본문에서 더 이상 안 읽지만, 재도입 대비 + 호출부(_ev_guard의
+    두 지점) 변경을 최소화하려고 시그니처는 그대로 유지했다.
+
+    00_홈.md 센티널 자기보호만 예외로 유지 — 이건 "승인 문턱"이 아니라 가드 자체가 살아있기
+    위한 구조적 안전장치라 이번 결정 범위 밖으로 판단함(건드려도 자가발전에 득이 없고, 건드리면
+    _ev_config()의 센티널 검사가 깨져 가드 전체가 fail-open으로 무력화되는 부작용만 있음).
+    삭제/이동 차단(_ev_guard 상단, 볼트 전체 예외없이)·command_execute 차단·Bash REST-API
+    포트 차단·'..' 탈출 차단은 "승인 문턱"이 아니라 데이터손실·아웃오브밴드 우회 방지용 별개
+    안전장치라 이번 결정과 무관하게 그대로 유지(사용자 요청 범위 밖으로 판단)."""
     if rel.lower() == '00_홈.md':
         return "00_홈.md(볼트 센티널)는 가드 자기보호를 위해 쓰기 금지입니다"
-    if _ev_rel_under(rel, '10_컨텍스트'):
-        return "10_컨텍스트는 사람 정본입니다 — Claude Code 자동쓰기 절대 금지 (%s)" % rel
-    if _ev_rel_under(rel, '90_Hermes'):
-        return "90_Hermes는 Hermes 전용 자동산출물입니다 — Claude Code 쓰기 금지, 읽기는 승격목적으로만 허용 (%s)" % rel
-    if _ev_rel_under(rel, '20_업무위키'):
-        if is_append:
-            return "20_업무위키에 append_content는 예외없이 차단됩니다(큐 우회 벡터) (%s)" % rel
-        if _ev_rel_under(rel, '20_업무위키/_pending'):
-            return None  # 신규 제안 생성 및 기존 제안파일 Edit(status 전환 포함)은 항상 허용
-        if _ev_has_approved_proposal(vault, rel):
-            return None
-        return "20_업무위키 canonical 노트는 승인된 제안(_pending, status:approved) 경유로만 반영 가능합니다 (%s)" % rel
     return None
 
 
