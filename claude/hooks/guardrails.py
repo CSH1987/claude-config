@@ -58,6 +58,9 @@ SECRET = (r'(^|/)\.env($|\.)|\.envrc$|\.(pem|key|p12|pfx|jks|keystore|ppk|p8)$|'
 _EV_WRITE_MARKER_WORDS = {
     'rm', 'cp', 'mv', 'rsync', 'tee', 'dd', 'install', 'ln', 'truncate',
     'sed', 'chmod', 'chown', 'shred', 'shutil',
+    # touch/mkdir(후속과제 반영 — 보호폴더 안에 새 파일·하위폴더를 생성하는 것도 "쓰기"의
+    # 일종인데, 기존 마커 집합엔 삭제/수정 계열만 있고 생성 계열이 빠져 있어 무검사 통과했음.
+    'touch', 'mkdir',
 }
 # 실제 파일에 쓰는 리다이렉션만 표시로 취급 — `2>/dev/null`·`2>&1`·`&>/dev/null`처럼 에러 억제용으로
 # 흔히 쓰이는 관용구(거의 모든 Bash 명령에 등장)를 오탐하면 정당한 읽기 작업까지 막아버린다
@@ -296,6 +299,15 @@ def _ev_bash_subcommand_writes_to(cmd, vault, cwd=None):
     if not has_marker:
         return False
     vault_norm = unicodedata.normalize('NFC', vault).lower().rstrip('/')
+    # 심볼릭 링크가 보호폴더를 가리키는 경우 대응(후속과제 반영 — 기존 설계 한계: 이 함수는
+    # lexical 문자열 매칭만 하므로 `/tmp/evil -> <볼트>/10_컨텍스트` 같은 링크를 거치면 토큰
+    # 문자열엔 볼트가 전혀 안 보여 무검사 통과했음). vault_real 계산에 실패하면(권한 오류 등)
+    # 아래 realpath 보완 체크들은 전부 건너뛴다 — 기존 lexical 체크는 그대로 유지되므로
+    # fail-open 방향(이 축의 추가 보완만 못 받는 것)이라 안전.
+    try:
+        vault_real = os.path.realpath(vault)
+    except Exception:
+        vault_real = None
     for i, tok in enumerate(tokens):
         tok = tok.strip('\'"')
         if not tok:
@@ -334,6 +346,23 @@ def _ev_bash_subcommand_writes_to(cmd, vault, cwd=None):
             # 접두사 검사가 담당.
             if re.search(re.escape(vault_norm) + r'/?(?:[^/a-z0-9_-]|$)', tok_norm):
                 return True
+            continue
+        if os.path.isabs(tok) and vault_real:
+            # 문자열엔 볼트가 안 보이는 절대경로 토큰(예: 심링크 `/tmp/evil/x.md`)도 실제
+            # 물리경로가 보호폴더 안이면 잡는다. argv[0]도 여기서 제외하지 않는다 — 위
+            # vault-substring 절대경로 분기도 원래 argv[0]을 그대로 검사하므로(코드리뷰에서
+            # `/tmp/FV/10_컨텍스트/tool.sh install x` 케이스로 확인된 기존 동작) 같은
+            # 분기의 심링크 보완이 다른 기준을 쓸 이유가 없다.
+            try:
+                real = os.path.realpath(tok)
+            except Exception:
+                real = None
+            if real:
+                rel = _ev_normalize_rel(real, vault_real)
+                if rel and (_ev_rel_under(rel, '10_컨텍스트') or _ev_rel_under(rel, '90_Hermes')
+                            or _ev_rel_under(rel, '20_업무위키') or rel.lower() == '00_홈.md'
+                            or rel == '.'):
+                    return True
             continue
         # 상대경로 토큰 — cwd가 알려져 있을 때만 cwd 기준으로 해석해 재시도(2026-08-01
         # 보안리뷰 HIGH 대응: cd로 보호폴더에 먼저 들어간 뒤 상대경로로 쓰기를 시도하는
@@ -374,6 +403,25 @@ def _ev_bash_subcommand_writes_to(cmd, vault, cwd=None):
                     or _ev_rel_under(rel, '20_업무위키') or rel.lower() == '00_홈.md'
                     or rel == '.'):
             return True
+        if vault_real:
+            # 위 lexical 체크의 심링크 보완판 — cwd 자체나 tok의 중간 경로에 심링크가 끼어
+            # 있어 lexical 결과는 볼트 밖으로 보이지만 실제 물리경로는 보호폴더 안인 경우.
+            # normpath를 거친 `resolved`가 아니라 원본 join을 realpath에 넘긴다(4차 코드리뷰
+            # 제안 반영 — normpath가 먼저 `..`를 문자열 차원에서 접어버리면, 예를 들어
+            # `cd <심링크→10_컨텍스트> && rm -f ../90_Hermes/y.md`에서 커널은 실제로 물리
+            # 부모(볼트 루트)를 거쳐 90_Hermes에 도달하는데 normpath는 심링크를 안 풀고
+            # 그냥 심링크의 부모 디렉터리로 문자열째 접어버려 realpath가 심링크를 관통하지
+            # 못하게 됨 — 원본 join을 그대로 realpath에 넘기면 커널의 물리 해석과 일치한다).
+            try:
+                real = os.path.realpath(os.path.join(cwd, tok))
+            except Exception:
+                real = None
+            if real:
+                rel2 = _ev_normalize_rel(real, vault_real)
+                if rel2 and (_ev_rel_under(rel2, '10_컨텍스트') or _ev_rel_under(rel2, '90_Hermes')
+                             or _ev_rel_under(rel2, '20_업무위키') or rel2.lower() == '00_홈.md'
+                             or rel2 == '.'):
+                    return True
     return False
 
 
