@@ -63,6 +63,10 @@ _EV_WRITE_MARKER_WORDS = {
 # 흔히 쓰이는 관용구(거의 모든 Bash 명령에 등장)를 오탐하면 정당한 읽기 작업까지 막아버린다
 # (실측으로 발견: 순수 `ls ... 2>/dev/null`이 차단됐었음 — 반드시 고쳐야 하는 회귀였다).
 _EV_REDIRECT_RE = re.compile(r'(?:\d*|&)>{1,2}(?!\s*&)\s*(?!/dev/null\b)\S')
+# 토큰 맨 앞에 붙은 리다이렉션 연산자만 떼어내는 용도(예: '2>/dev/null', '>evil.md'). shlex는
+# 공백 없이 붙은 연산자+경로를 하나의 토큰으로 묶으므로, 상대경로 후보 판정 전에 연산자
+# 부분을 제거해야 실제 경로(있다면)만 남는다(코드리뷰 HIGH 대응 — 아래 참고).
+_EV_REDIRECT_TOKEN_PREFIX_RE = re.compile(r'^[\d&]*>{1,2}')
 # `python3 -c "os.chmod(...)"` 같은 dotted-call은 shlex 토큰화에서 'os.chmod('가 하나의 토큰이 돼
 # _EV_WRITE_MARKER_WORDS의 정확 일치('chmod')에 안 걸린다(2026-07-31 실측 발견 — 직접 `chmod`
 # 명령은 차단되는데 python으로 감싸면 통과). 마커단어 집합 전체를 느슨한 부분문자열/단어경계로
@@ -212,23 +216,76 @@ def _ev_split_subcommands(cmd):
     return [p for p in parts if p.strip()] or [cmd]
 
 
-def _ev_bash_writes_to(cmd, vault):
-    """cmd를 서브커맨드로 나눠 각각 독립적으로 검사 — 하나라도 걸리면 차단."""
+def _ev_bash_writes_to(cmd, vault, cwd=None):
+    """cmd를 서브커맨드로 나눠 각각 독립적으로 검사 — 하나라도 걸리면 차단. cwd(PreToolUse
+    페이로드 최상위 'cwd' — 실제 세션 작업 디렉터리, main()이 전달)를 시작점으로 cd/pushd를
+    순서대로 추적해, 뒤 서브커맨드의 상대경로 인자도 올바르게 해석한다(2026-08-01 보안리뷰
+    HIGH 대응 — 서브커맨드 분리 자체는 정확했지만, 분리 이전부터 있던 더 근본적인 갭이 새로
+    드러남: 'vault 절대경로가 토큰에 그대로 포함돼야'만 감지했기 때문에 `cd <볼트>/10_컨텍스트
+    && rm -f <상대경로파일>`가 무검사 통과했다 — cd의 절대경로 인자는 감지되지만 rm의 실제
+    쓰기대상인 상대경로 인자는 애초에 검사 대상이 아니었다)."""
     try:
         subs = _ev_split_subcommands(cmd)
     except Exception:
         subs = [cmd]
-    return any(_ev_bash_subcommand_writes_to(sub, vault) for sub in subs)
+    effective_cwd = cwd
+    for sub in subs:
+        if _ev_bash_subcommand_writes_to(sub, vault, effective_cwd):
+            return True
+        effective_cwd = _ev_track_cd(sub, effective_cwd)
+    return False
 
 
-def _ev_bash_subcommand_writes_to(cmd, vault):
+def _ev_track_cd(sub, cwd):
+    """sub가 cd/pushd면 그 인자를 cwd 기준으로 해석해 다음 서브커맨드가 볼 새 유효 cwd를
+    반환, 아니면 cwd 그대로. 해석 불가능한 경우(인자 없는 cwd에서 상대 cd, 'cd -')는 None —
+    이후 상대경로 판단을 보수적으로 건너뛰게 만든다(모른다는 사실을 정직하게 전파, 오탐보다
+    미탐이 이 축에서는 fail-open 계약과 일관됨)."""
+    import os, shlex
+    try:
+        tokens = shlex.split(sub)
+    except ValueError:
+        return cwd
+    if not tokens or tokens[0] not in ('cd', 'pushd'):
+        return cwd
+    # 단독 '-'(직전 디렉터리, $OLDPWD)는 -L/-P 같은 실제 플래그가 아니라 유효한 타깃 인자이므로
+    # '-'로 시작한다고 걸러내면 안 된다 — 걸러내면 아래 target == '-' 분기가 죽은 코드가 되고,
+    # 대신 "인자 없음" 경로로 새서 실제로는 $OLDPWD인데 $HOME으로 잘못 취급하게 된다(자체 발견).
+    args = [t for t in tokens[1:] if not (t.startswith('-') and t != '-')]
+    if not args:
+        return os.path.expanduser('~')  # 인자 없는 cd = $HOME. 볼트는 $HOME 자체가 아니라 무관.
+    target = args[0].strip('\'"')
+    if target == '-':
+        return None  # 'cd -'(직전 디렉터리)는 이 함수 스코프에서 추적 불가
+    # $HOME 같은 셸 환경변수는 shlex가 확장하지 않으므로 expandvars로 별도 처리해야 한다
+    # (자체 발견 — expanduser만 쓰면 `cd $HOME/Documents/EversVault/10_컨텍스트`가 절대경로로
+    # 인식되지 못해 cwd가 잘못 해석되고, 뒤이은 상대경로 쓰기 검사가 엉뚱한 기준점으로 조용히
+    # 새는 조합이 남는다). 이 훅 프로세스의 환경은 실제 Bash 실행과 같은 세션에서 상속되므로
+    # os.environ 기준 확장이 실제 셸 확장과 사실상 일치한다.
+    target = os.path.expandvars(os.path.expanduser(target))
+    if '$' in target or '`' in target:
+        # expandvars 후에도 '$'/backtick이 남으면 명령치환(`$(...)`/백틱)이거나 미설정 변수라는
+        # 뜻 — 정적으로는 실제 값을 알 수 없다(코드리뷰 MEDIUM 대응: 실측 발견 — 이걸 무시하고
+        # 리터럴 문자열째로 join하면 "모르는 타깃"이 이전 cwd의 볼트 접두사를 그대로 상속해
+        # '가짜로 여전히 볼트 안'인 것처럼 보이는 조합이 생겼음. 모른다는 사실을 'cd -'와
+        # 동일하게 None으로 정직히 전파한다).
+        return None
+    if not os.path.isabs(target):
+        if cwd is None:
+            return None
+        target = os.path.join(cwd, target)
+    return os.path.normpath(target)
+
+
+def _ev_bash_subcommand_writes_to(cmd, vault, cwd=None):
     """쓰기표시 토큰(마커 단어 또는 리다이렉션)이 있고, 어떤 토큰이든 vault 보호경로로 정규화되면
     차단(코드리뷰 HIGH#2·3·4 대응 — shlex 토큰 전체 스캔이라 rm/cp -r/mv -f/chmod -R/BSD sed -i ''
-    전부 위치 무관하게 잡힘). vault 절대경로가 토큰에 실제 포함돼야 하므로 무관 경로 오탐은 없음.
-    호출부(_ev_bash_writes_to)가 이미 셸 구분자로 서브커맨드를 나눈 뒤 이 함수를 서브커맨드
-    단위로 호출한다 — 이 함수 자체는 "한 서브커맨드 안에서는 마커·경로 위치가 뒤섞여도 전부
-    잡는다"는 기존 설계를 그대로 유지."""
-    import shlex
+    전부 위치 무관하게 잡힘). 절대경로 토큰은 vault 절대경로가 그대로 포함돼야 매칭(기존 동작).
+    상대경로 토큰은 cwd(호출부가 cd/pushd 추적으로 넘겨준 유효 작업 디렉터리)가 알려져 있을 때만
+    cwd 기준으로 해석해 추가로 매칭한다(2026-08-01 보안리뷰 HIGH 대응). 호출부(_ev_bash_writes_to)
+    가 이미 셸 구분자로 서브커맨드를 나눈 뒤 이 함수를 서브커맨드 단위로 호출한다 — 이 함수
+    자체는 "한 서브커맨드 안에서는 마커·경로 위치가 뒤섞여도 전부 잡는다"는 기존 설계를 유지."""
+    import os, shlex, unicodedata
     try:
         tokens = shlex.split(cmd)
     except ValueError:
@@ -238,36 +295,84 @@ def _ev_bash_subcommand_writes_to(cmd, vault):
                   or _EV_PYTHON_WRITE_CALL_RE.search(cmd) is not None)
     if not has_marker:
         return False
-    import unicodedata
     vault_norm = unicodedata.normalize('NFC', vault).lower().rstrip('/')
-    for tok in tokens:
+    for i, tok in enumerate(tokens):
         tok = tok.strip('\'"')
-        if vault.lower() not in tok.lower():
+        if not tok:
             continue
-        rel = _ev_normalize_rel(tok, vault)
+        # `~`/`$HOME` 같은 확장을 여기서도 적용(코드리뷰 MEDIUM 대응: cd 타깃은 이미
+        # expandvars/expanduser를 적용하는데 쓰기대상 토큰 쪽엔 빠져 있어서 `rm -f
+        # ~/Documents/EversVault/10_컨텍스트/x.md`나 `$HOME/.../x.md`가 무검사 통과했음 —
+        # 확장 후 절대경로가 되면 아래 절대경로 분기가 그대로 잡아준다). 일반 단어는
+        # expandvars/expanduser가 no-op이라 안전.
+        tok = os.path.expandvars(os.path.expanduser(tok))
+        if vault.lower() in tok.lower():
+            rel = _ev_normalize_rel(tok, vault)
+            if rel and (_ev_rel_under(rel, '10_컨텍스트') or _ev_rel_under(rel, '90_Hermes')
+                        or _ev_rel_under(rel, '20_업무위키') or rel.lower() == '00_홈.md'
+                        or rel == '.'):
+                # rel == '.' — 볼트 루트 자체를 겨냥한 명령(코드리뷰 MEDIUM 대응: 실측으로
+                # 발견 — `chmod -R u+w <볼트>`처럼 루트를 대상으로 하면 위 4개 prefix 매칭에
+                # 전혀 안 걸려 무검사 통과했음. -R 같은 재귀 플래그 유무를 안정적으로 파싱해
+                # 구분하는 대신, 루트 대상 쓰기표시 명령 자체를 보수적으로 전부 차단 —
+                # 협조적 에이전트가 볼트 루트를 non-recursive로만 건드릴 정당한 이유는 거의
+                # 없다).
+                return True
+            # 폴백: 토큰이 `python3 -c "...os.chmod(<경로>)..."`처럼 경로를 감싼 코드 전체인
+            # 경우 _ev_normalize_rel이 그 토큰 전체를 하나의(무의미한) 경로로 취급해 실패한다
+            # (2026-07-31 실측 발견 — _EV_PYTHON_WRITE_CALL_RE가 has_marker는 잡아내는데
+            # 정규화 기반 매칭은 그 뒤에서 못 잡아 결과적으로 무검사 통과했었음). 정규화 대신
+            # 원문 부분문자열로 대략 확인 — vault_norm 뒤에 보호폴더 접두사가 그대로 이어붙는지,
+            # 또는 vault 자체를 가리키는지(재귀 삭제/변경 등).
+            tok_norm = unicodedata.normalize('NFC', tok).lower()
+            if any((vault_norm + '/' + p) in tok_norm
+                   for p in ('10_컨텍스트', '90_hermes', '20_업무위키', '00_홈.md')):
+                return True
+            # 볼트 루트 자체를 가리키는 경우 — 경로 인자가 vault_norm에서 "끝나는"지 확인
+            # (트레일링 슬래시 하나는 허용하되 그 뒤에 하위경로 세그먼트가 있으면 안 됨:
+            # 따옴표·괄호·쉼표·공백·문자열끝만 경계로 인정). 하위경로가 이어지면 위 4개
+            # 접두사 검사가 담당.
+            if re.search(re.escape(vault_norm) + r'/?(?:[^/a-z0-9_-]|$)', tok_norm):
+                return True
+            continue
+        # 상대경로 토큰 — cwd가 알려져 있을 때만 cwd 기준으로 해석해 재시도(2026-08-01
+        # 보안리뷰 HIGH 대응: cd로 보호폴더에 먼저 들어간 뒤 상대경로로 쓰기를 시도하는
+        # 패턴이 이전에는 전혀 안 잡혔음). 플래그 토큰(-*)은 경로가 아니므로 제외.
+        #
+        # argv[0](명령 이름 자체)은 후보에서 제외한다(코드리뷰 HIGH 대응: 실측 재현 — cwd가
+        # 추적된 보호폴더 안일 때 `cp`/`rm`/`sed` 같은 명령 이름 토큰 자체가 `join(cwd,'rm')`
+        # 처럼 "cwd 하위 상대경로"로 오인되어, 대상이 전부 볼트 밖(/tmp 등)인 무관한 명령까지
+        # 통째로 차단됐음 — 절대경로 분기(위)는 argv[0]이어도 그대로 검사한다, 기존 동작 보존).
+        if i == 0:
+            continue
+        # 공백 없이 붙은 리다이렉션 연산자(`2>/dev/null`, `>evil.md`)를 떼어낸다 — 순수
+        # 연산자만 있던 토큰('>','2>>' 등)은 실제 대상이 다음 토큰에서 별도로 검사되므로
+        # 건너뛴다(코드리뷰 HIGH 대응: 실측 재현 — `ls > /tmp/out.txt`의 '>' 토큰이나
+        # `rm -f /tmp/x 2>/dev/null`의 '2>/dev/null' 토큰이 그대로 상대경로 후보가 돼
+        # `10_컨텍스트/>` 같은 무의미한 rel로 오매칭됐음).
+        m = _EV_REDIRECT_TOKEN_PREFIX_RE.match(tok)
+        if m:
+            tok = tok[m.end():]
+            if not tok:
+                continue
+        if cwd is None or os.path.isabs(tok) or tok.startswith('-'):
+            continue
+        if '.' not in tok and '/' not in tok and not os.path.exists(os.path.join(cwd, tok)):
+            # 확장자도 슬래시도 없는 순수 단어는 대개 경로가 아니라 sed 스크립트/정렬 키 같은
+            # 비경로 인자다(2차 코드리뷰 제안 반영 — 실측: cwd가 추적된 보호폴더 안일 때
+            # `sed -n 1p /tmp/notes.txt`의 '1p'가 상대경로로 오인돼 무관한 읽기 명령까지
+            # 차단됐음). 단 "확장자 없음"만으로 걸러내면 폴더명(예: '10_컨텍스트' 자체)까지
+            # 같이 걸러져 `cd <볼트> && rm -rf 10_컨텍스트`처럼 이 가드의 핵심 보호대상인
+            # 폴더 재귀삭제/변경이 다시 무검사 통과하는 회귀가 생긴다(3차 재검증에서 실측 발견
+            # — HIGH). cwd 아래 실제로 존재하는 이름이면(폴더가 대표 사례) 확장자 유무와
+            # 무관하게 후보로 복귀시킨다 — "아직 생성 전인, 확장자 없는 새 이름"(`tee 새이름`)만
+            # 남는 잔여 미탐이고, 이 정도는 수용 가능하다고 판단.
+            continue
+        resolved = os.path.normpath(os.path.join(cwd, tok))
+        rel = _ev_normalize_rel(resolved, vault)
         if rel and (_ev_rel_under(rel, '10_컨텍스트') or _ev_rel_under(rel, '90_Hermes')
                     or _ev_rel_under(rel, '20_업무위키') or rel.lower() == '00_홈.md'
                     or rel == '.'):
-            # rel == '.' — 볼트 루트 자체를 겨냥한 명령(코드리뷰 MEDIUM 대응: 실측으로 발견
-            # — `chmod -R u+w <볼트>`처럼 루트를 대상으로 하면 위 4개 prefix 매칭에 전혀
-            # 안 걸려 무검사 통과했음. -R 같은 재귀 플래그 유무를 안정적으로 파싱해 구분하는
-            # 대신, 루트 대상 쓰기표시 명령 자체를 보수적으로 전부 차단 — 협조적 에이전트가
-            # 볼트 루트를 non-recursive로만 건드릴 정당한 이유는 거의 없다).
-            return True
-        # 폴백: 토큰이 `python3 -c "...os.chmod(<경로>)..."`처럼 경로를 감싼 코드 전체인 경우
-        # _ev_normalize_rel이 그 토큰 전체를 하나의(무의미한) 경로로 취급해 실패한다(2026-07-31
-        # 실측 발견 — _EV_PYTHON_WRITE_CALL_RE가 has_marker는 잡아내는데 정규화 기반 매칭은
-        # 그 뒤에서 못 잡아 결과적으로 무검사 통과했었음). 정규화 대신 원문 부분문자열로 대략
-        # 확인 — vault_norm 뒤에 보호폴더 접두사가 그대로 이어붙는지, 또는 vault 자체를
-        # 가리키는지(재귀 삭제/변경 등).
-        tok_norm = unicodedata.normalize('NFC', tok).lower()
-        if any((vault_norm + '/' + p) in tok_norm
-               for p in ('10_컨텍스트', '90_hermes', '20_업무위키', '00_홈.md')):
-            return True
-        # 볼트 루트 자체를 가리키는 경우 — 경로 인자가 vault_norm에서 "끝나는"지 확인(트레일링
-        # 슬래시 하나는 허용하되 그 뒤에 하위경로 세그먼트가 있으면 안 됨: 따옴표·괄호·쉼표·
-        # 공백·문자열끝만 경계로 인정). 하위경로가 이어지면 위 4개 접두사 검사가 담당.
-        if re.search(re.escape(vault_norm) + r'/?(?:[^/a-z0-9_-]|$)', tok_norm):
             return True
     return False
 
@@ -387,8 +492,10 @@ def _ev_check_target(vault, rel, is_append):
     return None
 
 
-def _ev_guard(tool, ti):
-    """차단 사유 문자열 또는 None. 호출부에서 이미 맥미니 확인 후 try/except로 감싸 호출."""
+def _ev_guard(tool, ti, cwd=None):
+    """차단 사유 문자열 또는 None. 호출부에서 이미 맥미니 확인 후 try/except로 감싸 호출.
+    cwd(PreToolUse 페이로드 최상위 'cwd' 필드 — 실제 세션 작업 디렉터리, main()이 전달)는
+    Bash 상대경로 인자 해석에만 쓰인다."""
     vault = _ev_config()
     if not vault:
         return None
@@ -398,7 +505,7 @@ def _ev_guard(tool, ti):
         if _EV_LOCAL_REST_API_RE.search(cmd):
             return ("Bash를 통한 Obsidian Local REST API(127.0.0.1:27123/27124) 직접 접근은 "
                     "차단됩니다 — eversvault-obsidian MCP 도구(vault_read/vault_write 등)를 사용하세요")
-        if _ev_bash_writes_to(cmd, vault):
+        if _ev_bash_writes_to(cmd, vault, cwd):
             return ("Bash를 통한 볼트 쓰기는 차단됩니다 "
                     "(10_컨텍스트/90_Hermes/20_업무위키는 Write/Edit/patch_content 채널로만 쓰기 가능)")
         return None
@@ -488,6 +595,8 @@ def main():
     ti = data.get('tool_input', {}) or {}
     if not isinstance(ti, dict):
         return
+    cwd = data.get('cwd')
+    cwd = cwd if isinstance(cwd, str) and cwd else None
 
     block, warn = [], []
     if tool == 'Bash':
@@ -509,7 +618,7 @@ def main():
     ev_block = []
     try:
         if _ev_is_mac_mini():
-            ev_reason = _ev_guard(tool, ti)
+            ev_reason = _ev_guard(tool, ti, cwd)
             if ev_reason:
                 ev_block.append(ev_reason)
     except Exception:
