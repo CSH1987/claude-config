@@ -73,7 +73,7 @@ Phase 'A. Fresh install (clean HOME, deploy-only)'
 Reset-Home
 $r = Run-Install
 Check 'install.ps1 exits 0'                 { $r.Code -eq 0 }
-Check 'hooks copied (all managed files present)' { $need = @('ensure-harness.ps1','effort-reminder.ps1','effort-reminder.txt','config-sync.ps1','work-autosync.ps1','model-watch.ps1','auto-update.ps1','guardrails.ps1','guardrails.py','edit-track.ps1','stop-metrics.ps1','filter-test-output.ps1','hermes-sync.ps1','skill-watch.ps1'); @($need | Where-Object { -not (Test-Path (Join-Path $HooksDir $_)) }).Count -eq 0 }
+Check 'hooks copied (all managed files present)' { $need = @('ensure-harness.ps1','effort-reminder.ps1','effort-reminder.txt','config-sync.ps1','work-autosync.ps1','model-watch.ps1','auto-update.ps1','guardrails.ps1','guardrails.py','edit-track.ps1','edit-nudge.ps1','stop-metrics.ps1','filter-test-output.ps1','hermes-sync.ps1','skill-watch.ps1'); @($need | Where-Object { -not (Test-Path (Join-Path $HooksDir $_)) }).Count -eq 0 }
 Check 'ultracode.json deployed = {"ultracode":true}' { ((Get-Content (Join-Path $ClaudeDir 'ultracode.json') -Raw | ConvertFrom-Json).ultracode) -eq $true }
 Check '.config-sync-path points at repo'   { ((Get-Content (Join-Path $ClaudeDir '.config-sync-path') -Raw).Trim()) -eq $Repo }
 Check 'CLAUDE.md has claude-config block'    { (Get-Content (Join-Path $ClaudeDir 'CLAUDE.md') -Raw) -match 'claude-config:claude-md:start' }
@@ -97,7 +97,7 @@ Check 'filter-test-output group has matcher=Bash'  { @(@($s.hooks.PreToolUse) | 
 Check 'guardrails.ps1 + guardrails.py deployed'    { (Test-Path (Join-Path $HooksDir 'guardrails.ps1')) -and (Test-Path (Join-Path $HooksDir 'guardrails.py')) }
 $po = Get-Cmds $s 'PostToolUse'
 $st = Get-Cmds $s 'Stop'
-Check 'PostToolUse has exactly 1 hook (edit-track)' { $po.Count -eq 1 -and (@($po -match 'edit-track\.ps1').Count -eq 1) }
+Check 'PostToolUse has exactly 2 hooks (edit-track + edit-nudge)' { $po.Count -eq 2 -and (@($po -match 'edit-track\.ps1').Count -eq 1) -and (@($po -match 'edit-nudge\.ps1').Count -eq 1) }
 Check 'Stop has exactly 1 hook (stop-metrics)'      { $st.Count -eq 1 -and (@($st -match 'stop-metrics\.ps1').Count -eq 1) }
 Check 'PostToolUse + Stop are powershell -File'     { @(($po + $st) | Where-Object { $_ -notmatch '^powershell ' }).Count -eq 0 }
 Check 'edit-track.ps1 + stop-metrics.ps1 deployed'  { (Test-Path (Join-Path $HooksDir 'edit-track.ps1')) -and (Test-Path (Join-Path $HooksDir 'stop-metrics.ps1')) }
@@ -112,8 +112,8 @@ $r2 = Run-Install
 $s2 = Read-Settings
 Check 'second install exits 0'              { $r2.Code -eq 0 }
 Check 'still exactly 8 SessionStart hooks'  { (Get-Cmds $s2 'SessionStart').Count -eq 8 }
-Check 'still exactly 4 SessionEnd hooks'    { (Get-Cmds $s2 'SessionEnd').Count -eq 4 }
-Check 'still exactly 1 PostToolUse hook'    { (Get-Cmds $s2 'PostToolUse').Count -eq 1 }
+Check 'still exactly 2 SessionEnd hooks'    { (Get-Cmds $s2 'SessionEnd').Count -eq 2 }
+Check 'still exactly 2 PostToolUse hooks'   { (Get-Cmds $s2 'PostToolUse').Count -eq 2 }
 Check 'still exactly 1 Stop hook'           { (Get-Cmds $s2 'Stop').Count -eq 1 }
 Check 'still valid JSON after re-run'       { $s2 -ne $null }
 Check 'CLAUDE.md block not duplicated'      { ([regex]::Matches((Get-Content (Join-Path $ClaudeDir 'CLAUDE.md') -Raw),'claude-config:claude-md:start \(')).Count -eq 1 }

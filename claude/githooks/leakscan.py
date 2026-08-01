@@ -124,7 +124,7 @@ def main():
         except Exception:
             pass
     else:
-        sys.stderr.write('leak-guard: WARN — .leakwords 미존재(콜드스타트) → 식별토큰(실명) 검사 비활성. profile 시드 후 활성.\n')
+        sys.stderr.write('leak-guard: WARN — .leakwords 미존재(콜드스타트) → 식별토큰(실명) 검사 비활성. promote 스킬 최초 실행 시 수동 시드 후 활성(claude/skills/promote/SKILL.md 참고).\n')
 
     return 1 if hits else 0
 
