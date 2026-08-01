@@ -26,9 +26,9 @@
 
 ## 어떻게 늘리나 (증식 — 이게 핵심)
 플레이북은 **고정**이 아닙니다. 당신의 실제 노하우가 쌓이면 PUBLIC으로 승급해 키웁니다:
-1. 작업 중 반복되는 *잘 통하는 방법*을 발견 → 성장루프(`/retro`)가 PRIVATE `_pending/`에 제안.
-2. 충분히 일반적이고 PII가 없으면 → **`/promote`(hop2, 사람 검토)** 로 여기 PUBLIC 카탈로그에 추가.
+1. 작업 중 반복되는 *잘 통하는 방법*을 발견 → `/retro`가 PII-safe 초안을 이 PC 로컬
+   (`$CLAUDE_MEMORY_DIR/playbook-drafts/`)에 스테이징.
+2. 충분히 일반적이고 PII가 없으면 → **`/promote`(사람 검토)** 로 여기 PUBLIC 카탈로그에 추가.
 3. **규칙: 개인정보·실명·고객/사건 정보는 절대 PUBLIC에 올리지 않습니다.** 일반화한 *방법*만.
 
-> 참고: 메커니즘·승급 사다리는 `claude/protocols/memory-promotion.md`, 목적함수는
-> `claude/protocols/objective-function.md`, 결정 형식은 `claude/memory/SCHEMA.md` §2.
+> 참고: 발견·증식 절차는 `claude/skills/retro/SKILL.md`와 `claude/skills/promote/SKILL.md`.

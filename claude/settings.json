@@ -71,14 +71,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/memory-inject.sh\""
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "bash \"$HOME/.claude/hooks/config-sync.sh\" start"
           }
         ]
@@ -95,14 +87,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/reconcile-check.sh\""
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "bash \"$HOME/.claude/hooks/model-watch.sh\""
           }
         ]
@@ -112,22 +96,6 @@
           {
             "type": "command",
             "command": "bash \"$HOME/.claude/hooks/auto-update.sh\""
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/morning-brief.sh\""
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/memory-sync.sh\" start"
           }
         ]
       },
@@ -172,22 +140,6 @@
             "command": "bash \"$HOME/.claude/hooks/work-autosync.sh\" end"
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/session-events.sh\""
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/memory-sync.sh\" end"
-          }
-        ]
       }
     ]
   },
@@ -229,7 +181,6 @@
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-fable-5",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5",
-    "CLAUDE_MEMORY_NO_SYNC": "1",
     "CLAUDE_CONFIG_MID_MODEL": "claude-opus-4-8"
   },
   "effortLevel": "high",

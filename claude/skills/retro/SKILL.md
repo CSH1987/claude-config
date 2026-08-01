@@ -1,67 +1,72 @@
 ---
 name: retro
 description: >
-  Distill the current session into durable memory proposals. Use at session end (or on
-  demand / via a routine) to extract stable user facts/preferences, non-trivial decisions,
-  and repeatable workflows, then STAGE each as a PRIVATE proposal under _pending/<runId>/
-  via the pending library, for later hop1 reconcile into canonical memory. Plan v9 0-D hop1
-  / v10 T1-G1.
+  Distill the current session into a candidate playbook update. Use at session end (or when
+  the user says "retro"/"회고") to check whether a repeatable *working method* emerged that's
+  worth generalizing into the PUBLIC playbooks catalog. Stages a PII-safe draft under
+  $CLAUDE_MEMORY_DIR/playbook-drafts/ for later human-reviewed `/promote`.
 ---
 
-# retro — session distillation into PRIVATE _pending proposals
+# retro — playbook-candidate distillation
 
-This is the LLM half of the growth loop (v10 T1-G1). The deterministic half (SessionEnd
-snapshot, instrumentation) is handled by hooks; this skill turns a session's *content* into
-durable knowledge. It only ever writes to the PRIVATE memory store (`$CLAUDE_MEMORY_DIR`),
-never to the PUBLIC `claude-config` repo.
+retro is narrowly scoped to **playbooks only** — durable facts about the user, standing
+preferences, and cross-project decisions are already captured automatically by Claude Code's
+native per-session memory (the auto-memory files under
+`~/.claude/projects/<project>/memory/`), so retro does not duplicate that. retro's only job:
+notice when *how you worked this session* generalizes into a reusable method, and draft it.
+
+(2026-08-02: replaces the old `_pending`/hop1-hop2 four-kind design, which never actually got
+used for its profile/decision role in practice — that role was always native auto-memory's
+job. This version matches what CLAUDE.md has described all along: "반복되는 잘 통하는 방법을
+발견하면 `/retro`→`/promote`로 플레이북에 증식하세요" — it just finally makes it real.)
 
 ## When to use
-- At the end of a substantive session, or when the user says "retro" / "회고".
-- When a routine (PC-on headless or cloud) periodically harvests durable knowledge.
-- NOT for trivial/conversational sessions (nothing durable to stage).
+- At the end of a session where a genuinely repeatable method proved out (not just "did the
+  task" — something reusable across future sessions/projects).
+- When the user says "retro" / "회고".
+- NOT for trivial/conversational sessions, and NOT for one-off facts/decisions (those belong
+  in native auto-memory, which you should already be writing to directly — no `/retro` needed).
 
-## Hard rules (read first)
-- **PRIVATE only.** Every proposal goes under `$CLAUDE_MEMORY_DIR/_pending/<runId>/`. Never
-  write proposals into the `claude-config` tree (that path is PUBLIC; PII would leak).
-- **No PUBLIC promotion here.** This skill only *stages* PRIVATE proposals. Promotion to
-  PUBLIC (`/promote`, hop2) is a separate, human-reviewed step and is out of scope.
-- **Propose, don't apply.** Do not edit `profile/` or `decisions/` directly — staging to
-  `_pending/` lets the hop1 reconcile step (a PC-on session) apply or reject deliberately.
-- **De-duplicate.** Before staging, recall existing `decisions/*` and `profile` so you don't
-  restage something already canonical.
+## Hard rules
+- **PII-safe by construction.** Drafts are staged locally (PRIVATE, outside the `claude-config`
+  git tree) precisely so a human can strip real names/client details before `/promote` ever
+  touches the PUBLIC repo. Still write drafts as if they might leak — generalize, don't
+  transcribe verbatim.
+- **Propose, don't publish.** retro only writes a draft file. It never edits
+  `claude/playbooks/` directly and never commits — that's `/promote`'s job, with human review.
+- **De-duplicate.** Before staging, check `claude/playbooks/` (and any existing
+  `$CLAUDE_MEMORY_DIR/playbook-drafts/*.md`) for an entry already covering the same method —
+  update/skip instead of restaging a near-duplicate.
 
 ## Steps
 1. **Resolve the store.** `eval "$(bash ~/.claude/lib/memdir.sh --export)"` (POSIX) or
    `& "$env:USERPROFILE\.claude\lib\memdir.ps1" -Export | Out-String | Invoke-Expression`
    (PowerShell). Use the resolved `$CLAUDE_MEMORY_DIR`; never hardcode paths.
-2. **Scan the session** for three proposal kinds:
-   - `profile` — a stable user preference/identity/constraint that should never need
-     re-explaining (e.g. response language, tone, a standing taboo).
-   - `decision` — a non-trivial, cross-project decision with rationale (the kind worth
-     recalling later). Use the `decisions` format (Context / Decision / Rationale).
-   - `skill` — a repeatable workflow worth distilling into a reusable skill draft.
-3. **Recall to de-dupe.** Check existing `profile/user-profile.json` and `decisions/*` for
-   each candidate; drop anything already captured.
-4. **Stage each surviving candidate** with the pending library (one file per proposal):
-   ```sh
-   printf '%s' "<proposal body markdown>" | \
-     bash ~/.claude/lib/pending.sh --kind decision --slug 20260101-short-slug --source retro
+2. **Ask: did a repeatable method emerge?** Not "what happened" — "what would I do the same
+   way next time, on a different project?" If nothing qualifies, say so and stop (most
+   sessions won't produce a playbook candidate — that's expected, not a failure).
+3. **De-dupe** against `claude/playbooks/*.md` and existing drafts in
+   `$CLAUDE_MEMORY_DIR/playbook-drafts/`.
+4. **Write the draft** to `$CLAUDE_MEMORY_DIR/playbook-drafts/<slug>.md` (plain file write —
+   no special library needed) with frontmatter:
+   ```markdown
+   ---
+   slug: <short-kebab-case-slug>
+   created_at: <ISO8601>
+   source: retro
+   status: pending
+   ---
+
+   ## Method
+   <the generalized, PII-free method — what to do, when, why it works>
+
+   ## Where this came from
+   <one line of context on the session that surfaced it, generalized (no real names/clients)>
    ```
-   ```powershell
-   & "$env:USERPROFILE\.claude\lib\pending.ps1" -Kind decision -Slug 20260101-short-slug -Source retro -Body "<proposal body>"
-   ```
-   The library writes `_pending/<runId>/<slug>.md` with YAML frontmatter
-   (`kind, slug, run_id, created_at, status: pending, source`) plus your body.
-5. **Body conventions.** Keep bodies concise and PII-aware (this is PRIVATE, so real values
-   are allowed here — but never echo secrets/tokens). For `decision`, include
-   **Context / Decision / Rationale**. For `profile`, state the single durable fact and the
-   target profile key. For `skill`, describe the trigger and the steps.
-6. **Report** what was staged (counts by kind) and remind that hop1 reconcile (next PC-on
-   session) will apply or reject — `_pending` items unreconciled past the threshold surface
-   as `reconcile-stale` in `metrics.md`.
+5. **Report** what was staged (or that nothing qualified), and remind the user that `/promote`
+   is needed before this reaches the PUBLIC playbooks catalog.
 
 ## Cross-references
-- Staging library: `claude/lib/pending.{sh,ps1}`.
-- Reconcile (hop1 apply): `claude/skills/reconcile/SKILL.md` + the SessionStart staleness check.
-- Promotion ladder & gates: `claude/protocols/memory-promotion.md`.
-- Canonical schema: `claude/memory/SCHEMA.md`.
+- Promotion (human review → PUBLIC commit): `claude/skills/promote/SKILL.md`.
+- Playbook catalog + quality bar: `claude/skills/playbooks/SKILL.md`, `claude/playbooks/README.md`.
+- Path resolver: `claude/lib/memdir.{sh,ps1}`.

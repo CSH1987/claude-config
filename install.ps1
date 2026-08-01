@@ -11,16 +11,11 @@ New-Item -ItemType Directory -Force -Path $hooks | Out-Null
 # 훅 복사 (Windows는 심볼릭 링크가 관리자 권한을 요구하므로 복사 방식)
 Copy-Item (Join-Path $repoDir 'claude\hooks\ensure-harness.ps1')  (Join-Path $hooks 'ensure-harness.ps1')  -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\effort-reminder.ps1') (Join-Path $hooks 'effort-reminder.ps1') -Force
-Copy-Item (Join-Path $repoDir 'claude\hooks\memory-inject.ps1')   (Join-Path $hooks 'memory-inject.ps1')   -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\effort-reminder.txt') (Join-Path $hooks 'effort-reminder.txt') -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\config-sync.ps1')     (Join-Path $hooks 'config-sync.ps1')     -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\work-autosync.ps1')   (Join-Path $hooks 'work-autosync.ps1')   -Force
-Copy-Item (Join-Path $repoDir 'claude\hooks\session-events.ps1')  (Join-Path $hooks 'session-events.ps1')  -Force
-Copy-Item (Join-Path $repoDir 'claude\hooks\reconcile-check.ps1') (Join-Path $hooks 'reconcile-check.ps1') -Force
-Copy-Item (Join-Path $repoDir 'claude\hooks\morning-brief.ps1')   (Join-Path $hooks 'morning-brief.ps1')   -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\model-watch.ps1')     (Join-Path $hooks 'model-watch.ps1')     -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\auto-update.ps1')     (Join-Path $hooks 'auto-update.ps1')     -Force
-Copy-Item (Join-Path $repoDir 'claude\hooks\memory-sync.ps1')     (Join-Path $hooks 'memory-sync.ps1')     -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.ps1')      (Join-Path $hooks 'guardrails.ps1')      -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\guardrails.py')       (Join-Path $hooks 'guardrails.py')       -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\edit-track.ps1')      (Join-Path $hooks 'edit-track.ps1')      -Force
@@ -31,30 +26,36 @@ Copy-Item (Join-Path $repoDir 'claude\hooks\hermes-sync.ps1')     (Join-Path $ho
 Copy-Item (Join-Path $repoDir 'claude\hooks\skill-watch.ps1')     (Join-Path $hooks 'skill-watch.ps1')     -Force
 # config-sync 가 레포 위치를 찾도록 기록 (BOM 없이)
 [System.IO.File]::WriteAllText((Join-Path $dst '.config-sync-path'), $repoDir, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, model-watch, auto-update, morning-brief, memory-sync, guardrails, edit-track, edit-nudge, stop-metrics, filter-test-output, hermes-sync, skill-watch)'
+Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, model-watch, auto-update, guardrails, edit-track, edit-nudge, stop-metrics, filter-test-output, hermes-sync, skill-watch)'
 
-# 평생 기억저장소 경로 resolver(memdir) 복사 — 모든 hook·skill 이 호출하는 단일 진실원(경로만, 데이터 없음).
+# 은퇴된 훅(2026-08-02: v9/v10 lifelong-memory 시스템 완전 은퇴 — 네이티브 auto-memory로 단일화)의
+# 이전 설치가 남긴 stale 복사본 정리. Copy-Item 은 소스가 사라지면 그냥 안 돌 뿐 기존 대상 파일을
+# 지우지 않으므로, 명시적으로 지워야 매 세션 exit 1 소음이 안 남는다.
+foreach ($f in @('memory-inject.ps1','memory-sync.ps1','reconcile-check.ps1','morning-brief.ps1','session-events.ps1')) {
+    $p = Join-Path $hooks $f
+    if (Test-Path $p) { Remove-Item $p -Force }
+}
+
+# 로컬 상태 디렉터리 경로 resolver(memdir) 복사 — OMC 세션상태·leak-guard·플레이북초안이 공유하는
+# 단일 진실원(경로만, 데이터 없음). (2026-08-02: 여기 있던 "평생 기억저장소" profile/decisions
+# 승급사다리는 완전 은퇴 — 네이티브 auto-memory로 단일화.)
 $lib = Join-Path $dst 'lib'
 New-Item -ItemType Directory -Force -Path $lib | Out-Null
 Copy-Item (Join-Path $repoDir 'claude\lib\memdir.ps1') (Join-Path $lib 'memdir.ps1') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\memdir.sh')  (Join-Path $lib 'memdir.sh')  -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\events.ps1')  (Join-Path $lib 'events.ps1')  -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\events.sh')   (Join-Path $lib 'events.sh')   -Force
-Copy-Item (Join-Path $repoDir 'claude\lib\pending.ps1') (Join-Path $lib 'pending.ps1') -Force
-Copy-Item (Join-Path $repoDir 'claude\lib\pending.sh')  (Join-Path $lib 'pending.sh')  -Force
-Copy-Item (Join-Path $repoDir 'claude\lib\metrics.ps1') (Join-Path $lib 'metrics.ps1') -Force
-Copy-Item (Join-Path $repoDir 'claude\lib\metrics.sh')  (Join-Path $lib 'metrics.sh')  -Force
-Copy-Item (Join-Path $repoDir 'claude\lib\metrics.py')  (Join-Path $lib 'metrics.py')  -Force
-Copy-Item (Join-Path $repoDir 'claude\lib\brief.py')     (Join-Path $lib 'brief.py')     -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\model-watch.py') (Join-Path $lib 'model-watch.py') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\skill-watch.py') (Join-Path $lib 'skill-watch.py') -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\auto-update.py') (Join-Path $lib 'auto-update.py') -Force
-Copy-Item (Join-Path $repoDir 'claude\lib\dashboard.py') (Join-Path $lib 'dashboard.py') -Force
-Copy-Item (Join-Path $repoDir 'claude\lib\seed-leakwords.py') (Join-Path $lib 'seed-leakwords.py') -Force
-Copy-Item (Join-Path $repoDir 'claude\lib\memory-bootstrap.ps1') (Join-Path $lib 'memory-bootstrap.ps1') -Force
-Copy-Item (Join-Path $repoDir 'claude\lib\memory-bootstrap.sh')  (Join-Path $lib 'memory-bootstrap.sh')  -Force
 Copy-Item (Join-Path $repoDir 'claude\lib\vaultdir.sh')          (Join-Path $lib 'vaultdir.sh')          -Force
-Write-Host '  ✓ lib copied (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder, model-watch + skill-watch engines, auto-update engine, vaultdir)'
+Write-Host '  ✓ lib copied (memdir resolver, events instrument, model-watch + skill-watch engines, auto-update engine, vaultdir)'
+
+# 은퇴된 lib(2026-08-02)의 stale 복사본 정리.
+foreach ($f in @('pending.ps1','pending.sh','metrics.ps1','metrics.sh','metrics.py','brief.py','dashboard.py','seed-leakwords.py','memory-bootstrap.ps1','memory-bootstrap.sh')) {
+    $p = Join-Path $lib $f
+    if (Test-Path $p) { Remove-Item $p -Force }
+}
 
 # 워크플로 (Workflow 도구의 named workflow — 모든 머신에서 Workflow({name:'expert-debate'}) 호출 가능)
 $workflows = Join-Path $dst 'workflows'
@@ -62,8 +63,10 @@ New-Item -ItemType Directory -Force -Path $workflows | Out-Null
 Copy-Item (Join-Path $repoDir 'claude\workflows\expert-debate.js') (Join-Path $workflows 'expert-debate.js') -Force
 Write-Host '  ✓ workflows copied (expert-debate)'
 
-# 사용자 스킬 (playbooks·retro·reconcile) — CLAUDE.md 가 라우팅하는 스킬을 ~/.claude/skills 에
-# 배포해 실제 /retro·/reconcile·playbooks 호출이 가능하게 한다 (미배포 시 참조만 되고 발화 불가).
+# 사용자 스킬 (playbooks·retro·promote 등) — CLAUDE.md 가 라우팅하는 스킬을 ~/.claude/skills 에
+# 배포해 실제 /retro·/promote·playbooks 호출이 가능하게 한다 (미배포 시 참조만 되고 발화 불가).
+# 제네릭 루프라 신규 스킬(예: promote)은 자동 배포되지만, 레포에서 삭제된 스킬(예: reconcile,
+# 2026-08-02 은퇴)의 예전 복사본은 이 루프가 안 건드리므로 별도 정리한다.
 $skillsSrc = Join-Path $repoDir 'claude\skills'
 if (Test-Path $skillsSrc) {
     $skillsDst = Join-Path $dst 'skills'
@@ -73,7 +76,9 @@ if (Test-Path $skillsSrc) {
         if (Test-Path $sd) { Remove-Item $sd -Recurse -Force }
         Copy-Item $_.FullName $sd -Recurse -Force
     }
-    Write-Host '  ✓ skills copied (playbooks, retro, reconcile, hermes-bridge, workload-optimization → ~/.claude/skills)'
+    $staleReconcile = Join-Path $skillsDst 'reconcile'
+    if (Test-Path $staleReconcile) { Remove-Item $staleReconcile -Recurse -Force }
+    Write-Host '  ✓ skills copied (playbooks, retro, promote, hermes-bridge, workload-optimization → ~/.claude/skills)'
 }
 
 # 사용자 에이전트 (hermes-liaison 등) — CLAUDE.md 가 라우팅하는 에이전트를 ~/.claude/agents 에
@@ -95,18 +100,9 @@ if (Test-Path $exportsSrc) {
     Write-Host '  ✓ exports copied (portable-rules → ~/.claude/exports)'
 }
 
-# .leakwords 자동시드 (v9 0-D2): profile 식별토큰 → gate2b 활성. profile 빔이면 no-op.
-$py3sl = (Get-Command python3 -ErrorAction SilentlyContinue)
-if ($py3sl) {
-    $mdsl = $env:CLAUDE_MEMORY_DIR
-    if (-not $mdsl) { $mdsl = Join-Path $env:USERPROFILE 'claude-memory' }
-    # best-effort: 콜드스타트(빈 프로필)에서 seed-leakwords 가 stderr 경고를 내면 PS5.1 의
-    # $ErrorActionPreference='Stop' + native stderr 가 NativeCommandError(terminating)로 install 을
-    # 중단시킨다(2>$null 로도 못 막음). install.sh 의 `|| true` 와 동등하게 try/catch 로 격리한다.
-    if (Test-Path $mdsl) {
-        try { & $py3sl.Source (Join-Path $repoDir 'claude\lib\seed-leakwords.py') $mdsl 2>$null | Out-Null } catch {}
-    }
-}
+# .leakwords 는 더 이상 자동시드하지 않는다(2026-08-02: 시드 입력원이던 profile 은퇴).
+# gate2b(bare 실명 스캔) 활성화는 이제 사용자가 promote 스킬 최초 실행 시 1회 수동으로 한다
+# (claude/skills/promote/SKILL.md 사전조건 참고).
 
 # leak-guard (M1): route this repo's git hooks to versioned claude/githooks (pre-commit/pre-push).
 # Repo-local; blocks PII/secrets in config-sync's auto-commit/push to the PUBLIC repo. config-sync 본문 무수정.
@@ -256,6 +252,10 @@ if (($s['env'] -is [System.Collections.IDictionary]) -and $s['env'].ContainsKey(
     [void]$s['env'].Remove('DISABLE_AUTOUPDATER')
     Write-Host '  ✓ settings env.DISABLE_AUTOUPDATER 제거 (auto-update 항상 ON)'
 }
+# CLAUDE_MEMORY_NO_SYNC(2026-08-02 은퇴): 대상이던 memory-sync.ps1 자체가 삭제됐으므로 무의미한 잔재 제거.
+if (($s['env'] -is [System.Collections.IDictionary]) -and $s['env'].ContainsKey('CLAUDE_MEMORY_NO_SYNC')) {
+    [void]$s['env'].Remove('CLAUDE_MEMORY_NO_SYNC')
+}
 
 # 모델 전략(적응형 플랜) — 레포가 정본(항상 소스값으로 갱신): model 별칭(opusplan)과
 # env 재매핑(ANTHROPIC_DEFAULT_*)·fallbackModel·advisorModel 은 전 머신 동기화 대상.
@@ -290,22 +290,16 @@ $managedHooks = [ordered]@{
     SessionStart = @(
         (New-PsHook 'ensure-harness.ps1'  ''),
         (New-PsHook 'effort-reminder.ps1' ''),
-        (New-PsHook 'memory-inject.ps1'   ''),
         (New-PsHook 'config-sync.ps1'     " -Mode start -Repo `"$repoDir`""),
         (New-PsHook 'work-autosync.ps1'   ' -Mode start'),
-        (New-PsHook 'reconcile-check.ps1' ''),
         (New-PsHook 'model-watch.ps1'     ''),
         (New-PsHook 'auto-update.ps1'     ''),
-        (New-PsHook 'morning-brief.ps1'   ''),
-        (New-PsHook 'memory-sync.ps1'     ' -Mode start'),
         (New-PsHook 'hermes-sync.ps1'     ''),
         (New-PsHook 'skill-watch.ps1'     '')
     )
     SessionEnd = @(
         (New-PsHook 'config-sync.ps1'     " -Mode end -Repo `"$repoDir`""),
-        (New-PsHook 'work-autosync.ps1'   ' -Mode end'),
-        (New-PsHook 'session-events.ps1'  ''),
-        (New-PsHook 'memory-sync.ps1'     ' -Mode end')
+        (New-PsHook 'work-autosync.ps1'   ' -Mode end')
     )
     PreToolUse = @(
         (New-PsHook 'guardrails.ps1'      ''),
@@ -332,6 +326,9 @@ foreach ($evt in $managedHooks.Keys) {
 # → 과거 bash-form 훅(`bash "$HOME/.claude/hooks/config-sync.sh"`)이 박힌 머신도 재실행으로 자가 치유.
 #   딱 3개 관리 파일명으로만 한정 + 호출 위치(-File "..." / bash "...")에 앵커 →
 #   사용자 자신의 bash 훅이나, 관리 경로를 인자/문구로 "언급만" 하는 훅은 보존(과잉 제거 방지).
+# 은퇴된 이름(memory-inject·memory-sync·reconcile-check·morning-brief·session-events, 2026-08-02)도
+# 이 정규식엔 **그대로 남긴다** — $managedHooks(위, 현재 배포 목록)에서만 뺐다. 여기서까지 빼면
+# 예전 설치가 settings.json 에 남긴 그 훅들이 "관리 대상 아님(사용자 훅)"으로 오인돼 영구 잔존한다.
 $managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|model-watch|auto-update|morning-brief|memory-sync|guardrails|edit-track|edit-nudge|stop-metrics|filter-test-output|hermes-sync|skill-watch)\.(ps1|sh)\b'
 $hk = Get-Dict $s 'hooks'
 foreach ($evt in $managedHooks.Keys) {
@@ -381,9 +378,12 @@ if ($env:CLAUDE_INSTALL_DEPLOY_ONLY -eq '1') {
     return
 }
 
-# 평생 기억저장소 env 영구설정 (결정 D1) — 미설정 시에만(사용자 선택 보존). User 스코프 = admin 불필요(D4).
+# 로컬 상태 디렉터리 env 영구설정 — 미설정 시에만(사용자 선택 보존). User 스코프 = admin 불필요.
 # resolver(memdir.ps1)와 동일 규칙: CLAUDE_MEMORY_DIR > 기본 $USERPROFILE\claude-memory; OMC_STATE_DIR=<memdir>\omc-state.
-# OMC 는 process.env.OMC_STATE_DIR 를 읽어 성장데이터를 단일 트리로 모은다(discovery GO 로 검증됨). 적용은 새 세션부터.
+# OMC 는 process.env.OMC_STATE_DIR 를 읽어 세션상태를 단일 트리로 모은다. 적용은 새 세션부터.
+# (2026-08-02: "평생 기억저장소" profile/decisions 승급사다리는 완전 은퇴 — 아래 스캐폴드는
+# omc-state/playbook-drafts 만 만든다. memory-bootstrap 자동클론·.gitattributes·profile 시드는
+# 전부 그 은퇴된 개념 전용이었으므로 제거됨.)
 $memDir = [Environment]::GetEnvironmentVariable('CLAUDE_MEMORY_DIR', 'User')
 if (-not $memDir) {
     $memDir = Join-Path $env:USERPROFILE 'claude-memory'
@@ -395,30 +395,8 @@ if (-not [Environment]::GetEnvironmentVariable('OMC_STATE_DIR', 'User')) {
     [Environment]::SetEnvironmentVariable('OMC_STATE_DIR', $omcStateDir, 'User')
     Write-Host "  ✓ OMC_STATE_DIR(User) → $omcStateDir (new sessions)"
 }
-# 자동 부트스트랩: 이 머신에 PRIVATE 기억저장소가 아직 없으면 원격을 자동 클론(무동작 활성화).
-# 이미 .git 이면 즉시 skip(불가침), 원격 미해석/실데이터면 skip. 스캐폴드 mkdir 앞에 둬 빈 dir 클론을 돕는다.
-$bootPs1 = Join-Path $repoDir 'claude\lib\memory-bootstrap.ps1'
-if (Test-Path $bootPs1) {
-    $env:CLAUDE_MEMORY_DIR = $memDir
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $bootPs1 *> $null
-}
-foreach ($d in @($memDir, (Join-Path $memDir 'profile'), (Join-Path $memDir 'decisions'), $omcStateDir)) {
+foreach ($d in @($memDir, $omcStateDir, (Join-Path $memDir 'playbook-drafts'))) {
     if (-not (Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
-}
-# 샤드 동시쓰기 충돌 라인보존: PRIVATE 스토어의 events/_sync-log jsonl 은 merge=union (SCHEMA.md §0/§3, plan v9).
-# 부재 시에만 시드(사용자 수정 보존). PUBLIC claude-config 가 아니라 PRIVATE 스토어 루트($memDir)에 둔다.
-$memGitAttr = Join-Path $memDir '.gitattributes'
-if (-not (Test-Path $memGitAttr)) {
-    $gaBody = "events/*.jsonl    merge=union`n_sync-log/*.jsonl merge=union`n"
-    [System.IO.File]::WriteAllText($memGitAttr, $gaBody, (New-Object System.Text.UTF8Encoding($false)))
-    Write-Host "  ✓ claude-memory .gitattributes seeded (events/_sync-log merge=union)"
-}
-# profile 시드 — 부재 시에만(빈 스캐폴드, bool 기본값 없음 → A1 hook 의 cold-start 무주입 계약 유지).
-$profileJson = Join-Path $memDir 'profile\user-profile.json'
-if (-not (Test-Path $profileJson)) {
-    $seed = '{"schema_version":1,"updated_at":"","updated_by":"","identity":{"display_name":"","handles":{},"contact_domain":"","locale":"","timezone":""},"preferences":{"response_language":"","tone":"","effort_default":"","code_comment_language":"","units":""},"roles":[],"working_style":{"preferred_stacks":[],"preferred_tools":[]},"constraints":{"do_not":[],"sensitive_topics":[],"no_proactive_mentions":[]},"projects":[],"anchors":[]}'
-    [System.IO.File]::WriteAllText($profileJson, $seed, (New-Object System.Text.UTF8Encoding($false)))
-    Write-Host "  ✓ profile seed created ($profileJson)"
 }
 
 # 자동업데이트 항상 ON 보장(2/2): 전역 config(~/.claude.json)의 레거시 비활성(autoUpdates:false)을 치유.

@@ -68,8 +68,8 @@ Agent 도구의 `model` 파라미터는 alias enum(`sonnet|opus|haiku|fable`)만
 
 ### headless mid 호출 규약 (전부 필수)
 
-1. **env**: `RELAY_STAGE=review` + `CLAUDE_EVENTS_OFF=1` + `CLAUDE_AUTOSYNC_OFF=1` — `CLAUDE_EVENTS_OFF`는 model-watch·edit-nudge·edit-track·morning-brief·reconcile-check·session-events·stop-metrics를 끄지만, work-autosync.sh는 별도 스위치(`CLAUDE_AUTOSYNC_OFF`)를 쓰므로 둘 다 설정해야 한다.
-2. **킬스위치 사각지대 명시**: config-sync.sh·memory-sync.sh·ensure-harness.sh·hermes-sync.sh·effort-reminder.sh·memory-inject.sh는 어떤 킬스위치도 받지 않는다(grep 실측 0건) — mid 세션에서도 이 훅들은 그대로 실행되며 그 오버헤드·부수효과는 수용한다. (후속 과제: config-sync.sh에 `CLAUDE_EVENTS_OFF` 지원 추가 검토)
+1. **env**: `RELAY_STAGE=review` + `CLAUDE_EVENTS_OFF=1` + `CLAUDE_AUTOSYNC_OFF=1` — `CLAUDE_EVENTS_OFF`는 model-watch·edit-nudge·edit-track·stop-metrics를 끄지만, work-autosync.sh는 별도 스위치(`CLAUDE_AUTOSYNC_OFF`)를 쓰므로 둘 다 설정해야 한다.
+2. **킬스위치 사각지대 명시**: config-sync.sh·ensure-harness.sh·hermes-sync.sh·effort-reminder.sh는 어떤 킬스위치도 받지 않는다(grep 실측 0건) — mid 세션에서도 이 훅들은 그대로 실행되며 그 오버헤드·부수효과는 수용한다. (후속 과제: config-sync.sh에 `CLAUDE_EVENTS_OFF` 지원 추가 검토)
 3. **timeout 300초(300000ms) 이상 또는 `run_in_background` 필수** — 검토는 추론이 길다.
 4. **`--disallowedTools "Write,Edit,NotebookEdit,Bash"` 또는 read-only 지시 필수** — settings의 `defaultMode: bypassPermissions` 때문에 headless 검토 세션이 기본으로 무제한 쓰기 권한을 가진다. `--disallowedTools`(결정론적)를 우선하고 프롬프트에 read-only 지시를 병기한다.
 5. **재귀 릴레이 억제 이중화**: env 마커 `RELAY_STAGE` + 프롬프트 본문에 "이 세션은 릴레이 검토 스테이지다 — 릴레이를 트리거하지 말라" 명시. `RELAY_STAGE`가 설정된 세션은 릴레이를 트리거하지 않는다.

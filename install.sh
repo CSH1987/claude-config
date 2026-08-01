@@ -164,16 +164,11 @@ esac
 # 훅 링크 (harness 자동 + effort 리마인더 + 설정 자동 동기화)
 ln -sfn "$REPO_DIR/claude/hooks/ensure-harness.sh"   "$DST/hooks/ensure-harness.sh"
 ln -sfn "$REPO_DIR/claude/hooks/effort-reminder.sh"  "$DST/hooks/effort-reminder.sh"
-ln -sfn "$REPO_DIR/claude/hooks/memory-inject.sh"    "$DST/hooks/memory-inject.sh"
 ln -sfn "$REPO_DIR/claude/hooks/effort-reminder.txt" "$DST/hooks/effort-reminder.txt"
 ln -sfn "$REPO_DIR/claude/hooks/config-sync.sh"      "$DST/hooks/config-sync.sh"
 ln -sfn "$REPO_DIR/claude/hooks/work-autosync.sh"    "$DST/hooks/work-autosync.sh"
-ln -sfn "$REPO_DIR/claude/hooks/session-events.sh"   "$DST/hooks/session-events.sh"
-ln -sfn "$REPO_DIR/claude/hooks/reconcile-check.sh"  "$DST/hooks/reconcile-check.sh"
-ln -sfn "$REPO_DIR/claude/hooks/morning-brief.sh"    "$DST/hooks/morning-brief.sh"
 ln -sfn "$REPO_DIR/claude/hooks/model-watch.sh"      "$DST/hooks/model-watch.sh"
 ln -sfn "$REPO_DIR/claude/hooks/auto-update.sh"      "$DST/hooks/auto-update.sh"
-ln -sfn "$REPO_DIR/claude/hooks/memory-sync.sh"      "$DST/hooks/memory-sync.sh"
 ln -sfn "$REPO_DIR/claude/hooks/guardrails.sh"       "$DST/hooks/guardrails.sh"
 ln -sfn "$REPO_DIR/claude/hooks/guardrails.py"       "$DST/hooks/guardrails.py"
 ln -sfn "$REPO_DIR/claude/hooks/edit-track.sh"       "$DST/hooks/edit-track.sh"
@@ -182,9 +177,18 @@ ln -sfn "$REPO_DIR/claude/hooks/stop-metrics.sh"     "$DST/hooks/stop-metrics.sh
 ln -sfn "$REPO_DIR/claude/hooks/filter-test-output.sh" "$DST/hooks/filter-test-output.sh"
 ln -sfn "$REPO_DIR/claude/hooks/hermes-sync.sh"      "$DST/hooks/hermes-sync.sh"
 ln -sfn "$REPO_DIR/claude/hooks/skill-watch.sh"      "$DST/hooks/skill-watch.sh"
-chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/memory-inject.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/session-events.sh" "$REPO_DIR/claude/hooks/reconcile-check.sh" "$REPO_DIR/claude/hooks/morning-brief.sh" "$REPO_DIR/claude/hooks/model-watch.sh" "$REPO_DIR/claude/hooks/auto-update.sh" "$REPO_DIR/claude/hooks/memory-sync.sh" "$REPO_DIR/claude/hooks/guardrails.sh" "$REPO_DIR/claude/hooks/edit-track.sh" "$REPO_DIR/claude/hooks/edit-nudge.sh" "$REPO_DIR/claude/hooks/stop-metrics.sh" "$REPO_DIR/claude/hooks/filter-test-output.sh" "$REPO_DIR/claude/hooks/hermes-sync.sh" "$REPO_DIR/claude/hooks/skill-watch.sh"
+chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/model-watch.sh" "$REPO_DIR/claude/hooks/auto-update.sh" "$REPO_DIR/claude/hooks/guardrails.sh" "$REPO_DIR/claude/hooks/edit-track.sh" "$REPO_DIR/claude/hooks/edit-nudge.sh" "$REPO_DIR/claude/hooks/stop-metrics.sh" "$REPO_DIR/claude/hooks/filter-test-output.sh" "$REPO_DIR/claude/hooks/hermes-sync.sh" "$REPO_DIR/claude/hooks/skill-watch.sh"
 printf '%s' "$REPO_DIR" > "$DST/.config-sync-path"   # config-sync 가 레포 위치를 찾도록
-echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, session-events, reconcile-check, model-watch, auto-update, morning-brief, memory-sync, guardrails, edit-track, edit-nudge, stop-metrics, filter-test-output, hermes-sync, skill-watch)"
+echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, model-watch, auto-update, guardrails, edit-track, edit-nudge, stop-metrics, filter-test-output, hermes-sync, skill-watch)"
+
+# 은퇴된 훅(2026-08-02: v9/v10 lifelong-memory 시스템 완전 은퇴 — 네이티브 auto-memory로 단일화)의
+# dangling 심볼릭링크 정리. 예전 install.sh 가 만든 링크가 남아있으면 대상이 없는 채로 settings.json
+# 등록만 사라지지 않고 잔존해 매 세션 exit 127 소음을 낸다.
+for _retired in memory-inject.sh memory-inject.ps1 memory-sync.sh memory-sync.ps1 \
+                reconcile-check.sh reconcile-check.ps1 morning-brief.sh morning-brief.ps1 \
+                session-events.sh session-events.ps1; do
+  [ -L "$DST/hooks/$_retired" ] && rm -f "$DST/hooks/$_retired"
+done
 
 # leak-guard (M1): route this repo's git hooks to the versioned claude/githooks (pre-commit/pre-push).
 # Repo-local config; blocks PII/secrets in config-sync's auto-commit/push to the PUBLIC repo. config-sync 본문 무수정.
@@ -199,35 +203,35 @@ fi
 ln -sfn "$REPO_DIR/claude/ultracode.json" "$DST/ultracode.json"
 echo "  ✓ ultracode.json linked"
 
-# 평생 기억저장소 경로 resolver(memdir) — 모든 hook·skill 이 호출하는 단일 진실원(경로만, 데이터 없음).
+# 로컬 상태 디렉터리 경로 resolver(memdir) — OMC 세션상태·leak-guard·플레이북초안이 공유하는
+# 단일 진실원(경로만, 데이터 없음). (2026-08-02: 여기 있던 "평생 기억저장소" profile/decisions
+# 승급사다리는 완전 은퇴 — 네이티브 auto-memory로 단일화.)
 mkdir -p "$DST/lib"
 ln -sfn "$REPO_DIR/claude/lib/memdir.sh"   "$DST/lib/memdir.sh"
 ln -sfn "$REPO_DIR/claude/lib/memdir.ps1"  "$DST/lib/memdir.ps1"
 ln -sfn "$REPO_DIR/claude/lib/events.sh"   "$DST/lib/events.sh"
 ln -sfn "$REPO_DIR/claude/lib/events.ps1"  "$DST/lib/events.ps1"
-ln -sfn "$REPO_DIR/claude/lib/pending.sh"  "$DST/lib/pending.sh"
-ln -sfn "$REPO_DIR/claude/lib/pending.ps1" "$DST/lib/pending.ps1"
-ln -sfn "$REPO_DIR/claude/lib/metrics.sh"  "$DST/lib/metrics.sh"
-ln -sfn "$REPO_DIR/claude/lib/metrics.ps1" "$DST/lib/metrics.ps1"
-ln -sfn "$REPO_DIR/claude/lib/metrics.py"  "$DST/lib/metrics.py"
-ln -sfn "$REPO_DIR/claude/lib/brief.py"     "$DST/lib/brief.py"
 ln -sfn "$REPO_DIR/claude/lib/model-watch.py" "$DST/lib/model-watch.py"
 ln -sfn "$REPO_DIR/claude/lib/skill-watch.py" "$DST/lib/skill-watch.py"
 ln -sfn "$REPO_DIR/claude/lib/auto-update.py" "$DST/lib/auto-update.py"
-ln -sfn "$REPO_DIR/claude/lib/dashboard.py" "$DST/lib/dashboard.py"
-ln -sfn "$REPO_DIR/claude/lib/seed-leakwords.py" "$DST/lib/seed-leakwords.py"
-ln -sfn "$REPO_DIR/claude/lib/memory-bootstrap.sh"  "$DST/lib/memory-bootstrap.sh"
-ln -sfn "$REPO_DIR/claude/lib/memory-bootstrap.ps1" "$DST/lib/memory-bootstrap.ps1"
 ln -sfn "$REPO_DIR/claude/lib/vaultdir.sh"          "$DST/lib/vaultdir.sh"
-chmod +x "$REPO_DIR/claude/lib/memory-bootstrap.sh" "$REPO_DIR/claude/lib/vaultdir.sh" 2>/dev/null || true
+chmod +x "$REPO_DIR/claude/lib/vaultdir.sh" 2>/dev/null || true
+
+# 은퇴된 lib(2026-08-02)의 dangling 심볼릭링크 정리.
+for _retired in pending.sh pending.ps1 metrics.sh metrics.ps1 metrics.py brief.py dashboard.py \
+                seed-leakwords.py memory-bootstrap.sh memory-bootstrap.ps1; do
+  [ -L "$DST/lib/$_retired" ] && rm -f "$DST/lib/$_retired"
+done
 
 # 워크플로 (Workflow 도구의 named workflow — 모든 머신에서 Workflow({name:'expert-debate'}) 호출 가능)
 mkdir -p "$DST/workflows"
 ln -sfn "$REPO_DIR/claude/workflows/expert-debate.js" "$DST/workflows/expert-debate.js"
 echo "  ✓ workflows linked (expert-debate)"
 
-# 사용자 스킬 (playbooks·retro·reconcile) — CLAUDE.md 가 라우팅하는 스킬을 ~/.claude/skills 에
-# 배포해 실제 /retro·/reconcile·playbooks 호출이 가능하게 한다 (미배포 시 참조만 되고 발화 불가).
+# 사용자 스킬 (playbooks·retro·promote 등) — CLAUDE.md 가 라우팅하는 스킬을 ~/.claude/skills 에
+# 배포해 실제 /retro·/promote·playbooks 호출이 가능하게 한다 (미배포 시 참조만 되고 발화 불가).
+# 제네릭 루프라 신규 스킬(예: promote)은 자동 배포되지만, 레포에서 삭제된 스킬(예: reconcile,
+# 2026-08-02 은퇴)의 예전 심링크는 이 루프가 안 건드리므로 별도 정리한다.
 mkdir -p "$DST/skills"
 for s in "$REPO_DIR"/claude/skills/*/; do
   [ -d "$s" ] || continue
@@ -235,7 +239,8 @@ for s in "$REPO_DIR"/claude/skills/*/; do
   if [ -e "$DST/skills/$n" ] && [ ! -L "$DST/skills/$n" ]; then rm -rf "$DST/skills/$n"; fi
   ln -sfn "${s%/}" "$DST/skills/$n"
 done
-echo "  ✓ skills linked (playbooks, retro, reconcile, hermes-bridge, workload-optimization → ~/.claude/skills)"
+[ -L "$DST/skills/reconcile" ] && rm -f "$DST/skills/reconcile"
+echo "  ✓ skills linked (playbooks, retro, promote, hermes-bridge, workload-optimization → ~/.claude/skills)"
 
 # 사용자 에이전트 (hermes-liaison 등) — CLAUDE.md 가 라우팅하는 에이전트를 ~/.claude/agents 에
 # 배포해 실제 발화가 가능하게 한다 (미배포 시 참조만 되고 발화 불가; skills 루프와 동일 패턴).
@@ -253,15 +258,13 @@ echo "  ✓ agents linked (hermes-liaison → ~/.claude/agents)"
 if [ -e "$DST/exports" ] && [ ! -L "$DST/exports" ]; then rm -rf "$DST/exports"; fi
 ln -sfn "$REPO_DIR/claude/exports" "$DST/exports"
 echo "  ✓ exports linked (portable-rules → ~/.claude/exports)"
-chmod +x "$REPO_DIR/claude/lib/memdir.sh" "$REPO_DIR/claude/lib/events.sh" "$REPO_DIR/claude/lib/pending.sh" "$REPO_DIR/claude/lib/metrics.sh"
-echo "  ✓ lib linked (memdir resolver, events instrument, pending stager, metrics derive, brief + dashboard, leakwords seeder, model-watch + skill-watch + auto-update engines)"
+chmod +x "$REPO_DIR/claude/lib/memdir.sh" "$REPO_DIR/claude/lib/events.sh"
+echo "  ✓ lib linked (memdir resolver, events instrument, model-watch + skill-watch + auto-update engines)"
 
-# .leakwords 자동시드 (v9 0-D2): profile 식별토큰 → gate2b(bare 실명) 활성화. profile 빔이면 no-op.
-if command -v python3 >/dev/null 2>&1; then
-  _md="${CLAUDE_MEMORY_DIR:-}"
-  if [ -z "$_md" ] && [ -f "$DST/lib/memdir.sh" ]; then eval "$(bash "$DST/lib/memdir.sh" --no-ensure --export 2>/dev/null || true)"; _md="${CLAUDE_MEMORY_DIR:-}"; fi
-  [ -n "$_md" ] && python3 "$REPO_DIR/claude/lib/seed-leakwords.py" "$_md" >/dev/null 2>&1 || true
-fi
+# .leakwords 는 더 이상 자동시드하지 않는다(2026-08-02: 시드 입력원이던 profile 은퇴).
+# gate2b(bare 실명 스캔) 활성화는 이제 사용자가 promote 스킬 최초 실행 시 1회 수동으로 한다
+# (claude/skills/promote/SKILL.md 사전조건 참고) — 자동시드는 사용자 실명을 매 설치마다
+# 파일시스템에 쓰는 부작용이 있어, 수동 옵트인이 더 안전한 기본값이라 판단.
 
 # CLAUDE.md (전역 세션 기본값): 없으면/심링크면 링크(업데이트 자동 반영),
 # 실제 파일이면 claude-config 관리 블록을 마커 사이에 삽입/갱신(마커 밖 사용자 내용 보존).
@@ -338,9 +341,19 @@ for k in ("theme","autoUpdatesChannel","skipWorkflowUsageWarning"):  # 개인 �
 # 소스의 모든 hook 이벤트(SessionStart, SessionEnd, ...)를 머지. 자가 치유 dedup(순서 보존).
 # 그룹의 matcher(예: filter-test-output 의 "Bash")를 보존·동기화한다 — 유실 시 PreToolUse 훅이
 # 모든 도구 호출마다 발화하는 회귀가 있었음(install.ps1 의 matcher 사양과 대칭).
+# 은퇴된 훅 이름(2026-08-02: v9/v10 lifelong-memory 시스템 완전 은퇴) — 이 머지는 기본적으로
+# add-only 라, 레포에서 훅을 빼도 이미 실파일로 배포된 settings.json 에는 등록이 영구 잔존한다.
+# 그래서 이름으로 능동 pruning 한다(실측 발견 — settings.json 이 심링크가 아닌 머신에서 재현됨).
+RETIRED_HOOKS = ("memory-inject.sh", "memory-inject.ps1", "memory-sync.sh", "memory-sync.ps1",
+                 "reconcile-check.sh", "reconcile-check.ps1", "morning-brief.sh", "morning-brief.ps1",
+                 "session-events.sh", "session-events.ps1")
 hk=d.setdefault("hooks",{})
 for event, groups in s.get("hooks",{}).items():
     cur=hk.setdefault(event,[])
+    cur=[g for g in cur if not any(
+        any(name in (h.get("command") or "") for name in RETIRED_HOOKS)
+        for h in g.get("hooks",[])
+    )]
     seen=set(); dedup=[]
     for g in cur:
         key=tuple(h.get("command") for h in g.get("hooks",[]))
@@ -365,6 +378,8 @@ for event, groups in s.get("hooks",{}).items():
     hk[event]=cur
 # 자동업데이트 항상 ON(1/2): settings 의 비활성 레버 제거 (autoupdates→settings 마이그레이션 대비; "0" 도 truthy 라 끄므로 키째 제거)
 if isinstance(d.get("env"), dict): d["env"].pop("DISABLE_AUTOUPDATER", None)
+# CLAUDE_MEMORY_NO_SYNC(2026-08-02 은퇴): 대상이던 memory-sync.sh 자체가 삭제됐으므로 무의미한 잔재 제거.
+if isinstance(d.get("env"), dict): d["env"].pop("CLAUDE_MEMORY_NO_SYNC", None)
 # 원자적 쓰기(tmp+rename): detached model-watch probe 등 동시 읽기가 잘린 파일을 보지 않도록.
 import os
 tmp=dst+".tmp-install-merge"
@@ -397,8 +412,11 @@ install_bash_wrapper
 # 현재 실행의 command -v 판정을 정확히 하고, 새 머신/GUI 실행에서도 훅이 brew 바이너리를 찾게 한다.
 ensure_brew_path
 
-# 평생 기억저장소 env 영구설정 (결정 D1) — 셸 rc 에 export(이미 설정돼 있으면 ${VAR:-default} 로 그 값 보존).
-# OMC 는 process.env.OMC_STATE_DIR 를 읽어 성장데이터를 단일 트리로 모은다. admin 불필요(D4).
+# 로컬 상태 디렉터리 env 영구설정 — 셸 rc 에 export(이미 설정돼 있으면 ${VAR:-default} 로 그 값 보존).
+# OMC 는 process.env.OMC_STATE_DIR 를 읽어 세션상태를 단일 트리로 모은다. admin 불필요.
+# (2026-08-02: "평생 기억저장소" profile/decisions 승급사다리는 완전 은퇴 — 아래 스캐폴드는
+# omc-state/playbook-drafts 만 만든다. memory-bootstrap 자동클론·.gitattributes·profile 시드는
+# 전부 그 은퇴된 개념 전용이었으므로 제거됨.)
 memdir_marker='claude-config:memdir-env'
 for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
   [ -e "$rc" ] || continue
@@ -409,23 +427,7 @@ for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
   echo "  ✓ memdir env → $(basename "$rc")"
 done
 _md="${CLAUDE_MEMORY_DIR:-$HOME/claude-memory}"
-# 자동 부트스트랩: 이 머신에 PRIVATE 기억저장소가 아직 없으면 원격을 자동 클론(무동작 활성화).
-# 이미 .git 이면 즉시 skip(불가침), 원격 미해석/실데이터면 skip. 스캐폴드 mkdir 앞에 둬 빈 dir 클론을 돕는다.
-[ -f "$REPO_DIR/claude/lib/memory-bootstrap.sh" ] && CLAUDE_MEMORY_DIR="$_md" bash "$REPO_DIR/claude/lib/memory-bootstrap.sh" || true
-mkdir -p "$_md/profile" "$_md/decisions" "$_md/omc-state"
-# 샤드 동시쓰기 충돌 라인보존: PRIVATE 스토어의 events/_sync-log jsonl 은 merge=union (SCHEMA.md §0/§3, plan v9).
-# 부재 시에만 시드(사용자 수정 보존). PUBLIC claude-config 가 아니라 PRIVATE 스토어 루트($_md)에 둔다.
-_memga="$_md/.gitattributes"
-if [ ! -e "$_memga" ]; then
-  printf '%s\n%s\n' 'events/*.jsonl    merge=union' '_sync-log/*.jsonl merge=union' > "$_memga"
-  echo "  ✓ claude-memory .gitattributes seeded (events/_sync-log merge=union)"
-fi
-# profile 시드 — 부재 시에만(빈 스캐폴드, bool 기본값 없음 → A1 hook cold-start 무주입 유지).
-_profile="$_md/profile/user-profile.json"
-if [ ! -e "$_profile" ]; then
-  printf '%s\n' '{"schema_version":1,"updated_at":"","updated_by":"","identity":{"display_name":"","handles":{},"contact_domain":"","locale":"","timezone":""},"preferences":{"response_language":"","tone":"","effort_default":"","code_comment_language":"","units":""},"roles":[],"working_style":{"preferred_stacks":[],"preferred_tools":[]},"constraints":{"do_not":[],"sensitive_topics":[],"no_proactive_mentions":[]},"projects":[],"anchors":[]}' > "$_profile"
-  echo "  ✓ profile seed created ($_profile)"
-fi
+mkdir -p "$_md/omc-state" "$_md/playbook-drafts"
 
 # 자동업데이트 항상 ON 보장(2/2): 전역 config(~/.claude.json)의 레거시 비활성(autoUpdates:false)을 치유.
 # 이 버전은 자동업데이트 on/off 를 전역 config 의 autoUpdates 에서 읽음(settings.json 아님).

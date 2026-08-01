@@ -111,12 +111,6 @@ git -C "$env:USERPROFILE\claude-config" pull; powershell -ExecutionPolicy Bypass
 - **Windows**: `~/.pyshim` 생성 후 USER PATH 앞에 추가(hookify 의 python3), ExecutionPolicy(CurrentUser)를 필요시 `RemoteSigned` 로, `claude` 오버라이드를 Windows PowerShell 5.1 + (있으면) pwsh 7 프로필 양쪽에 기록.
 - **공통**: `claude` 실행 시 `gh auth token` 으로 `GITHUB_PERSONAL_ACCESS_TOKEN` 을 런타임 주입(github MCP). 레포에 토큰 저장 안 함.
 
-> **PRIVATE 기억저장소 자동 연결**: config(공개)와 별개로, 개인 성장데이터를 담는 **PRIVATE `claude-memory` 저장소**도
-> 각 머신에서 자동 백업됩니다. 그 머신에 아직 없으면 `memory-bootstrap` 이 SessionStart(또는 install)에 원격을 자동
-> 클론해 붙여 — 메모리 백업·네이티브 오토메모리 미러·자가치유가 **무동작으로** 켜집니다. 안전장치: 이미 있으면 건드리지
-> 않고(불가침), 원격을 모르거나 기존 데이터가 있으면 안전하게 건너뜁니다(fail-open). 끄기 `CLAUDE_MEMORY_NO_BOOTSTRAP=1`.
-> (PRIVATE 레포라 이 공개 README 엔 그 내용을 두지 않습니다.)
-
 ## 6. 작업물(프로젝트) 클라우드 백업 — `claude-newproj` + 자동 동기화
 
 config 레포(설정)는 config-sync 가 늘 동기화하지만, **실제 작업 프로젝트**는 포맷·PC 고장 시 날아갈 수 있습니다. 그래서:
