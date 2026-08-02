@@ -1,7 +1,6 @@
 #!/usr/bin/env sh
-# claude-config:events — 평생 오케스트레이터 "공용 계측기".
-#   events/<machineId>.jsonl 에 SCHEMA.md §3 형식의 이벤트 1줄을 append 한다.
-#   (plan v9 §2 "공용 계측기" · v10 T1-G4 성장루프 측정 백본의 토대.)
+# claude-config:events — 공용 계측기.
+#   events/<machineId>.jsonl 에 이벤트 1줄을 append 한다. stop-metrics.sh 가 rework 감지에 쓴다.
 #
 # 설계 원칙(기존 훅 계승):
 #   · 결정적·모델 무관. 경로는 resolver(memdir.sh)만 사용(하드코딩 금지·단일 진실원).
@@ -54,7 +53,7 @@ else
 fi
 [ -n "$memdir_u" ] || _fail "empty memdir after normalize"
 
-# --- 2) python3(정확한 JSON 이스케이프 — memory-inject.sh 와 동일 의존 관례) ---
+# --- 2) python3(정확한 JSON 이스케이프 위해 필요) ---
 command -v python3 >/dev/null 2>&1 || _fail "no python3 (fail-open)"
 
 # --- 3) 컨텍스트 수집(셸에서 결정적으로) ---
@@ -93,7 +92,7 @@ except Exception:
 # 파일명 안전화(경로 인젝션 방지)
 safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in machine_id) or "unknown"
 
-# SCHEMA.md §3 완전 기본 스켈레톤(소비자가 필드 존재를 신뢰할 수 있게 전부 채움)
+# 완전 기본 스켈레톤(소비자가 필드 존재를 신뢰할 수 있게 전부 채움)
 ev = {
     "ts": ts or None,
     "session_id": sess or None,
@@ -121,7 +120,7 @@ ev = {
     "outcome": None,        # success|fail|partial|null — 산출물 결과(선택; /retro·명령이 설정)
     "duration_ms": None,    # 작업/세션 소요(ms, 측정 시)
     "token_cost": None,     # 토큰 비용(알 때)
-    "user_rating": None,    # 1-5 사용자 품질 평가(선택; claude-rate)
+    "user_rating": None,    # 1-5 사용자 품질 평가(선택, --set user_rating=N 로 채움)
     "counts": {"skills": 0, "wiki": 0, "profile_keys": 0, "digest_files": 0},
     "backup": {
         "result": "skip", "sha": None, "ahead_count": 0, "last_snapshot_ts": None,

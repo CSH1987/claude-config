@@ -1,6 +1,6 @@
 # claude-config:events (Windows) - PowerShell mirror of events.sh.
-#   Appends one SCHEMA.md section-3 event line to events/<machineId>.jsonl
-#   (plan v9 shared instrument / v10 T1-G4 growth-loop measurement backbone).
+#   Appends one event line to events/<machineId>.jsonl. stop-metrics.ps1 uses this for
+#   rework detection.
 #
 # Principles (mirror of the .sh + existing hooks):
 #   - Deterministic, model-independent. Path via resolver (memdir.ps1) only; never hardcode.
@@ -11,7 +11,7 @@
 #   - Output JSONL written UTF-8 (no BOM), LF line ending (consistent with events.sh).
 #
 # Encoding: this body is pure ASCII (no non-ASCII) -> safe with BOM-less PS 5.1 ANSI decode,
-# exactly like memory-inject.ps1 / effort-reminder.ps1.
+# exactly like effort-reminder.ps1.
 param(
     [string]$Type = 'task',
     [string[]]$Set = @(),
@@ -56,7 +56,7 @@ try {
     try { $top = (& git rev-parse --show-toplevel 2>$null); if ($top) { $cwdRepo = @($top)[0] } } catch {}
     if (-not $cwdRepo) { $cwdRepo = (Get-Location).Path }
 
-    # --- 4) SCHEMA.md section-3 full default skeleton (ordered for stable key order) ---
+    # --- 4) Full default skeleton (ordered for stable key order) ---
     $ev = [ordered]@{
         ts = $ts
         session_id = $(if ($sess) { $sess } else { $null })
@@ -84,7 +84,7 @@ try {
         outcome = $null        # success|fail|partial|null - 산출물 결과(선택)
         duration_ms = $null    # 작업/세션 소요(ms)
         token_cost = $null     # 토큰 비용(알 때)
-        user_rating = $null    # 1-5 사용자 품질 평가(선택; claude-rate)
+        user_rating = $null    # 1-5 사용자 품질 평가(선택, -Set user_rating=N 로 채움)
         counts = [ordered]@{ skills = 0; wiki = 0; profile_keys = 0; digest_files = 0 }
         backup = [ordered]@{
             result = 'skip'; sha = $null; ahead_count = 0; last_snapshot_ts = $null

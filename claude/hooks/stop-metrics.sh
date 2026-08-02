@@ -1,12 +1,9 @@
 #!/usr/bin/env sh
 # claude-config:stop-metrics — Stop 훅. 이번 세션이 편집한 파일 중 "다른(이전) 세션이
 #   편집한 적 있는" 파일을 file-level rework 로 감지해 events.sh 에 task(rework=true) 1줄을 남긴다.
-#   (plan v9 §2 · recall-budget.md §4 "PostToolUse/Stop 훅이 rework 를 결정적으로 채움".)
 #
-# 정직 라벨(M5):
+# 정직 라벨:
 #   · file-level heuristic 일 뿐(symbol-level 아님). rework_anchor=file:<path>.
-#   · precision/recall 게이트는 N≥30 까지 suspended(신호일 뿐, 진실 아님; recall-budget.md §5).
-#   · recall_hit / reask_count 는 이 훅이 채우지 않는다 — recall 스킬·손라벨링이 채움(§4/§7).
 #
 # 설계 원칙(기존 훅 계승): 결정적·모델 무관·FAIL-OPEN(어떤 오류에도 exit 0). 끄기: CLAUDE_EVENTS_OFF=1.
 #   세션 간 추적은 $OMC_STATE_DIR/edit-history.json(path→last_session)로 유지(gitignore 라 커밋 안 됨).

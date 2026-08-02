@@ -349,14 +349,17 @@ for k in ("theme","autoUpdatesChannel","skipWorkflowUsageWarning"):  # 개인 �
 # 은퇴된 훅 이름(2026-08-02: v9/v10 lifelong-memory 시스템 완전 은퇴) — 이 머지는 기본적으로
 # add-only 라, 레포에서 훅을 빼도 이미 실파일로 배포된 settings.json 에는 등록이 영구 잔존한다.
 # 그래서 이름으로 능동 pruning 한다(실측 발견 — settings.json 이 심링크가 아닌 머신에서 재현됨).
-RETIRED_HOOKS = ("memory-inject.sh", "memory-inject.ps1", "memory-sync.sh", "memory-sync.ps1",
-                 "reconcile-check.sh", "reconcile-check.ps1", "morning-brief.sh", "morning-brief.ps1",
-                 "session-events.sh", "session-events.ps1")
+# 호출 위치(-File "..." / bash "...")에 앵커된 정규식만 매칭(install.ps1 의 $managedRe 와 대칭 —
+# 코드리뷰 LOW 대응: 순수 부분문자열 매칭이면 "echo memory-sync.sh 관련 메모" 처럼 은퇴 이름을
+# 텍스트로 언급만 하는 사용자 훅까지 그룹째 잘못 지워질 수 있었다).
+import re as _re
+RETIRED_RE = _re.compile(r'(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/]'
+                          r'(?:memory-inject|memory-sync|reconcile-check|morning-brief|session-events)\.(?:ps1|sh)\b')
 hk=d.setdefault("hooks",{})
 for event, groups in s.get("hooks",{}).items():
     cur=hk.setdefault(event,[])
     cur=[g for g in cur if not any(
-        any(name in (h.get("command") or "") for name in RETIRED_HOOKS)
+        RETIRED_RE.search(h.get("command") or "")
         for h in g.get("hooks",[])
     )]
     seen=set(); dedup=[]

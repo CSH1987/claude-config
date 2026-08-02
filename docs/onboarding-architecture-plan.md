@@ -3,6 +3,11 @@
   멀티에이전트 기획(7개 전문 렌즈 발산 → 후보 수렴 → 적대 비평 → 통합)의 산출.
 -->
 
+> **⚠️ 역사 문서 — 은퇴됨(2026-08-02)**: 이 문서가 서술하는 `claude-memory`(profile/decisions/
+> events/SCHEMA.md) 기반 "평생 기억저장소" 아키텍처는 도입 후 핵심 콘텐츠가 한 번도 실제로
+> 채워지지 않아 완전 은퇴하고 Claude Code 네이티브 auto-memory로 단일화했다. 아래 내용은
+> 당시 설계 의도를 보여주는 기록으로만 남긴다 — 현재 아키텍처와 다르다.
+
 # 온보딩 아키텍처 기획서 — 어떤 PC·초보 사용자든 첫 세션부터 최대 성능
 
 > **한 줄 결정:** *"Headless-First Core + Deferred Obsidian Lens, over a Verified Gated-Glue reliability plane."*

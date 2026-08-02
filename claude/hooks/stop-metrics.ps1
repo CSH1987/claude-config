@@ -1,12 +1,9 @@
 # claude-config:stop-metrics (Windows) - PowerShell mirror of stop-metrics.sh.
 #   Stop hook: detects file-level rework (a file edited in THIS session that a DIFFERENT prior
-#   session also edited) and records a task event with rework=true via events.ps1
-#   (plan v9 section 2 / recall-budget.md section 4).
+#   session also edited) and records a task event with rework=true via events.ps1.
 #
-# Honesty (M5):
+# Honesty:
 #   - file-level heuristic only (NOT symbol-level). rework_anchor=file:<path>.
-#   - precision/recall gate stays suspended until N>=30 (signal, not truth; recall-budget.md section 5).
-#   - recall_hit / reask_count are NOT filled here - recall skill / hand-labeling do (section 4/7).
 #
 # Principles: deterministic, model-independent, FAIL-OPEN (any error -> exit 0). Kill: CLAUDE_EVENTS_OFF=1.
 #   Cross-session tracking via $OMC_STATE_DIR/edit-history.json (path -> last_session); gitignored.

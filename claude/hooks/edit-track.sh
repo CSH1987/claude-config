@@ -2,7 +2,6 @@
 # claude-config:edit-track — PostToolUse 훅. Edit/Write/MultiEdit/NotebookEdit 의
 #   편집 파일 경로를 $OMC_STATE_DIR/edit-track/<session>.jsonl 에 1줄 append 한다.
 #   stop-metrics.sh 가 이 기록으로 file-level rework(같은 파일 재편집)를 감지한다.
-#   (plan v9 §2 rework 신호 · recall-budget.md §4 "PostToolUse/Stop 훅이 rework 를 채움".)
 #
 # 설계 원칙(기존 훅 계승):
 #   · 결정적·모델 무관. 경로는 resolver(memdir.sh)만 사용(하드코딩 금지).

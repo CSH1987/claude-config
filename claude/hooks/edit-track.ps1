@@ -1,13 +1,12 @@
 # claude-config:edit-track (Windows) - PowerShell mirror of edit-track.sh.
 #   PostToolUse hook: records the edited file path of Edit/Write/MultiEdit/NotebookEdit into
-#   $OMC_STATE_DIR/edit-track/<session>.jsonl so stop-metrics can detect file-level rework
-#   (plan v9 section 2 rework signal / recall-budget.md section 4).
+#   $OMC_STATE_DIR/edit-track/<session>.jsonl so stop-metrics can detect file-level rework.
 #
 # Principles (mirror of the .sh + existing hooks):
 #   - Deterministic, model-independent. Path via resolver (memdir.ps1) only; never hardcode.
 #   - FAIL-OPEN: on ANY error it stays silent and exits 0 (never blocks a hook/session).
 #   - Kill-switch: CLAUDE_EVENTS_OFF=1 (shared with events). omc-state is gitignored (safe for state).
-#   - Pure ASCII body (BOM-less PS 5.1 safe), like memory-inject.ps1 / events.ps1.
+#   - Pure ASCII body (BOM-less PS 5.1 safe), like effort-reminder.ps1 / events.ps1.
 $ErrorActionPreference = 'SilentlyContinue'
 if ($env:CLAUDE_EVENTS_OFF -eq '1') { exit 0 }
 try {

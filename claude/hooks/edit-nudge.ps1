@@ -9,7 +9,7 @@
 #   - Deterministic, model-independent. Path via resolver (memdir.ps1) only; never hardcode.
 #   - FAIL-OPEN: on ANY error it stays silent and exits 0 (never blocks a hook/session).
 #   - Kill-switch: EDIT_NUDGE_OFF=1 (this hook) or CLAUDE_EVENTS_OFF=1 (shared with events).
-#   - Pure ASCII body (BOM-less PS 5.1 safe), like edit-track.ps1 / memory-inject.ps1.
+#   - Pure ASCII body (BOM-less PS 5.1 safe), like edit-track.ps1 / effort-reminder.ps1.
 #   - Not a hard block (warn/nudge only). Fires at most once per session until reset.
 $ErrorActionPreference = 'SilentlyContinue'
 if ($env:CLAUDE_EVENTS_OFF -eq '1') { exit 0 }
