@@ -1,14 +1,14 @@
 <!--
   PUBLIC FILE — claude-config repo (config-sync). Rules and structure ONLY.
   NEVER put the real vault absolute path, API tokens, or real note content here.
-  vaultPath lives only in the local, non-synced `~/.claude/eversvault-scope.json`.
+  vaultPath lives only in the local, non-synced `~/.claude/vault-scope.json`.
 -->
 
-# EversVault Write Protocol (PUBLIC · canonical)
+# Vault Write Protocol (PUBLIC · canonical)
 
-Plan: `~/.omc/plans/eversvault-llm-wiki.md`.
-Enforcement: `claude/hooks/guardrails.py` EversVault block (`_ev_guard`/`_ev_check_target`).
-Read-side index injection: `claude/hooks/eversvault-context.sh` + `eversvault-index.py`.
+Plan: `~/.omc/plans/vault-llm-wiki.md`.
+Enforcement: `claude/hooks/guardrails.py` Vault block (`_ev_guard`/`_ev_check_target`).
+Read-side index injection: `claude/hooks/vault-context.sh` + `vault-index.py`.
 
 ## 2026-07-31 policy change — approval gates removed by explicit user decision
 
@@ -35,14 +35,14 @@ about or opted to remove:
   `tee`/`>`/`cp`/`sed -i`/`chmod`/etc. targeting `10_컨텍스트`/`90_Hermes`/`20_업무위키`/
   `00_홈.md` (or the vault root itself — see below) are still blocked even though the
   guard-level gate is gone; the only allowed write channels remain Write/Edit/MultiEdit
-  and the `eversvault-obsidian` MCP tools. If a Bash write to a protected path is denied
+  and the `vault-obsidian` MCP tools. If a Bash write to a protected path is denied
   even though this document says direct writes are allowed, this is why — switch to one
   of those two channels.
-- The `'..'`-escape block for `eversvault-obsidian` tools (paths are schema-guaranteed
+- The `'..'`-escape block for `vault-obsidian` tools (paths are schema-guaranteed
   vault-relative; a leftover `..` is never legitimate regardless of write policy).
 - `00_홈.md` sentinel self-protection — not approval friction, a structural safety valve
   (`_ev_config()`'s sentinel check depends on this file; corrupting it fail-opens the
-  *entire* EversVault guard block, including the safeguards above). The sentinel check
+  *entire* Vault guard block, including the safeguards above). The sentinel check
   itself requires the first line to be an actual Markdown H1 (`^#\s.*에버스 위키 홈`), not
   just a substring match anywhere in the line — tightened 2026-08-01 to match the
   original deep-interview spec (a bare substring match was weaker than intended, though
@@ -78,7 +78,7 @@ restore) and re-enabling the sections below.
 
 | Vault path | Write channel | Gate |
 |---|---|---|
-| `10_컨텍스트` | Write/Edit/MultiEdit, or `eversvault-obsidian` `vault_write`/`vault_patch`/`open_file`/`vault_append` | none — direct write allowed (see OS-permission caveat above) |
+| `10_컨텍스트` | Write/Edit/MultiEdit, or `vault-obsidian` `vault_write`/`vault_patch`/`open_file`/`vault_append` | none — direct write allowed (see OS-permission caveat above) |
 | `90_Hermes` | same as above | none — direct write allowed (no longer Hermes-exclusive; provenance is no longer guaranteed) |
 | `30_결정로그` | Write tool, direct | none (unchanged from before) |
 | `20_업무위키/_pending/<id>/` | Write tool, direct | none — Write channel unchanged from before; `vault_append` here was blocked pre-2026-07-31 ("예외없이") and is now allowed along with everything else, since that block existed only to protect the now-removed approval queue |
@@ -89,7 +89,7 @@ Vault-wide, regardless of path: `delete_file`/`move_file`/`command_execute` alwa
 Bash commands referencing the local REST API host:port always deny; Bash file-write
 commands (`tee`/`>`/`cp`/`sed -i`/`chmod`/etc.) targeting a protected folder *or the vault
 root itself* always deny (Write/Edit/MultiEdit and the MCP tools are the only write
-channels); `eversvault-obsidian` paths with a leftover `'..'` always deny.
+channels); `vault-obsidian` paths with a leftover `'..'` always deny.
 
 ---
 
@@ -116,7 +116,7 @@ One note per confirmed decision (vault's own convention, `00_홈.md`: "날짜별
 ## 2. `20_업무위키` and `10_컨텍스트`/`90_Hermes` — direct write
 
 As of 2026-07-31 there is no approval gate: write, edit, or append directly with
-Write/Edit/MultiEdit or the `eversvault-obsidian` MCP tools, same as any other file.
+Write/Edit/MultiEdit or the `vault-obsidian` MCP tools, same as any other file.
 Still worth doing well even without enforcement:
 
 - **Canonical note frontmatter** (7-field schema, convention only, not guard-enforced):
@@ -162,11 +162,11 @@ staged review is still wanted — it is just no longer required.
 3. **Sentinel check before touching canonical content:** read `00_홈.md`, confirm the
    first line is a Markdown H1 containing "에버스 위키 홈" (`^#\s.*에버스 위키 홈`). If it
    doesn't match, stop — do not reflect. `_ev_config()` performs the same check
-   internally but **fail-opens** on a mismatch (the whole EversVault guard block goes
+   internally but **fail-opens** on a mismatch (the whole Vault guard block goes
    silent rather than blocking), so in exactly the scenario where the sentinel is wrong,
    the guard isn't checking anything — this Claude-side check is the only defense at
    that point.
-4. Call `eversvault-obsidian`'s `vault_patch` (surgical edit) or `vault_write` (only if
+4. Call `vault-obsidian`'s `vault_patch` (surgical edit) or `vault_write` (only if
    `target:` doesn't exist yet) against the `target:` path.
 5. Edit the proposal again: `status: approved` → `status: applied` (or `rejected` if
    declined). This is now just a record-keeping convention — the guard no longer checks
@@ -189,10 +189,10 @@ manually when `_pending/` grows large enough to matter.
 ## 3. MCP server
 
 Registered locally (NOT config-synced — `~/.claude.json` is machine-local) as
-`eversvault-obsidian`, pointing at the Obsidian Local REST API with MCP plugin's
+`vault-obsidian`, pointing at the Obsidian Local REST API with MCP plugin's
 endpoint on the machine that hosts the vault. The machine gate itself is hostname-based
-(`_ev_is_mac_mini` in guardrails.py, mirrored in `eversvault-context.sh`'s `*macmini*`
-case) — `eversvault-scope.json` isn't a gate mechanism, it's just a file that only
+(`_ev_is_mac_mini` in guardrails.py, mirrored in `vault-context.sh`'s `*macmini*`
+case) — `vault-scope.json` isn't a gate mechanism, it's just a file that only
 happens to exist on that machine. The bearer token lives only in that local
 `~/.claude.json` entry and in the plugin's own `data.json`; it is never written to this
 repo.
@@ -203,19 +203,19 @@ its tools are unavailable, restart the session before assuming something is brok
 **`vault_list` silently omits folders it hasn't indexed** — an empty or newly-created
 folder does not appear in `vault_list`'s output at all, even though it exists on disk.
 Do not use `vault_list` to check "does this folder exist / is it really empty" — use
-filesystem `Read`/`glob` (the same approach `eversvault-index.py`/
-`eversvault-staleness-scan.py` already use) for that.
+filesystem `Read`/`glob` (the same approach `vault-index.py`/
+`vault-staleness-scan.py` already use) for that.
 
 **Token rotation.** The bearer token is a static literal in `~/.claude.json`'s
-`eversvault-obsidian` entry — it does not auto-refresh. If the plugin re-issues a token
+`vault-obsidian` entry — it does not auto-refresh. If the plugin re-issues a token
 (manual re-generation in plugin settings, plugin reinstall, or vault re-registration),
-every `eversvault-obsidian` call starts failing with an auth error. Re-registration
+every `vault-obsidian` call starts failing with an auth error. Re-registration
 procedure:
-1. Read the new key from the plugin's `data.json` (`EversVault/.obsidian/plugins/
+1. Read the new key from the plugin's `data.json` (`Vault/.obsidian/plugins/
    obsidian-local-rest-api/data.json`, `apiKey` field) — Obsidian must be running for
    this file to be current.
 2. Replace the `Authorization: Bearer <token>` value in `~/.claude.json`'s
-   `eversvault-obsidian` entry with the new key (this file is machine-local, not
+   `vault-obsidian` entry with the new key (this file is machine-local, not
    config-synced — edit it directly on the affected machine).
 3. Restart the Claude Code session — a running session won't pick up the change.
 
@@ -223,7 +223,7 @@ procedure:
 
 ## 4. Staleness scan (governance, unaffected by the 2026-07-31 policy change)
 
-`claude/hooks/eversvault-staleness-scan.py <vaultPath>` — on-demand, not auto-injected
+`claude/hooks/vault-staleness-scan.py <vaultPath>` — on-demand, not auto-injected
 into SessionStart. Filesystem-only (works with Obsidian closed). Scans `20_업무위키`
 canonical notes for four candidate defects — stale `updated` field (>90 days; falls back
 to file mtime, flagged as such, when the field is missing or unparseable), broken
@@ -253,8 +253,8 @@ fixed:
   the write target" for `cp`/`mv` specifically would reopen exactly the class of bug the
   position-independent rewrite fixed. Workaround: use the `Read` tool instead of Bash `cp`
   to get vault content out — always available, no reason to hit this in practice.
-- **`_ev_frontmatter`'s 200-line-from-disk read vs. `eversvault-index.py`/
-  `eversvault-staleness-scan.py`'s whole-file-read-then-200-line-scan are inconsistent.**
+- **`_ev_frontmatter`'s 200-line-from-disk read vs. `vault-index.py`/
+  `vault-staleness-scan.py`'s whole-file-read-then-200-line-scan are inconsistent.**
   Currently moot: `_ev_frontmatter`'s only caller, `_ev_has_approved_proposal`, is unreachable
   since the 2026-07-31 gate removal (see above) — revisit if the gated policy is ever
   reinstated.
@@ -267,10 +267,10 @@ fixed:
 - Guard rules (source of truth for allow/deny) → `claude/hooks/guardrails.py`
   (`_ev_guard`, `_ev_check_target`, and helpers — see the inline comment on
   `_ev_check_target` for exactly what to restore if the gated policy is reinstated).
-- Read-side index injection → `claude/hooks/eversvault-context.sh`,
-  `claude/hooks/eversvault-index.py` (also surfaces `10_컨텍스트` `review:` cadence
+- Read-side index injection → `claude/hooks/vault-context.sh`,
+  `claude/hooks/vault-index.py` (also surfaces `10_컨텍스트` `review:` cadence
   overdue warnings — read-only alerting, not enforcement; `review: on-change` is
   event-triggered and intentionally never flagged as overdue).
-- Staleness scan → `claude/hooks/eversvault-staleness-scan.py` (§4 above).
-- Vault path + in-scope project list (local-only) → `~/.claude/eversvault-scope.json`.
-- Full plan, ADR, and verification history → `~/.omc/plans/eversvault-llm-wiki.md`.
+- Staleness scan → `claude/hooks/vault-staleness-scan.py` (§4 above).
+- Vault path + in-scope project list (local-only) → `~/.claude/vault-scope.json`.
+- Full plan, ADR, and verification history → `~/.omc/plans/vault-llm-wiki.md`.

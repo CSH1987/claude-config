@@ -47,7 +47,7 @@ SECRET = (r'(^|/)\.env($|\.)|\.envrc$|\.(pem|key|p12|pfx|jks|keystore|ppk|p8)$|'
 
 
 # ---------------------------------------------------------------------------
-# EversVault(옵시디언 LLM위키) 가드 — 계획: ~/.omc/plans/eversvault-llm-wiki.md
+# Vault(옵시디언 LLM위키) 가드 — 계획: ~/.omc/plans/vault-llm-wiki.md
 # 완전히 격리된 부가 블록: 이 블록의 어떤 예외도 위 CATASTROPHIC/DANGEROUS/SECRET 검사에
 # 영향을 주지 않는다(맥미니 전용, scope.json 로딩 실패는 이 블록만 조용히 무력화).
 # 위협모델: 협조적 에이전트의 실수 방지용이지 적대적 방어가 아님(fail-open 계약 그대로 상속).
@@ -92,7 +92,7 @@ def _ev_config():
     """scope.json 로드 + 볼트 센티널 검증. 실패시 None(이 블록만 no-op, 상위 검사엔 영향 없음)."""
     try:
         import os
-        cfg_path = os.path.expanduser('~/.claude/eversvault-scope.json')
+        cfg_path = os.path.expanduser('~/.claude/vault-scope.json')
         with open(cfg_path, 'r', encoding='utf-8') as f:
             cfg = json.load(f)
         vault = cfg.get('vaultPath')
@@ -261,7 +261,7 @@ def _ev_track_cd(sub, cwd):
     if target == '-':
         return None  # 'cd -'(직전 디렉터리)는 이 함수 스코프에서 추적 불가
     # $HOME 같은 셸 환경변수는 shlex가 확장하지 않으므로 expandvars로 별도 처리해야 한다
-    # (자체 발견 — expanduser만 쓰면 `cd $HOME/Documents/EversVault/10_컨텍스트`가 절대경로로
+    # (자체 발견 — expanduser만 쓰면 `cd $HOME/Documents/Vault/10_컨텍스트`가 절대경로로
     # 인식되지 못해 cwd가 잘못 해석되고, 뒤이은 상대경로 쓰기 검사가 엉뚱한 기준점으로 조용히
     # 새는 조합이 남는다). 이 훅 프로세스의 환경은 실제 Bash 실행과 같은 세션에서 상속되므로
     # os.environ 기준 확장이 실제 셸 확장과 사실상 일치한다.
@@ -314,7 +314,7 @@ def _ev_bash_subcommand_writes_to(cmd, vault, cwd=None):
             continue
         # `~`/`$HOME` 같은 확장을 여기서도 적용(코드리뷰 MEDIUM 대응: cd 타깃은 이미
         # expandvars/expanduser를 적용하는데 쓰기대상 토큰 쪽엔 빠져 있어서 `rm -f
-        # ~/Documents/EversVault/10_컨텍스트/x.md`나 `$HOME/.../x.md`가 무검사 통과했음 —
+        # ~/Documents/Vault/10_컨텍스트/x.md`나 `$HOME/.../x.md`가 무검사 통과했음 —
         # 확장 후 절대경로가 되면 아래 절대경로 분기가 그대로 잡아준다). 일반 단어는
         # expandvars/expanduser가 no-op이라 안전.
         tok = os.path.expandvars(os.path.expanduser(tok))
@@ -437,13 +437,13 @@ def _ev_extract_path(ti):
     return ''
 
 
-# 실제 등록된 eversvault-obsidian MCP 서버(Obsidian Local REST API+MCP 플러그인)는 파일시스템
+# 실제 등록된 vault-obsidian MCP 서버(Obsidian Local REST API+MCP 플러그인)는 파일시스템
 # MCP와 명명 관례가 달라(vault_write/vault_patch/vault_append/vault_delete/vault_move/vault_copy)
 # 위 write_file/patch_content/append_content/delete_file/move_file 부분문자열 매칭이 이 서버의
 # 실제 툴 이름과 전혀 겹치지 않았다 — 2026-07-30 실측으로 발견: 미승인 vault_write가 20_업무위키
 # canonical에 그대로 성공, 90_Hermes에도 그대로 성공, vault_delete도 무검사 통과. 서버 접두사로
 # 한정한 명시적 분류를 별도로 추가한다(다른 MCP 서버의 기존 부분문자열 매칭엔 영향 없음).
-_EV_OBSIDIAN_PREFIX = 'mcp__eversvault-obsidian__'
+_EV_OBSIDIAN_PREFIX = 'mcp__vault-obsidian__'
 _EV_OBSIDIAN_WRITE_TOOLS = {'vault_write', 'vault_patch', 'open_file'}  # open_file: 대상 없으면 새 문서 생성
 _EV_OBSIDIAN_APPEND_TOOLS = {'vault_append'}
 _EV_OBSIDIAN_DELETE_MOVE_TOOLS = {'vault_delete', 'vault_move'}
@@ -456,7 +456,7 @@ _EV_OBSIDIAN_UNSCOPED_TOOLS = {'command_execute'}
 # 때리면 _ev_bash_writes_to의 마커단어+vault절대경로 매칭이 전혀 안 걸린다 — curl/wget 같은
 # HTTP 클라이언트는 마커단어 집합에 없고, URL은 vault의 실제 파일시스템 절대경로를 포함하지
 # 않기 때문(2026-07-31 종합테스트 워크플로 실측 발견, CONFIRMED). 이 채널로는 정당한 용도가
-# 없다(읽기도 eversvault-obsidian MCP 도구로 이미 가능) — 메서드를 구분하려는 시도(PUT만 차단
+# 없다(읽기도 vault-obsidian MCP 도구로 이미 가능) — 메서드를 구분하려는 시도(PUT만 차단
 # 등)는 curl -X 생략시 -d로도 POST가 되는 등 우회 여지가 있어, 포트 언급 자체를 예외 없이 차단.
 # 커버 범위는 표준 표기(127.0.0.1/localhost/[::1], 대소문자 무관)까지 — 8진수·정수 IP 등 의도적
 # 우회 표기는 위협모델("협조적 에이전트의 실수 방지, 적대적 방어 아님") 밖이라 다루지 않는다
@@ -469,11 +469,11 @@ _EV_LOCAL_REST_API_RE = re.compile(
 
 
 def _ev_obsidian_normalize_rel(fp, vault, is_obsidian_tool):
-    """is_obsidian_tool=True면 eversvault-obsidian 스키마상 경로는 항상 vault-relative이므로
+    """is_obsidian_tool=True면 vault-obsidian 스키마상 경로는 항상 vault-relative이므로
     선행 슬래시를 벗겨 상대경로로 강제 해석한다(보안리뷰 M-1 대응 — 선행 슬래시가 있으면
     os.path.isabs가 참이 돼 _ev_normalize_rel이 실제 파일시스템 절대경로로 오인, vault 밖으로
     계산되는 relpath('..'로 시작)가 나와 보호검사를 면제받는 갭이 실측으로 확인됨). 다른 MCP
-    서버(예: 범용 filesystem MCP)의 절대경로 의미론은 그대로 유지 — 이 함수는 eversvault-obsidian
+    서버(예: 범용 filesystem MCP)의 절대경로 의미론은 그대로 유지 — 이 함수는 vault-obsidian
     분기에서만 호출된다."""
     if is_obsidian_tool and fp.startswith('/'):
         fp = fp.lstrip('/')
@@ -489,7 +489,7 @@ def _ev_is_parent_escape(rel):
 
 def _ev_obsidian_escape_block(rel, fp, is_obsidian_tool):
     """rel이 '..'로 시작하면(볼트 밖으로 나가는 경로) 어떻게 취급할지 결정.
-    eversvault-obsidian 툴은 스키마상 경로가 항상 vault-relative이므로(각 툴 설명: 'File path
+    vault-obsidian 툴은 스키마상 경로가 항상 vault-relative이므로(각 툴 설명: 'File path
     relative to vault root') '..'가 남는 입력 자체가 원천적으로 무의미/의심스럽다 — 그런데도
     기존 코드는 이를 '볼트 밖이라 해당없음(allow)'으로 그냥 통과시켰다(2026-07-31 종합테스트
     워크플로 실측 발견, CONFIRMED: vault_write에 '../10_컨텍스트/x.md'를 주면 무검사 통과).
@@ -497,7 +497,7 @@ def _ev_obsidian_escape_block(rel, fp, is_obsidian_tool):
     범용 filesystem MCP)는 절대경로 의미론이라 볼트 밖 경로가 실제로 무관할 수 있으므로 그
     경우엔 여전히 None(허용)을 반환 — 이 완화는 is_obsidian_tool=True일 때만 적용한다."""
     if is_obsidian_tool:
-        return ("eversvault-obsidian 경로는 스키마상 항상 vault-relative입니다 — '..'로 볼트 "
+        return ("vault-obsidian 경로는 스키마상 항상 vault-relative입니다 — '..'로 볼트 "
                 "밖을 가리키는 경로는 무조건 차단됩니다 (%s)" % fp)
     return None
 
@@ -512,7 +512,7 @@ def _ev_check_target(vault, rel, is_append):
     전부 해제. 위험(사람 정본 오염 가능성, 90_Hermes의 "Hermes가 실제로 만들었다"는 출처 구분
     소실, 되돌리기 어려운 드리프트 축적)은 결정 전 명시적으로 고지·확인됨.
 
-    정확한 복원은 git revert가 정본이다(이 함수 본문 + eversvault-write.md의 대응 절 — 커밋
+    정확한 복원은 git revert가 정본이다(이 함수 본문 + vault-write.md의 대응 절 — 커밋
     메시지에서 "policy change" 이전 커밋 참조). 아래는 그 커밋이 담고 있던 로직의 요약일
     뿐이며 곧이곧대로 베끼면 안 된다(코드리뷰 MEDIUM 대응 — is_append 체크가 _pending 여부와
     무관하게 20_업무위키 전체에 "예외없이" 먼저 걸렸다는 순서가 중요):
@@ -552,7 +552,7 @@ def _ev_guard(tool, ti, cwd=None):
         cmd = str(ti.get('command', ''))
         if _EV_LOCAL_REST_API_RE.search(cmd):
             return ("Bash를 통한 Obsidian Local REST API(127.0.0.1:27123/27124) 직접 접근은 "
-                    "차단됩니다 — eversvault-obsidian MCP 도구(vault_read/vault_write 등)를 사용하세요")
+                    "차단됩니다 — vault-obsidian MCP 도구(vault_read/vault_write 등)를 사용하세요")
         if _ev_bash_writes_to(cmd, vault, cwd):
             return ("Bash를 통한 볼트 쓰기는 차단됩니다 "
                     "(10_컨텍스트/90_Hermes/20_업무위키는 Write/Edit/patch_content 채널로만 쓰기 가능)")
@@ -571,7 +571,7 @@ def _ev_guard(tool, ti, cwd=None):
         return ("command_execute는 활성 파일 기준으로 동작해 폴더 규칙을 적용할 경로 파라미터가 "
                 "없습니다 — 예외 없이 차단(필요 시 commandId allowlist 도입 검토)")
 
-    # 삭제/이동류(delete_file/move_file 부분문자열 매칭 + eversvault-obsidian 실제 툴명) — 볼트
+    # 삭제/이동류(delete_file/move_file 부분문자열 매칭 + vault-obsidian 실제 툴명) — 볼트
     # 전체에서 예외 없이 차단. move_file/vault_move는 delete+create 조합이므로 source/destination
     # 둘 다 같은 취급(코드리뷰 HIGH#1 대응 — filesystem MCP의 move_file은 canonical 삭제 우회 경로였음).
     if is_mcp and (('delete_file' in tool or 'move_file' in tool)
@@ -610,7 +610,7 @@ def _ev_guard(tool, ti, cwd=None):
 
     # 쓰기류로 취급할 도구: Write/Edit/MultiEdit + MCP의 patch_content/write_file/edit_file/
     # create_directory(코드리뷰 HIGH#1 대응 — filesystem MCP의 write_file/edit_file이 원래
-    # 미커버였음) + eversvault-obsidian 실제 툴명(vault_write/vault_patch/open_file). append_content/
+    # 미커버였음) + vault-obsidian 실제 툴명(vault_write/vault_patch/open_file). append_content/
     # vault_append는 아래에서 20_업무위키 전용 규칙으로 별도 처리.
     write_like = (tool in ('Edit', 'Write', 'MultiEdit') or
                   (is_mcp and any(k in tool for k in
@@ -662,7 +662,7 @@ def main():
                 and re.search(SECRET, fp, re.IGNORECASE):
             warn.append('editing a secret-looking file (%s) - keep secrets out of git; ensure it is .gitignored' % fp)
 
-    # EversVault 가드 — 완전히 격리된 부가 검사. 이 블록의 예외는 위 검사 결과에 영향 없음.
+    # Vault 가드 — 완전히 격리된 부가 검사. 이 블록의 예외는 위 검사 결과에 영향 없음.
     ev_block = []
     try:
         if _ev_is_mac_mini():
@@ -677,7 +677,7 @@ def main():
         if block:
             parts.append("catastrophic command blocked: " + "; ".join(block))
         if ev_block:
-            parts.append("EversVault guard blocked: " + "; ".join(ev_block))
+            parts.append("Vault guard blocked: " + "; ".join(ev_block))
         reason = "claude-config guardrail — " + " | ".join(parts) + ". If truly intended, run it outside Claude."
         _out({
             "hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason},

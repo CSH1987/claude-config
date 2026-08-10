@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# EversVault 노트 인덱스 생성기 — eversvault-context.sh(SessionStart 훅)가 호출.
+# Vault 노트 인덱스 생성기 — vault-context.sh(SessionStart 훅)가 호출.
 # 10_컨텍스트: 실제 frontmatter에 title/설명 필드가 없음(type/created/updated/review/source/tags뿐) —
 #   H1 헤딩=title 폴백, 그 직후 첫 문단=설명 폴백.
 # 20_업무위키(--recursive): 카테고리 하위폴더별 순회, ~1500토큰(문자수 근사) 초과시 카테고리별 집계로 롤업.
@@ -52,7 +52,7 @@ def _parse_date(s):
 def _review_overdue_days(review, updated):
     """review 주기(quarterly 등)와 updated 필드로 검토기한 초과일수 계산. 미적용시 None —
     review 없음/미등록 주기(on-change 등)/updated 파싱불가 전부 조용히 None(과탐보다 미탐 안전).
-    updated 필드가 없는 노트는 영구히 미탐이 된다 — eversvault-staleness-scan.py는 반대로
+    updated 필드가 없는 노트는 영구히 미탐이 된다 — vault-staleness-scan.py는 반대로
     mtime 폴백을 쓰는데(그쪽은 "필드 없음=가장 방치됐을 가능성" 논리), 여기(SessionStart 매
     세션 주입)는 소음 민감도가 훨씬 높아 폴백 없이 미탐 쪽을 의도적으로 택했다(코드리뷰 확인)."""
     cadence_days = _REVIEW_CADENCE_DAYS.get((review or '').strip().lower())
@@ -104,8 +104,8 @@ def line_for(it):
 
 def format_flat(items, label):
     if not items:
-        return "[EversVault %s] 인덱스 0건" % label
-    header = "[EversVault %s] %d개 노트" % (label, len(items))
+        return "[Vault %s] 인덱스 0건" % label
+    header = "[Vault %s] %d개 노트" % (label, len(items))
     lines = [header] + [line_for(it) for it in items]
     out = '\n'.join(lines)
     if len(out) <= TOKEN_CHAR_BUDGET:
@@ -140,16 +140,16 @@ def format_recursive(root, label):
         categories = sorted(d for d in os.listdir(root)
                              if os.path.isdir(os.path.join(root, d)) and not d.startswith('_'))
     except Exception:
-        return "[EversVault %s] 인덱스 0건 (폴더 접근 실패)" % label
+        return "[Vault %s] 인덱스 0건 (폴더 접근 실패)" % label
     if not categories:
-        return "[EversVault %s] 인덱스 0건 (카테고리 폴더 없음)" % label
+        return "[Vault %s] 인덱스 0건 (카테고리 폴더 없음)" % label
 
     all_items = {cat: collect(os.path.join(root, cat)) for cat in categories}
     total_count = sum(len(v) for v in all_items.values())
     if total_count == 0:
-        return "[EversVault %s] 인덱스 0건 (모든 카테고리 비어있음)" % label
+        return "[Vault %s] 인덱스 0건 (모든 카테고리 비어있음)" % label
 
-    header = "[EversVault %s] %d개 노트 (%d개 카테고리)" % (label, total_count, len(categories))
+    header = "[Vault %s] %d개 노트 (%d개 카테고리)" % (label, total_count, len(categories))
     full_lines = [header]
     for cat in categories:
         items = all_items[cat]
@@ -178,7 +178,7 @@ def main():
     recursive = '--recursive' in sys.argv[2:]
     label = os.path.basename(folder.rstrip('/'))
     if not os.path.isdir(folder):
-        print("[EversVault %s] 폴더 없음" % label)
+        print("[Vault %s] 폴더 없음" % label)
         return
     print(format_recursive(folder, label) if recursive else format_flat(collect(folder), label))
 

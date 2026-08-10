@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# EversVault 노후화 감지 스캐너 — Phase 3 거버넌스(계획: ~/.omc/plans/eversvault-llm-wiki.md).
+# Vault 노후화 감지 스캐너 — Phase 3 거버넌스(계획: ~/.omc/plans/vault-llm-wiki.md).
 # 온디맨드 실행(세션마다 자동주입 아님 — 노후화 점검은 주기적/의도적 행위라 매번 끼워넣으면
 # 소음이 된다). 파일시스템 직접스캔만 사용(MCP 불필요, Obsidian이 꺼져 있어도 동작).
 # 액션(삭제/수정)은 항상 사람 판단 — 이 스크립트는 후보를 나열만 하고 아무것도 고치지 않는다.
@@ -114,7 +114,7 @@ def scan_canonical(vault, category_root, all_basenames, backlink_index, today):
     result = {'stale': [], 'broken_links': [], 'orphan': [], 'oversized': []}
     for path in glob.glob(os.path.join(category_root, '*', '*.md')):
         # _pending은 카테고리 폴더가 아니라 스테이징 영역 — glob 패턴이 우연히 걸러주는 게 아니라
-        # 명시적으로 제외한다(코드리뷰 MEDIUM 대응: 기존 eversvault-index.py의 not d.startswith('_')
+        # 명시적으로 제외한다(코드리뷰 MEDIUM 대응: 기존 vault-index.py의 not d.startswith('_')
         # 관례와 동일하게, _pending 안의 2단계 깊이 파일이 canonical로 오분류되던 실측 버그).
         category = os.path.basename(os.path.dirname(path))
         if category.startswith('_'):
@@ -198,7 +198,7 @@ def scan_pending(vault, today):
 
 
 def format_report(result, status_counts, proposed_stale, approved_stale, cleanup_candidates, today):
-    lines = ["[EversVault 노후화 스캔] %s 기준" % today.isoformat()]
+    lines = ["[Vault 노후화 스캔] %s 기준" % today.isoformat()]
 
     if status_counts:
         counts_str = ', '.join('%s %d건' % (k, v) for k, v in sorted(status_counts.items()))
@@ -252,12 +252,12 @@ def format_report(result, status_counts, proposed_stale, approved_stale, cleanup
 
 def main():
     if len(sys.argv) < 2:
-        print("usage: eversvault-staleness-scan.py <vault_path>")
+        print("usage: vault-staleness-scan.py <vault_path>")
         return
     vault = sys.argv[1]
     category_root = os.path.join(vault, '20_업무위키')
     if not os.path.isdir(category_root):
-        print("[EversVault 노후화 스캔] 20_업무위키 폴더 없음: %s" % category_root)
+        print("[Vault 노후화 스캔] 20_업무위키 폴더 없음: %s" % category_root)
         return
     today = date.today()
     all_basenames = _all_vault_basenames(vault)
@@ -273,5 +273,5 @@ if __name__ == '__main__':
     except Exception as e:
         # 사람이 직접 실행하는 온디맨드 CLI라 SessionStart 훅과 달리 실패를 성공 종료코드로
         # 감출 필요가 없다(코드리뷰 LOW 대응 — 스크립트 체이닝 시 오류 은폐 방지).
-        print("[EversVault 노후화 스캔] 실패: %s" % e)
+        print("[Vault 노후화 스캔] 실패: %s" % e)
         sys.exit(1)

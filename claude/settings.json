@@ -111,7 +111,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/hooks/eversvault-context.sh\""
+            "command": "bash \"$HOME/.claude/hooks/vault-context.sh\""
           }
         ]
       },

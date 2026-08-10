@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# claude-config:eversvault-context — EversVault(옵시디언 LLM위키) 인덱스를 SessionStart에 주입.
-# 실행계획: ~/.omc/plans/eversvault-llm-wiki.md (Phase 1)
+# claude-config:vault-context — Vault(옵시디언 LLM위키) 인덱스를 SessionStart에 주입.
+# 실행계획: ~/.omc/plans/vault-llm-wiki.md (Phase 1)
 # 머신게이트: 맥미니가 아니면 조용히 스킵(다른 머신엔 볼트가 없는 게 정상 상태 — fail-silent).
 # 맥미니인데 scope.json/센티널이 없으면 이상상태이므로 경고 주입(fail-loud, "쓰기차단"과는 별개 원칙).
 # 세션은 절대 막지 않는다 — 항상 exit 0.
@@ -22,11 +22,11 @@ print(json.dumps({'hookSpecificOutput': {'hookEventName': 'SessionStart', 'addit
 
 HOOK_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
 [ -n "$HOOK_DIR" ] || exit 0
-INDEXER="$HOOK_DIR/eversvault-index.py"
-SCOPE_FILE="$HOME/.claude/eversvault-scope.json"
+INDEXER="$HOOK_DIR/vault-index.py"
+SCOPE_FILE="$HOME/.claude/vault-scope.json"
 
 command -v python3 >/dev/null 2>&1 || exit 0
-[ -f "$SCOPE_FILE" ] || emit "[EversVault] 맥미니인데 eversvault-scope.json이 없습니다 — Phase1 설치를 확인하세요."
+[ -f "$SCOPE_FILE" ] || emit "[Vault] 맥미니인데 vault-scope.json이 없습니다 — Phase1 설치를 확인하세요."
 
 VAULT="$(python3 -c "
 import json, os, sys
@@ -37,25 +37,25 @@ try:
 except Exception:
     print('')
 " "$SCOPE_FILE" 2>/dev/null)"
-[ -n "$VAULT" ] || emit "[EversVault] eversvault-scope.json의 vaultPath가 비어있거나 파싱 실패."
+[ -n "$VAULT" ] || emit "[Vault] vault-scope.json의 vaultPath가 비어있거나 파싱 실패."
 
 # 상대경로면 실제 참조지점이 이 프로세스의 cwd가 돼 세션마다 비결정적으로 동작하고, cwd에
 # 우연히 같은 이름+센티널의 무관 디렉터리가 있으면 경고 없이 그걸 볼트로 오인할 위험이 있다
 # (종합테스트 워크플로 실측 발견 — guardrails.py의 _ev_config()도 동일 검증을 추가함).
 case "$VAULT" in
   /*) : ;;
-  *) emit "[EversVault] eversvault-scope.json의 vaultPath는 절대경로여야 합니다 (현재: $VAULT)" ;;
+  *) emit "[Vault] vault-scope.json의 vaultPath는 절대경로여야 합니다 (현재: $VAULT)" ;;
 esac
 
 SENTINEL="$VAULT/00_홈.md"
 # guardrails.py의 _ev_config()와 동일하게 마크다운 H1 마커까지 요구(스펙 강화, 종합테스트 발견).
 if [ ! -f "$SENTINEL" ] || ! head -1 "$SENTINEL" 2>/dev/null | grep -qE '^#[[:space:]].*에버스 위키 홈'; then
-  emit "[EversVault] 볼트 센티널(00_홈.md)을 찾지 못했습니다 — vaultPath 확인 필요: $VAULT"
+  emit "[Vault] 볼트 센티널(00_홈.md)을 찾지 못했습니다 — vaultPath 확인 필요: $VAULT"
 fi
 
-[ -f "$INDEXER" ] || emit "[EversVault] eversvault-index.py가 없습니다 — 배포 확인 필요."
+[ -f "$INDEXER" ] || emit "[Vault] vault-index.py가 없습니다 — 배포 확인 필요."
 CONTEXT_10="$(python3 "$INDEXER" "$VAULT/10_컨텍스트" 2>/dev/null)"
-[ -n "$CONTEXT_10" ] || CONTEXT_10="[EversVault 10_컨텍스트] 인덱스 생성 실패"
+[ -n "$CONTEXT_10" ] || CONTEXT_10="[Vault 10_컨텍스트] 인덱스 생성 실패"
 
 PROJECTS="$(python3 -c "
 import json, sys
@@ -97,7 +97,7 @@ $CONTEXT_20"
 fi
 
 # 가드(guardrails.py)는 cwd 무관 전역 적용이라 IN_SCOPE=0 세션에도 이 힌트를 무조건 주입한다(의도적).
-WRITE_PROTOCOL_HINT="[EversVault] 30_결정로그/20_업무위키에 쓸 때는 claude-config 레포의 claude/protocols/eversvault-write.md 프로토콜을 따르세요(레포 위치는 ~/.claude/.config-sync-path 참고 — 신규파일=Write 직접, canonical 반영=승인된 _pending 제안 경유 patch_content)."
+WRITE_PROTOCOL_HINT="[Vault] 30_결정로그/20_업무위키에 쓸 때는 claude-config 레포의 claude/protocols/vault-write.md 프로토콜을 따르세요(레포 위치는 ~/.claude/.config-sync-path 참고 — 신규파일=Write 직접, canonical 반영=승인된 _pending 제안 경유 patch_content)."
 FULL="$FULL
 
 $WRITE_PROTOCOL_HINT"

@@ -177,12 +177,12 @@ ln -sfn "$REPO_DIR/claude/hooks/stop-metrics.sh"     "$DST/hooks/stop-metrics.sh
 ln -sfn "$REPO_DIR/claude/hooks/filter-test-output.sh" "$DST/hooks/filter-test-output.sh"
 ln -sfn "$REPO_DIR/claude/hooks/hermes-sync.sh"      "$DST/hooks/hermes-sync.sh"
 ln -sfn "$REPO_DIR/claude/hooks/skill-watch.sh"      "$DST/hooks/skill-watch.sh"
-# eversvault-context.sh(맥미니 전용 게이팅은 훅 내부에서 처리 — 다른 머신은 조용히 스킵이라 전
+# vault-context.sh(맥미니 전용 게이팅은 훅 내부에서 처리 — 다른 머신은 조용히 스킵이라 전
 # 머신 배포가 맞다): settings.json엔 SessionStart 등록이 있었는데 이 링크 블록에 없어서 배포된
 #적이 한 번도 없었고, 그 결과 매 세션 exit 127로 조용히 실패해왔다(코드리뷰로 재확인된 기존 버그
 # — 2026-08-01 세션 초반에 발견만 하고 못 고쳤던 것을 이번 정리 김에 반영).
-ln -sfn "$REPO_DIR/claude/hooks/eversvault-context.sh" "$DST/hooks/eversvault-context.sh"
-chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/model-watch.sh" "$REPO_DIR/claude/hooks/auto-update.sh" "$REPO_DIR/claude/hooks/guardrails.sh" "$REPO_DIR/claude/hooks/edit-track.sh" "$REPO_DIR/claude/hooks/edit-nudge.sh" "$REPO_DIR/claude/hooks/stop-metrics.sh" "$REPO_DIR/claude/hooks/filter-test-output.sh" "$REPO_DIR/claude/hooks/hermes-sync.sh" "$REPO_DIR/claude/hooks/skill-watch.sh" "$REPO_DIR/claude/hooks/eversvault-context.sh"
+ln -sfn "$REPO_DIR/claude/hooks/vault-context.sh" "$DST/hooks/vault-context.sh"
+chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/model-watch.sh" "$REPO_DIR/claude/hooks/auto-update.sh" "$REPO_DIR/claude/hooks/guardrails.sh" "$REPO_DIR/claude/hooks/edit-track.sh" "$REPO_DIR/claude/hooks/edit-nudge.sh" "$REPO_DIR/claude/hooks/stop-metrics.sh" "$REPO_DIR/claude/hooks/filter-test-output.sh" "$REPO_DIR/claude/hooks/hermes-sync.sh" "$REPO_DIR/claude/hooks/skill-watch.sh" "$REPO_DIR/claude/hooks/vault-context.sh"
 printf '%s' "$REPO_DIR" > "$DST/.config-sync-path"   # config-sync 가 레포 위치를 찾도록
 echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, model-watch, auto-update, guardrails, edit-track, edit-nudge, stop-metrics, filter-test-output, hermes-sync, skill-watch)"
 
