@@ -61,7 +61,7 @@ SOURCES = [
 
 # Keywords derived from this user's actual active repos' domains/tech-stack
 # (hospital-bot, vegas-crm-auto, worktime-manager, claude-config, edge-runner,
-# tracker, eversa-image) - see the 2026-07-23 portfolio benchmark. Keep broad
+# tracker, image-factory) - see the 2026-07-23 portfolio benchmark. Keep broad
 # but specific; this is what decides "relevant to me" vs "irrelevant noise".
 DOMAIN_KEYWORDS = [
     "telegram", "telegram bot",
