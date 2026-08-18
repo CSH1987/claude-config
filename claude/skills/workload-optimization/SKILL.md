@@ -13,13 +13,14 @@ description: 품질을 깎지 않는 작업량(토큰·비용) 최적화 규칙 
 
 | 작업 성격 | 별칭 | OMC 에이전트 | 실효 모델 |
 |---|---|---|---|
-| 계획·아키텍처·리뷰·보안·비평 (판단이 결과를 좌우) | `opus` | planner, architect, critic, analyst, code-reviewer, security-reviewer, code-simplifier | **Fable 5** |
-| 구현·디버그·테스트·검증·문서조사 (스펙이 정해진 실행) | `sonnet` | executor, designer, debugger, test-engineer, verifier, tracer, qa-tester, scientist, git-master, document-specialist | **Sonnet 5** |
+| 계획·아키텍처·리뷰·보안·비평 (판단이 결과를 좌우) | `opus` | planner, architect, critic, analyst, code-reviewer, security-reviewer | **Fable 5** |
+| 구현·디버그·테스트·검증·문서조사·정리(스펙이 정해진 실행) | `sonnet` | executor, designer, debugger, test-engineer, verifier, tracer, qa-tester, scientist, git-master, document-specialist, code-simplifier | **Sonnet 5** |
 | 탐색·단순 문서화 (기계적·대량) | `haiku` | explore, writer | **Haiku 4.5** |
 
 - **Task 도구로 직접 위임할 때도 동일 기준**으로 `model` 파라미터를 명시한다 (`haiku`/`sonnet`/`opus`).
 - 판단 기준 한 줄: "결과 품질이 **판단력**에 좌우되면 상위 티어, **절차 수행**이면 하위 티어."
 - 메인 세션의 하이브리드 = **적응형 플랜**(설정값은 Claude Code 내장 별칭 `opusplan`): 플랜=Fable 5, 실행=Sonnet 5 자동 전환. 새 프런티어 모델이 나오면 model-watch 가 env 재매핑만 갱신해 자동 적응(직지정 금지). 실행 중 결정 지점은 어드바이저(`advisorModel: fable`)가 자동 보강.
+- **2026-08-18 조정**: `code-simplifier`를 opus→sonnet으로 하향. 원인은 [[fable-usage-balancing-routing]] 메모리가 명시한 opus 우선 원칙(2026-07-18, Fable 활용도가 낮다는 이유로 도입)이 실제로는 대형 워크플로의 opus-tier 서브에이전트 위임 건수를 늘려 Fable 사용량 급증으로 이어졌기 때문(ccusage 실측: 14일 Fable 지출의 62%가 세션 3개에 집중, 그중 다수가 Task/Agent 서브에이전트 위임). `code-simplifier`는 판단보다 절차적 성격이 강해 가장 낮은 리스크로 하향. 나머지 판단역할(planner·architect·critic 등)은 opus 유지.
 
 ## 2. 컨텍스트 절약 (지출의 최대 지분)
 
