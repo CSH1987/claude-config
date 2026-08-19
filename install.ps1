@@ -24,9 +24,11 @@ Copy-Item (Join-Path $repoDir 'claude\hooks\stop-metrics.ps1')    (Join-Path $ho
 Copy-Item (Join-Path $repoDir 'claude\hooks\filter-test-output.ps1') (Join-Path $hooks 'filter-test-output.ps1') -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\hermes-sync.ps1')     (Join-Path $hooks 'hermes-sync.ps1')     -Force
 Copy-Item (Join-Path $repoDir 'claude\hooks\skill-watch.ps1')     (Join-Path $hooks 'skill-watch.ps1')     -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\statusline.ps1')      (Join-Path $hooks 'statusline.ps1')      -Force
+Copy-Item (Join-Path $repoDir 'claude\hooks\context-notify.ps1')  (Join-Path $hooks 'context-notify.ps1')  -Force
 # config-sync 가 레포 위치를 찾도록 기록 (BOM 없이)
 [System.IO.File]::WriteAllText((Join-Path $dst '.config-sync-path'), $repoDir, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, model-watch, auto-update, guardrails, edit-track, edit-nudge, stop-metrics, filter-test-output, hermes-sync, skill-watch)'
+Write-Host '  ✓ hooks copied (ensure-harness, effort-reminder, config-sync, work-autosync, model-watch, auto-update, guardrails, edit-track, edit-nudge, stop-metrics, filter-test-output, hermes-sync, skill-watch, statusline, context-notify)'
 
 # 은퇴된 훅(2026-08-02: v9/v10 lifelong-memory 시스템 완전 은퇴 — 네이티브 auto-memory로 단일화)의
 # 이전 설치가 남긴 stale 복사본 정리. Copy-Item 은 소스가 사라지면 그냥 안 돌 뿐 기존 대상 파일을
@@ -310,8 +312,13 @@ $managedHooks = [ordered]@{
         (New-PsHook 'edit-nudge.ps1'      '')
     )
     Stop = @(
-        (New-PsHook 'stop-metrics.ps1'    '')
+        (New-PsHook 'stop-metrics.ps1'    ''),
+        (New-PsHook 'context-notify.ps1'  '')
     )
+}
+# statusLine — 훅 배열이 아니라 최상위 키. 개인 취향 키(theme 등)와 동일하게 없을 때만(사용자 선택 보존).
+if (-not $s.ContainsKey('statusLine')) {
+    $s['statusLine'] = @{ type = 'command'; command = (New-PsHook 'statusline.ps1' '') }  # padding 없음 — 레포 settings.json 과 대칭
 }
 # 우리가 관리하는 모든 명령(이벤트 불문) — 기존 그룹에서 우리 것만 제거(자가 치유).
 # 항목은 문자열 또는 @{ command=...; matcher=... } 사양(예: filter-test-output 은 matcher=Bash).
@@ -329,7 +336,7 @@ foreach ($evt in $managedHooks.Keys) {
 # 은퇴된 이름(memory-inject·memory-sync·reconcile-check·morning-brief·session-events, 2026-08-02)도
 # 이 정규식엔 **그대로 남긴다** — $managedHooks(위, 현재 배포 목록)에서만 뺐다. 여기서까지 빼면
 # 예전 설치가 settings.json 에 남긴 그 훅들이 "관리 대상 아님(사용자 훅)"으로 오인돼 영구 잔존한다.
-$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|model-watch|auto-update|morning-brief|memory-sync|guardrails|edit-track|edit-nudge|stop-metrics|filter-test-output|hermes-sync|skill-watch)\.(ps1|sh)\b'
+$managedRe = '(?:-File\s*"?|bash\s+"?)[^"]*\.claude[\\/]hooks[\\/](ensure-harness|effort-reminder|memory-inject|config-sync|work-autosync|session-events|reconcile-check|model-watch|auto-update|morning-brief|memory-sync|guardrails|edit-track|edit-nudge|stop-metrics|filter-test-output|hermes-sync|skill-watch|context-notify)\.(ps1|sh)\b'
 $hk = Get-Dict $s 'hooks'
 foreach ($evt in $managedHooks.Keys) {
     $existing = @(); if ($hk[$evt]) { $existing = @($hk[$evt]) }

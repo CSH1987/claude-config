@@ -29,7 +29,8 @@ description: 품질을 깎지 않는 작업량(토큰·비용) 최적화 규칙 
 - 장황한 출력이 예상되는 작업(전체 테스트 실행, 대용량 로그 분석, 문서 대량 조회)은 **서브에이전트에 위임하고 요약만 수신** — 원문을 메인 컨텍스트에 담지 않는다.
 - 테스트 실행 출력은 `filter-test-output` 훅이 자동으로 실패·요약 라인만 남긴다 (pytest / npm test / npx vitest run / go test / python -m pytest).
 - 작업 전환 시 `/clear` (+`/rename` 후 `/resume`으로 복귀 가능), **같은 작업을 이어가며 압축만 필요하면 `/compact`**. 압축 시 보존 우선순위는 전역 CLAUDE.md의 Compact instructions 참조.
-- 컨텍스트 사용률 체감 기준(커뮤니티 컨센서스 휴리스틱 — 공식 수치 아님, 관찰 메커니즘 확인불가): `/context`로 점유율 확인, 20~40%부터 정확도 저하 체감 시작, 60% 근접 시 정리 고려, 90%+는 즉시 `/clear` 권장.
+- 컨텍스트 사용률 체감 기준(커뮤니티 컨센서스 휴리스틱 — 공식 수치 아님): `/context`로 점유율 확인, 20~40%부터 정확도 저하 체감 시작, 60% 근접 시 정리 고려, 90%+는 즉시 `/clear` 권장. 관찰 메커니즘은 공식 `statusLine`(`context_window.used_percentage`, 입력 토큰만 계산)로 확인됨 — 매 턴 상태줄에 상시 표시되고(`statusline.sh`/`.ps1`), 50%/90%를 위로 통과하면 Stop 훅(`context-notify.sh`/`.ps1`)이 1회성으로 알려준다(2026-08-19 반영).
+
 - MCP 서버는 주기 감사: `/context`로 점유 확인, 미사용 서버는 `/mcp`에서 비활성화. CLI(gh 등)가 있으면 MCP보다 우선.
 - Workflow 스크립트는 기본이 `pipeline()` — `parallel()`(barrier)은 ①전체 결과를 모아 종합/중복제거 ②건수 기준 조기 종료 ③상호 비교 판단, 이 중 하나가 실제로 필요할 때만 쓴다.
 
