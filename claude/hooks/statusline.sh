@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # claude-config:statusline — 컨텍스트 사용률 상시 표시(공식 statusLine 기능).
 #   used_percentage 는 Claude Code 가 이미 계산해 stdin 으로 넘겨줌(입력 토큰만 계산, 출력 미포함 — 공식 확인).
-#   50/60/90% 색상+행동 문구(🟡/🟠 정리 고려/🔴 지금 정리!)는 workload-optimization 스킬 §2 의
-#   컨텍스트 임계치 문서와 일치시킴 — 색상만으론 의미를 몰라도 문구로 바로 이해되게(누구나 직관적).
+#   30/60/90% 색상+행동 문구(🟡/🟠 정리 고려/🔴 지금 정리!)는 workload-optimization 스킬 §2 의
+#   컨텍스트 임계치 문서("20~40%부터 저하 체감 시작")와 일치시킴(2026-08-20, 그 구간 중간값으로 보정
+#   — 이전엔 50이라 문서와 코드가 어긋나 있었음) — 색상만으론 의미를 몰라도 문구로 바로 이해되게.
 #   부수 효과: session_id 별 캐시 파일에 used_percentage 를 남겨 Stop 훅(context-notify.sh)이 재사용
 #   (훅 입력에는 context_window 필드가 없어 — 공식 확인 — statusline 이 유일한 소스).
 #   설계 원칙(기존 훅 계승): FAIL-OPEN — jq 없거나 stdin 파싱 실패해도 최소한의 줄은 출력.
@@ -48,7 +49,7 @@ tag=""
 if [ -n "$pct_int" ]; then
   if   [ "$pct_int" -ge 90 ]; then color="\033[1;31m"; tag=" 🔴 지금 정리!"    # 굵은 빨강(90%+, 즉시 정리)
   elif [ "$pct_int" -ge 60 ]; then color="\033[33m";   tag=" 🟠 정리 고려"     # 주황(60%+, 정리 고려)
-  elif [ "$pct_int" -ge 50 ]; then color="\033[93m";   tag=" 🟡"              # 노랑(50%+, 인지만)
+  elif [ "$pct_int" -ge 30 ]; then color="\033[93m";   tag=" 🟡"              # 노랑(30%+, 인지만 — 저하 체감 시작 구간)
   fi
 fi
 reset="\033[0m"

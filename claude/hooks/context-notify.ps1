@@ -1,9 +1,10 @@
 ﻿# claude-config:context-notify (Windows) - PowerShell mirror of context-notify.sh.
 #   Stop hook. Reads the used_percentage cached by statusline.ps1 and fires a one-shot systemMessage
-#   only on an UPWARD crossing of 50% / 90% (not on every turn while inside a tier).
+#   only on an UPWARD crossing of 30% / 90% (not on every turn while inside a tier). 30% matches the
+#   workload-optimization skill's "20-40% degradation onset" heuristic (2026-08-20, lowered from 50).
 #   State machine: the stored tier always mirrors the LAST computed tier - rising fires+stores,
-#   falling (e.g. /compact landing at 55%) silently demotes so the next rise re-fires. Only resetting
-#   on drop-to-zero left a gap where 90%->(compact)->55%->92% never re-notified - fixed here.
+#   falling (e.g. /compact landing mid-range) silently demotes so the next rise re-fires. Only resetting
+#   on drop-to-zero left a gap where 90%->(compact)->mid->92% never re-notified - fixed here.
 #   FAIL-OPEN: no cache (statusline disabled/not yet run) -> silent exit.
 #   Contains literal Korean text -> saved with a UTF-8 BOM (required for Windows PowerShell 5.1 to
 #   read it as UTF-8 instead of the system ANSI codepage; matches hermes-sync.ps1/config-sync.ps1).
@@ -37,7 +38,7 @@ try {
 
     $newTier = 0
     if     ($pctInt -ge 90) { $newTier = 90 }
-    elseif ($pctInt -ge 50) { $newTier = 50 }
+    elseif ($pctInt -ge 30) { $newTier = 30 }
 
     function Write-TierState([int]$tier) {
         # atomic-ish replace (tmp + Move-Item -Force), mirrors stop-metrics.ps1's tmp+Move-Item pattern

@@ -1,8 +1,10 @@
 ﻿# claude-config:statusline (Windows) - PowerShell mirror of statusline.sh.
 #   Always-on context-usage display via the official statusLine feature.
 #   used_percentage is precomputed by Claude Code itself (input tokens only, output excluded - confirmed via docs).
-#   50/60/90% color+action-tag bands (yellow / orange "review" / red "clear now!") match
-#   workload-optimization skill Sec.2 thresholds - text is shown even if the color meaning isn't known.
+#   30/60/90% color+action-tag bands (yellow / orange "review" / red "clear now!") match
+#   workload-optimization skill Sec.2 thresholds ("20-40% degradation onset") - text is shown even if
+#   the color meaning isn't known. 2026-08-20: first tier lowered from 50 to 30 (midpoint of that range)
+#   to match the documented onset instead of an arbitrary round number.
 #   Side effect: caches used_percentage per session_id so the Stop hook (context-notify.ps1) can reuse it
 #   (hook input has no context_window field - confirmed - statusline is the only source).
 #   Principle: FAIL-OPEN - any parse error still prints a minimal line.
@@ -61,7 +63,7 @@ try {
     if ($null -ne $pctInt) {
         if     ($pctInt -ge 90) { $color = "$esc[1;31m"; $tag = ' 🔴 지금 정리!' }  # bold red
         elseif ($pctInt -ge 60) { $color = "$esc[33m";   $tag = ' 🟠 정리 고려' }   # orange
-        elseif ($pctInt -ge 50) { $color = "$esc[93m";   $tag = ' 🟡' }             # yellow
+        elseif ($pctInt -ge 30) { $color = "$esc[93m";   $tag = ' 🟡' }             # yellow (degradation onset)
     }
     $reset = "$esc[0m"
 
