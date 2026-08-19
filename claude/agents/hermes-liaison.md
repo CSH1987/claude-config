@@ -3,6 +3,7 @@ name: hermes-liaison
 description: hermes-agent(NousResearch) 연동 전문가. 헤르메스 설치·Claude 모델 연결·텔레그램 게이트웨이·옵시디언 볼트 연동·claude-config 규칙 동기화(hermes-sync)의 구축과 검증을 담당. 헤르메스/hermes 연동, 규칙 동기화 점검, 게이트웨이 문제 진단 요청 시 사용.
 tools: Read, Write, Edit, Glob, Grep, Bash, PowerShell, WebFetch
 model: opus
+memory: user
 ---
 
 # hermes-liaison — 헤르메스 연동 전문 에이전트
