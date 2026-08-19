@@ -184,14 +184,15 @@ ln -sfn "$REPO_DIR/claude/hooks/skill-watch.sh"      "$DST/hooks/skill-watch.sh"
 ln -sfn "$REPO_DIR/claude/hooks/vault-context.sh" "$DST/hooks/vault-context.sh"
 ln -sfn "$REPO_DIR/claude/hooks/vault-index.py" "$DST/hooks/vault-index.py"
 ln -sfn "$REPO_DIR/claude/hooks/vault-staleness-scan.py" "$DST/hooks/vault-staleness-scan.py"
+ln -sfn "$REPO_DIR/claude/hooks/vault-session-log.sh" "$DST/hooks/vault-session-log.sh"
 # learning-pipeline-setup.sh: vault-context.sh와 동일 컨벤션(맥미니+볼트 게이팅은 훅 내부, 다른
 # 머신은 조용히 스킵) — 바로 위 주석의 교훈(settings.json 등록 + 이 링크 둘 다 있어야 함)을 따름.
 ln -sfn "$REPO_DIR/claude/hooks/learning-pipeline-setup.sh" "$DST/hooks/learning-pipeline-setup.sh"
 ln -sfn "$REPO_DIR/claude/hooks/statusline.sh"       "$DST/hooks/statusline.sh"
 ln -sfn "$REPO_DIR/claude/hooks/context-notify.sh"   "$DST/hooks/context-notify.sh"
-chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/model-watch.sh" "$REPO_DIR/claude/hooks/auto-update.sh" "$REPO_DIR/claude/hooks/guardrails.sh" "$REPO_DIR/claude/hooks/edit-track.sh" "$REPO_DIR/claude/hooks/edit-nudge.sh" "$REPO_DIR/claude/hooks/stop-metrics.sh" "$REPO_DIR/claude/hooks/filter-test-output.sh" "$REPO_DIR/claude/hooks/hermes-sync.sh" "$REPO_DIR/claude/hooks/skill-watch.sh" "$REPO_DIR/claude/hooks/vault-context.sh" "$REPO_DIR/claude/hooks/learning-pipeline-setup.sh" "$REPO_DIR/claude/hooks/statusline.sh" "$REPO_DIR/claude/hooks/context-notify.sh"
+chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/model-watch.sh" "$REPO_DIR/claude/hooks/auto-update.sh" "$REPO_DIR/claude/hooks/guardrails.sh" "$REPO_DIR/claude/hooks/edit-track.sh" "$REPO_DIR/claude/hooks/edit-nudge.sh" "$REPO_DIR/claude/hooks/stop-metrics.sh" "$REPO_DIR/claude/hooks/filter-test-output.sh" "$REPO_DIR/claude/hooks/hermes-sync.sh" "$REPO_DIR/claude/hooks/skill-watch.sh" "$REPO_DIR/claude/hooks/vault-context.sh" "$REPO_DIR/claude/hooks/learning-pipeline-setup.sh" "$REPO_DIR/claude/hooks/statusline.sh" "$REPO_DIR/claude/hooks/context-notify.sh" "$REPO_DIR/claude/hooks/vault-session-log.sh"
 printf '%s' "$REPO_DIR" > "$DST/.config-sync-path"   # config-sync 가 레포 위치를 찾도록
-echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, model-watch, auto-update, guardrails, edit-track, edit-nudge, stop-metrics, filter-test-output, hermes-sync, skill-watch, learning-pipeline-setup, statusline, context-notify)"
+echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, model-watch, auto-update, guardrails, edit-track, edit-nudge, stop-metrics, filter-test-output, hermes-sync, skill-watch, learning-pipeline-setup, statusline, context-notify, vault-session-log)"
 
 # 은퇴된 훅(2026-08-02: v9/v10 lifelong-memory 시스템 완전 은퇴 — 네이티브 auto-memory로 단일화)의
 # dangling 심볼릭링크 정리. 예전 install.sh 가 만든 링크가 남아있으면 대상이 없는 채로 settings.json

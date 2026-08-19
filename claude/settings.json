@@ -156,6 +156,14 @@
             "command": "bash \"$HOME/.claude/hooks/work-autosync.sh\" end"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/vault-session-log.sh\""
+          }
+        ]
       }
     ]
   },

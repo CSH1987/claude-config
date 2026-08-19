@@ -91,6 +91,14 @@ commands (`tee`/`>`/`cp`/`sed -i`/`chmod`/etc.) targeting a protected folder *or
 root itself* always deny (Write/Edit/MultiEdit and the MCP tools are the only write
 channels); `vault-obsidian` paths with a leftover `'..'` always deny.
 
+This guard covers Claude's own interactive Bash tool calls (guardrails.py is a PreToolUse
+hook — it inspects tool invocations, not arbitrary processes). Deterministic infra
+processes that Claude Code's own hook/launchd runtime spawns outside any tool call
+(e.g. `vault-session-log.sh` on SessionEnd, the learning-pipeline's launchd job) are
+intentionally out of scope and do write to the vault directly via plain Bash/Python —
+that's expected, not a guard bypass. Don't mistake a `source:`-tagged file appearing in
+`90_Hermes/로그` with no matching tool-call log for an incident.
+
 ---
 
 ## 1. `30_결정로그` — direct decision log
