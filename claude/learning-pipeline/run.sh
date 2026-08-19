@@ -37,7 +37,8 @@ SCOPE_FILE="$HOME/.claude/vault-scope.json"
       --arg vault10Path "$VAULT_PATH/10_컨텍스트" \
       --arg utterancesPath "$DIR/gathered-utterances.json" \
       --arg memoryDirPath "$MEMORY_DIR" \
-      '{vault10Path: $vault10Path, utterancesPath: $utterancesPath, memoryDirPath: $memoryDirPath}')
+      --arg vault90HermesPath "$VAULT_PATH/90_Hermes" \
+      '{vault10Path: $vault10Path, utterancesPath: $utterancesPath, memoryDirPath: $memoryDirPath, vault90HermesPath: $vault90HermesPath}')
 
     CLAUDE_EVENTS_OFF=1 CLAUDE_AUTOSYNC_OFF=1 "$CLAUDE_BIN" -p "$(cat <<PROMPT
 Workflow 도구로 $HOME/.claude/learning-pipeline/pipeline.workflow.js 를 scriptPath로, 다음 args와 함께 실행해라:
