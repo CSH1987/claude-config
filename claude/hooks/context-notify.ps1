@@ -53,12 +53,15 @@ try {
 
     if ($newTier -gt $lastTier) {
         Write-TierState $newTier
+        # systemMessage=user-only, additionalContext=Claude-only - lets Claude proactively bring this
+        # up next turn and ask continue-vs-switch, instead of a static popup the user reads alone.
         if ($newTier -eq 90) {
-            $msg = "컨텍스트 ${pctInt}% 사용 — 정확도 저하 구간입니다. 지금 /clear 또는 /compact 를 권장합니다."
+            $msg = "컨텍스트 ${pctInt}% 사용 — 정확도 저하 구간입니다. 지금 작업을 계속 이어갈 거면 /compact(요약 압축 후 계속), 다른 작업으로 넘어갈 거면 /clear(완전 초기화)를 지금 실행하세요. 나중에 이 대화로 돌아올 수도 있다면 /clear 전에 먼저 /rename 이름 을 해두면 나중에 /resume 이름 으로 복구할 수 있습니다."
         } else {
-            $msg = "컨텍스트 ${pctInt}% 사용 — 다음 작업으로 넘어갈 때 /clear(또는 /compact)를 고려하세요."
+            $msg = "컨텍스트 ${pctInt}% 사용 — 지금 작업을 계속 이어갈 거면 /compact(요약 압축, 이어서 작업), 다른 작업으로 넘어갈 거면 /clear(완전 초기화)를 고려하세요. 나중에 이 대화로 돌아올 수도 있다면 /clear 전에 먼저 /rename 이름 을 해두면 /resume 이름 으로 복구할 수 있습니다."
         }
-        $out = @{ systemMessage = $msg } | ConvertTo-Json -Compress
+        $ctx = "[컨텍스트 알림] 방금 사용률이 ${pctInt}%에 도달해 사용자에게 시스템 메시지로 안내됨. 다음 응답 서두에서 자연스럽게 이를 언급하고, 지금 작업을 계속할지(/compact) 다른 작업으로 넘어갈지(/clear, 필요시 /rename 먼저)를 사용자에게 직접 확인하라. 메시지를 그대로 복사해서 보여주지 말고 대화 맥락에 맞게 짧게."
+        $out = @{ systemMessage = $msg; additionalContext = $ctx } | ConvertTo-Json -Compress
         Write-Output $out
     }
 } catch {}
