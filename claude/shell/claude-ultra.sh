@@ -111,7 +111,7 @@ jobs:
             구체적 라인은 mcp__github_inline_comment__create_inline_comment (confirmed: true),
             총평은 `gh pr comment` 로 반드시 GitHub 코멘트로 게시. 한국어로, 사소한 건 최소화.
           # GitHub Actions CI는 로컬 settings.json의 ANTHROPIC_DEFAULT_SONNET_MODEL env 재매핑을
-          # 못 읽으므로(별개 실행 환경), 이 리터럴은 model-watch가 새 프런티어를 반영할 때 수동 동기화 필요.
+          # 못 읽으므로(별개 실행 환경), 이 리터럴은 model-watch가 Sonnet 티어 변경을 감지하면 자동으로 동기화합니다(수동 개입 불필요).
           claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)" --max-turns 15 --model claude-sonnet-5'
 YML
   fi

@@ -15,6 +15,18 @@ source - never a position in the detected model list); every probe also checks t
 wins: a ~/.claude/model-watch/pin-mid file or state mid_source=="manual" turns ALL mid
 automation (cascade / consistency check / recovery) off.
 
+Sonnet tier (env ANTHROPIC_DEFAULT_SONNET_MODEL) + GH Actions file sync: unlike mid,
+this tier IS independently detected - the same detect_models() call that extracts the
+frontier id also extracts the first sonnet-pattern id from the same models line. When
+it differs from the current env value and validates, local + repo settings.json are
+updated. Separately, every probe also syncs the Sonnet literal embedded in 7 files
+(claude-ultra.sh/.ps1, the GH Actions workflow templates + this repo's own installed
+copies, README.md) to whatever the (possibly just-updated) local settings.json now
+says - those files live in a GitHub Actions CI environment that cannot read local env
+remaps, so they need direct sync instead of the adaptive-plan pattern. Human intent
+wins here too: ~/.claude/model-watch/pin-sonnet or state sonnet_source=="manual" turns
+OFF both the detection and the file sync.
+
 Why probing: Claude Code has no cross-tier "always latest" alias (e.g. `fable` will not
 jump to a future frontier family), and /v1/models is not callable with subscription OAuth.
 So we ask the CLI itself: a headless `claude -p` session's system prompt contains the
@@ -33,6 +45,7 @@ Modes (argv[1], default `start`):
 
 Off switch: CLAUDE_MODEL_WATCH_OFF=1   Pin (never auto-switch): ~/.claude/model-watch/pin
 Mid pin (mid slot never auto-updated): ~/.claude/model-watch/pin-mid
+Sonnet pin (sonnet slot + file sync never auto-updated): ~/.claude/model-watch/pin-sonnet
 Debug: MODEL_WATCH_DEBUG=1 (re-raise errors). Probe output: ~/.claude/model-watch/probe.log
 State: ~/.claude/model-watch/state.json  History: ~/.claude/model-watch/history.jsonl
 """
@@ -60,9 +73,27 @@ STATE = os.path.join(WATCH_DIR, "state.json")
 HISTORY = os.path.join(WATCH_DIR, "history.jsonl")
 PIN = os.path.join(WATCH_DIR, "pin")
 PIN_MID = os.path.join(WATCH_DIR, "pin-mid")  # mid pin: turns ALL mid automation off (cascade/check/recovery)
+PIN_SONNET = os.path.join(WATCH_DIR, "pin-sonnet")  # sonnet pin: turns off sonnet detection + GH Actions file sync
 CLAUDE_TIMEOUT = 240  # seconds per headless call (detached, so generous is fine)
 ENV_KEY = "ANTHROPIC_DEFAULT_OPUS_MODEL"  # adaptive plan: the frontier id lives here
 MID_ENV_KEY = "CLAUDE_CONFIG_MID_MODEL"  # relay mid tier (review stage): claude-config owned slot, NOT a native alias env
+SONNET_ENV_KEY = "ANTHROPIC_DEFAULT_SONNET_MODEL"  # exec tier: also mirrored into 7 GH Actions files (see SONNET_SYNC_FILES)
+SONNET_ID_RE = r"claude-sonnet-[0-9][a-z0-9.\-]*"
+
+# Files (repo-relative) whose embedded Sonnet literal must mirror ANTHROPIC_DEFAULT_SONNET_MODEL.
+# GH Actions CI cannot read local settings.json env remaps (separate execution environment), so
+# these can't use the adaptive-plan pattern and need direct sync instead. Each file is expected
+# to contain exactly one SONNET_ID_RE match; sync_sonnet_files() logs an event (does not silently
+# skip) if a listed file's pattern can't be found, so a future file-structure change is visible.
+SONNET_SYNC_FILES = [
+    "claude/shell/claude-ultra.sh",
+    "claude/shell/claude-ultra.ps1",
+    "claude/github/claude-auto-review.yml",
+    "claude/github/claude-autofix.yml",
+    ".github/workflows/claude-auto-review.yml",
+    ".github/workflows/claude-autofix.yml",
+    "README.md",
+]
 
 DETECT_PROMPT = (
     "Automation query (no human reads prose). Your system prompt environment "
@@ -159,16 +190,22 @@ def run_claude(prefix, args, prompt):
     return cp.returncode, (cp.stdout or "") + "\n" + (cp.stderr or "")
 
 
-def detect_top(prefix):
-    """Ask a headless session for the current frontier model id.
+def detect_models(prefix):
+    """Ask a headless session for the current frontier AND sonnet-tier model ids in ONE
+    call (same DETECT_PROMPT / ids list) - a second independent call would double the
+    live-probe cost and could race a mid-rollout inconsistency between two answers.
 
     EXTRACTION, not judgment: models answer "which is most capable" with self-bias
     (opus judged opus; haiku judged sonnet - both wrong). Extracting the env
     block's "The most recent Claude models are ..." line verbatim is reliable:
-    Anthropic lists the frontier family FIRST, so list[0] is the answer.
+    Anthropic lists the frontier family FIRST, so list[0] is the frontier answer;
+    the sonnet answer is whichever listed id matches SONNET_ID_RE (position-independent -
+    plan_mid_cascade()'s docstring explains why position can't be trusted for anything
+    but the frontier's fixed-first convention).
     Judge = the currently configured model (no --model flag -> today's frontier
     detects tomorrow's), falling back to the `opus` alias if that call fails
-    (e.g. the configured id was deprecated)."""
+    (e.g. the configured id was deprecated).
+    Returns (top_id | None, sonnet_id | None)."""
     for model_args in ([], ["--model", "opus"]):
         try:
             rc, out = run_claude(prefix, ["-p"] + model_args, DETECT_PROMPT)
@@ -189,14 +226,15 @@ def detect_top(prefix):
             if re.fullmatch(ID_RE, str(i).strip())
         ]
         mc = str(obj.get("most_capable_id", "")).strip()
+        sonnet = next((i for i in ids if re.fullmatch(SONNET_ID_RE, i)), None)
         if not ids:
             if re.fullmatch(ID_RE, mc):
-                return mc
+                return mc, sonnet
             continue
         if mc and mc != ids[0]:  # structural order beats soft judgment; keep a trace
             log_history({"event": "detect_disagreement", "list_first": ids[0], "most_capable": mc})
-        return ids[0]
-    return None
+        return ids[0], sonnet
+    return None, None
 
 
 def model_valid(prefix, model):
@@ -260,7 +298,7 @@ def set_local_mid(new_mid):
 def find_mid_recovery_candidate(prefix, top):
     """Newest-first history scan for a mid recovery value. Candidates come ONLY from
     the `from` field of event=="remapped" entries: legacy "switched" entries may carry
-    aliases ("opus" 등), and aliases are valid CLI args (detect_top's ["--model",
+    aliases ("opus" 등), and aliases are valid CLI args (detect_models's ["--model",
     "opus"] fallback is the precedent) so model_valid() cannot reject them - an alias
     in the mid slot resolves to top and silently collapses mid==top. Hence the double
     filter: remapped-only + re.fullmatch(ID_RE, ...) on the base_id-normalized value
@@ -349,6 +387,167 @@ def queue_mid_notice(note):
     write_state(st)
 
 
+def repo_root():
+    """Path to the local claude-config repo checkout, or None if the pointer file is
+    absent/unreadable. Best-effort - never raises."""
+    try:
+        with open(os.path.join(CLAUDE_DIR, ".config-sync-path"), "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return None
+
+
+def sonnet_gate(st):
+    """Source gate (사람 의도 우선), mirrors mid_gate: a pin-sonnet file or state
+    sonnet_source=="manual" means a human set the sonnet value deliberately - detection
+    and the 7-file sync must NEVER touch it."""
+    if os.path.exists(PIN_SONNET):
+        return "skipped(pin-sonnet)"
+    if st.get("sonnet_source") == "manual":
+        return "skipped(manual)"
+    return None
+
+
+def set_local_sonnet(new_sonnet):
+    """Atomically update only the sonnet env slot in the LOCAL settings.json."""
+    s = load_json(SETTINGS)
+    if not isinstance(s, dict):
+        return False
+    env = s.setdefault("env", {})
+    if not isinstance(env, dict):
+        return False
+    if env.get(SONNET_ENV_KEY) == new_sonnet:
+        return True
+    try:  # same .bak.<epoch> glob as install.ps1, whose keep-5 pruning also covers ours
+        shutil.copy2(SETTINGS, SETTINGS + ".bak.%d" % int(time.time()))
+    except Exception:
+        pass
+    env[SONNET_ENV_KEY] = new_sonnet
+    write_json_atomic(SETTINGS, s)
+    return True
+
+
+def propagate_sonnet_to_repo(new_sonnet):
+    """Best-effort mirror of the sonnet env remap into the repo settings.json, same
+    config-sync fleet distribution as propagate_to_repo(). Never raises; skipped
+    silently when the repo is absent."""
+    repo = repo_root()
+    if not repo:
+        return
+    try:
+        rs = os.path.join(repo, "claude", "settings.json")
+        s = load_json(rs)
+        if not isinstance(s, dict):
+            return
+        env = s.setdefault("env", {})
+        if not isinstance(env, dict):
+            return
+        if env.get(SONNET_ENV_KEY) == new_sonnet:
+            return
+        env[SONNET_ENV_KEY] = new_sonnet
+        write_json_atomic(rs, s)
+        log_history({"event": "repo_sonnet_propagated", "to": new_sonnet})
+    except Exception:
+        pass
+
+
+def sync_sonnet_files(sonnet):
+    """Make the 7 GH-Actions-embedded Sonnet literals (SONNET_SYNC_FILES) match `sonnet`
+    - the CURRENT local ANTHROPIC_DEFAULT_SONNET_MODEL value. Derives from settings, not
+    from the detection event: runs every probe regardless of what changed the value (auto
+    detection above, or a human editing settings.json directly), so file drift never has
+    to wait for the next sonnet swap to be caught. tmp+os.replace per file (same atomicity
+    as settings writes). A listed file whose SONNET_ID_RE pattern can't be found is NOT
+    silently skipped - logged as an event, so a future file-structure change is visible
+    instead of quietly drifting forever. Never raises; skipped silently when the repo is
+    absent (mirrors propagate_to_repo's absent-repo behavior)."""
+    repo = repo_root()
+    if not repo:
+        return
+    for rel_path in SONNET_SYNC_FILES:
+        path = os.path.join(repo, rel_path)
+        try:
+            with open(path, "r", encoding="utf-8", newline="") as f:
+                content = f.read()
+        except Exception:
+            continue
+        matches = list(re.finditer(SONNET_ID_RE, content))
+        if len(matches) != 1:
+            # 0 matches: file structure changed, the literal moved/was removed.
+            # >1 matches: re.search's old first-match-wins behavior would have silently
+            # patched the wrong occurrence and left the real one stale - refuse instead.
+            log_history(
+                {"event": "sonnet_sync_pattern_missing" if not matches else "sonnet_sync_ambiguous",
+                 "file": rel_path, "count": len(matches)}
+            )
+            continue
+        m = matches[0]
+        if m.group(0) == sonnet:
+            continue  # already current
+        new_content = content[: m.start()] + sonnet + content[m.end() :]
+        tmp = path + ".tmp-model-watch"
+        try:
+            with open(tmp, "w", encoding="utf-8", newline="") as f:
+                f.write(new_content)
+            os.replace(tmp, path)
+        except Exception:
+            continue
+        log_history({"event": "sonnet_file_synced", "file": rel_path, "to": sonnet})
+
+
+def check_sonnet(prefix, ids_sonnet):
+    """Sonnet-tier detection + file propagation, run every probe (independent of the
+    frontier early-return in probe() - a sonnet swap or file drift must not wait for a
+    frontier swap to be caught).
+    Layer 1 (detection): if ids_sonnet (extracted by the same detect_models() call as
+    top, from the same models line) differs from the current ANTHROPIC_DEFAULT_SONNET_MODEL
+    and validates via a real headless call, update local + repo settings.json.
+    Layer 2 (propagation): regardless of layer 1, sync the 7 files to whatever the
+    (possibly just-updated) local settings.json now says for the sonnet slot - this
+    derives file state from settings rather than from the detection event, so a manual
+    settings.json edit also self-heals the files on the next probe, not just auto-detection.
+    Gated by sonnet_gate() (pin-sonnet / sonnet_source=="manual" - human intent wins,
+    silently, same as mid_gate). Returns a notice string or None."""
+    if sonnet_gate(read_state()):
+        return None
+    s = load_json(SETTINGS) or {}
+    env = s.get("env") if isinstance(s.get("env"), dict) else {}
+    cur = (env.get(SONNET_ENV_KEY) or "").strip()
+    notice = None
+    if ids_sonnet and base_id(ids_sonnet) != base_id(cur):
+        if model_valid(prefix, ids_sonnet):
+            if set_local_sonnet(ids_sonnet):
+                propagate_sonnet_to_repo(ids_sonnet)
+                log_history({"event": "sonnet_remapped", "from": cur or None, "to": ids_sonnet})
+                notice = "remapped:%s" % ids_sonnet
+                cur = ids_sonnet
+        else:
+            log_history({"event": "sonnet_validation_failed", "detected": ids_sonnet})
+    # Sync from base_id(cur), never the raw settings value: a variant suffix (e.g. the
+    # "[1m]" the top slot legitimately carries, see probe()'s candidates list) has no
+    # place in a GH Actions --model flag, and base_id()==cur comparison in
+    # sync_sonnet_files would then NEVER match, re-appending the suffix every single
+    # probe (confirmed: 4 probes -> "claude-sonnet-5[1m][1m][1m][1m]" with no self-heal,
+    # since layer 1 only compares base_id and never corrects the raw slot). A cur that
+    # doesn't even reduce to a valid sonnet id (alias, typo, garbage) is refused outright
+    # rather than pushed into CI files.
+    base = base_id(cur)
+    if base and re.fullmatch(SONNET_ID_RE, base):
+        sync_sonnet_files(base)
+    elif cur:
+        log_history({"event": "sonnet_sync_skipped_invalid", "cur": cur})
+    return notice
+
+
+def queue_sonnet_notice(note):
+    """Attach a sonnet-only notice without clobbering a pending top/mid notice."""
+    st = read_state()
+    n = st.get("notify") if isinstance(st.get("notify"), dict) else {}
+    n["sonnet"] = note
+    st["notify"] = n
+    write_state(st)
+
+
 def propagate_to_repo(new_model, new_mid=None):
     """Best-effort, ADAPTIVE-PLAN ONLY: mirror the env remaps (top slot + the
     gate-approved cascaded mid, both in one write) into the local claude-config repo
@@ -365,10 +564,10 @@ def propagate_to_repo(new_model, new_mid=None):
     mid may lag one generation until the next config-sync merge - the repo is the
     fleet source of truth, so this converges naturally without extra logic.
     Never raises; skipped silently when the repo is absent."""
+    repo = repo_root()
+    if not repo:
+        return
     try:
-        pf = os.path.join(CLAUDE_DIR, ".config-sync-path")
-        with open(pf, "r", encoding="utf-8") as f:
-            repo = f.read().strip()
         rs = os.path.join(repo, "claude", "settings.json")
         s = load_json(rs)
         if not isinstance(s, dict):
@@ -444,7 +643,7 @@ def probe():
     s = s if isinstance(s, dict) else {}
     cur, mode = effective_frontier(s)
 
-    top = detect_top(prefix)
+    top, ids_sonnet = detect_models(prefix)
     st = read_state()
     st["top"] = top
     st["probed_at"] = now_iso()
@@ -457,9 +656,15 @@ def probe():
     # also catch the "top already current but mid broken" case.
     mid_note = check_and_recover_mid(prefix, s, top)
 
+    # Sonnet check also runs BEFORE the top early-return, for the same reason as mid:
+    # a sonnet-tier swap (or GH Actions file drift) must not wait for a frontier swap.
+    sonnet_note = check_sonnet(prefix, ids_sonnet)
+
     if base_id(top) == base_id(cur):
         if mid_note:
             queue_mid_notice(mid_note)
+        if sonnet_note:
+            queue_sonnet_notice(sonnet_note)
         return  # already on the frontier model
 
     # Prefer carrying over the current variant suffix (e.g. "[1m]") when available.
@@ -473,6 +678,8 @@ def probe():
         log_history({"event": "validation_failed", "top": top, "current": cur})
         if mid_note:
             queue_mid_notice(mid_note)
+        if sonnet_note:
+            queue_sonnet_notice(sonnet_note)
         return
 
     # Frontier swap: cascade the outgoing top into the mid slot (adaptive plan only).
@@ -486,11 +693,15 @@ def probe():
         log_history({"event": "apply_failed", "to": chosen, "mode": mode})
         if mid_note:
             queue_mid_notice(mid_note)
+        if sonnet_note:
+            queue_sonnet_notice(sonnet_note)
         return
     if status == "noop":
-        # 다른 주체(배포 머지 등)가 이미 적용 — 알림 불필요, mid도 그쪽 결정을 존중
+        # 다른 주체(배포 머지 등)가 이미 적용 — 알림 불필요, mid/sonnet도 그쪽 결정을 존중
         if mid_note:
             queue_mid_notice(mid_note)
+        if sonnet_note:
+            queue_sonnet_notice(sonnet_note)
         return
     st = read_state()
     st["notify"] = {"from": old or "(account default)", "to": chosen, "mode": mode}
@@ -498,6 +709,8 @@ def probe():
         st["notify"]["mid"] = cascade_note or mid_note or "변경 없음(기존 값 유지)"
     elif mid_note:
         st["notify"]["mid"] = mid_note
+    if sonnet_note:
+        st["notify"]["sonnet"] = sonnet_note
     if new_mid and status == "applied":
         st["mid_source"] = "cascade"
     write_state(st)
@@ -553,6 +766,13 @@ def start():
                 "수동 고정: ~/.claude/model-watch/pin-mid 생성(또는 state.json mid_source=\"manual\") — "
                 "이후 자동 캐스케이드·복구가 이 값을 건드리지 않습니다."
                 % (MID_ENV_KEY, notice.get("mid"))
+            )
+        if notice.get("sonnet"):
+            lines.append(
+                "[model-watch] Sonnet 슬롯(%s) 처리: %s. GH Actions 7개 파일도 함께 동기화됩니다. "
+                "수동 고정: ~/.claude/model-watch/pin-sonnet 생성(또는 state.json sonnet_source=\"manual\") — "
+                "이후 자동 감지·파일 동기화가 이 값을 건드리지 않습니다."
+                % (SONNET_ENV_KEY, notice.get("sonnet"))
             )
         if lines:
             print("\n".join(lines))

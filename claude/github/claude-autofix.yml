@@ -47,5 +47,5 @@ jobs:
             그리고 무엇을 왜 고쳤는지 gh pr comment 로 한국어 요약을 남겨줘.
             확신 없는 변경은 하지 말고 그 부분은 코멘트로만 제안해. 무리한 리팩터링 금지.
           # GitHub Actions CI는 로컬 settings.json의 ANTHROPIC_DEFAULT_SONNET_MODEL env 재매핑을
-          # 못 읽으므로(별개 실행 환경), 이 리터럴은 model-watch가 새 프런티어를 반영할 때 수동 동기화 필요.
+          # 못 읽으므로(별개 실행 환경), 이 리터럴은 model-watch가 Sonnet 티어 변경을 감지하면 자동으로 동기화합니다(수동 개입 불필요).
           claude_args: '--allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,Bash(git:*),Bash(gh pr comment:*)" --max-turns 20 --model claude-sonnet-5'

@@ -140,7 +140,7 @@ config 레포(설정)는 config-sync 가 늘 동기화하지만, **실제 작업
 - 리뷰는 **구독 사용량 한도**를 함께 소모(PR 이 아주 많으면 영향). 토큰은 **개인 계정 묶임 + 1년 만료**(만료 시 재발급).
 - **포크에서 온 PR**은 GitHub 가 보안상 시크릿을 안 넘겨 자동 리뷰가 안 됩니다(자기 브랜치 PR 은 정상).
 - 리뷰는 **코멘트까지만** — 머지 결정은 사람이.
-- 모델 기본값은 `claude-sonnet-5`(구독 절약). 더 강하게 보려면 워크플로의 `--model` 을 Opus 로 변경. (GitHub Actions CI는 로컬 settings.json의 env 재매핑을 못 읽는 별개 환경이라, 이 리터럴은 model-watch가 새 프런티어를 반영할 때 수동 동기화가 필요합니다.)
+- 모델 기본값은 `claude-sonnet-5`(구독 절약). 더 강하게 보려면 워크플로의 `--model` 을 Opus 로 변경. (GitHub Actions CI는 로컬 settings.json의 env 재매핑을 못 읽는 별개 환경이라, 이 리터럴은 model-watch가 Sonnet 티어 변경을 감지하면 자동으로 동기화합니다.)
 - 인증은 **`claude_code_oauth_token`** 입력 사용(구독 OAuth 전용). `anthropic_api_key` 와 혼용하면 인증 흐름이 달라 실패합니다.
 
 > 새 머신·다른 사용자: 이 레포가 배포되면 `claude-review` 가 자동으로 포함되므로, 각자 자기 레포에서 한 번 실행하면 끝입니다(각자 자기 구독 토큰 사용).
