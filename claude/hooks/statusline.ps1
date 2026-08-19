@@ -1,13 +1,15 @@
-# claude-config:statusline (Windows) - PowerShell mirror of statusline.sh.
+﻿# claude-config:statusline (Windows) - PowerShell mirror of statusline.sh.
 #   Always-on context-usage display via the official statusLine feature.
 #   used_percentage is precomputed by Claude Code itself (input tokens only, output excluded - confirmed via docs).
-#   50/60/90% color bands match workload-optimization skill Sec.2 thresholds.
+#   50/60/90% color+action-tag bands (yellow / orange "review" / red "clear now!") match
+#   workload-optimization skill Sec.2 thresholds - text is shown even if the color meaning isn't known.
 #   Side effect: caches used_percentage per session_id so the Stop hook (context-notify.ps1) can reuse it
 #   (hook input has no context_window field - confirmed - statusline is the only source).
 #   Principle: FAIL-OPEN - any parse error still prints a minimal line.
-#   Pure ASCII body (BOM-less PS 5.1 safe) - no literal non-ASCII text in this file.
+#   Contains literal Korean text -> saved with a UTF-8 BOM (required for Windows PowerShell 5.1;
+#   matches hermes-sync.ps1/context-notify.ps1).
 $ErrorActionPreference = 'SilentlyContinue'
-try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch {}  # PS 5.1 defaults stdout to the system codepage; guards non-ASCII dir/branch names
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch {}  # PS 5.1 defaults stdout to the system codepage; guards non-ASCII dir/branch/tag text
 try {
     $raw = [Console]::In.ReadToEnd()
     if (-not $raw) { Write-Output 'claude'; exit 0 }
@@ -52,12 +54,14 @@ try {
         Move-Item -LiteralPath $tmpFile -Destination $cacheFile -Force  # atomic-ish replace, mirrors stop-metrics.ps1
     }
 
+    # 색상 + 행동 문구 - 색만으론 의미를 몰라도 문구로 바로 이해되게(누구나 직관적)
     $esc = [char]27
     $color = "$esc[32m"  # green (<50%)
+    $tag = ''
     if ($null -ne $pctInt) {
-        if     ($pctInt -ge 90) { $color = "$esc[1;31m" }  # bold red
-        elseif ($pctInt -ge 60) { $color = "$esc[33m" }    # orange
-        elseif ($pctInt -ge 50) { $color = "$esc[93m" }    # yellow
+        if     ($pctInt -ge 90) { $color = "$esc[1;31m"; $tag = ' 🔴 지금 정리!' }  # bold red
+        elseif ($pctInt -ge 60) { $color = "$esc[33m";   $tag = ' 🟠 정리 고려' }   # orange
+        elseif ($pctInt -ge 50) { $color = "$esc[93m";   $tag = ' 🟡' }             # yellow
     }
     $reset = "$esc[0m"
 
@@ -68,7 +72,7 @@ try {
 
     $line = "[$model] $dirName"
     if ($branch) { $line = "$line ($branch)" }
-    if ($null -ne $pctStr) { $line = "$line | $color$pctStr% ctx$reset" } else { $line = "$line | ctx?" }
+    if ($null -ne $pctStr) { $line = "$line | $color$pctStr% ctx$tag$reset" } else { $line = "$line | ctx?" }
     if ($null -ne $costDisp) { $line = "$line | `$$costDisp" }
 
     Write-Output $line
