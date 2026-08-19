@@ -1,6 +1,6 @@
 export const meta = {
   name: 'vault-learning-pipeline',
-  description: 'Claude Code(+Hermes) 대화에서 패턴을 뽑아 Vault 10_컨텍스트 + Hermes SOOHA_CONTEXT.md를 갱신',
+  description: 'Claude Code(+Hermes) 대화에서 패턴을 뽑아 Vault 10_컨텍스트를 갱신 (hermes-agent 전달은 hermes-sync.sh의 vault-context 블록이 담당 — 2026-08-19 SOOHA_CONTEXT 레그 제거)',
   phases: [
     { title: '추출' },
     { title: '종합/반영', model: 'opus' },
@@ -9,11 +9,10 @@ export const meta = {
 
 // 전부 args로 받는다(머신·계정마다 경로가 다름 — 하드코딩 금지, Node API 접근도 없어서 process.env도 못 씀).
 // run.sh가 실행 시점에 $HOME 기준 실제 경로를 채워서 넘긴다. args 누락 시 명확히 실패시킨다(잘못된 경로로 조용히 진행 금지).
-if (!args || !args.vault10Path || !args.soohaContextPath || !args.utterancesPath) {
-  throw new Error('args.vault10Path / soohaContextPath / utterancesPath 가 전부 필요합니다 — run.sh에서 채워 넘겨야 함')
+if (!args || !args.vault10Path || !args.utterancesPath) {
+  throw new Error('args.vault10Path / utterancesPath 가 전부 필요합니다 — run.sh에서 채워 넘겨야 함')
 }
 const VAULT = args.vault10Path
-const SOOHA_CONTEXT = args.soohaContextPath
 const UTTERANCES_PATH = args.utterancesPath
 const MEMORY_DIR = args.memoryDirPath || ''
 
@@ -78,8 +77,7 @@ if (withUpdates.length === 0) {
 반영 시 지켜야 할 것:
 - 각 파일 상단 frontmatter의 updated 필드를 오늘 날짜로 갱신
 - 기존 문서의 어조/구조(제목 레벨, 표 형식 등)를 그대로 유지하며 자연스럽게 통합 — 통째로 갈아엎지 마라
-- 3개 파일에 걸쳐 서로 모순되거나 중복되는 내용이 없게 조율
-- 반영 후, 이 요약을 반영한 결과로 ${SOOHA_CONTEXT} (Hermes측 파생 요약본, 같은 패턴 계층의 요약판)도 대응 섹션만 갱신해라 — 전체를 다시 쓰지 말고 바뀐 부분만 반영. 이 파일이 없으면(Hermes 미설치 환경 등) 생성하지 말고 건너뛰어라.
+- 3개 파일에 걸쳐 서로 모순되거나 중복되는 내용이 없게 조율 (hermes-agent 전달용 별도 파일은 쓰지 마라 — Vault가 정본이고, hermes-agent에는 hermes-sync.sh가 vault-context 블록으로 자동 전달한다)
 
 렌즈별 제안:
 ${JSON.stringify(withUpdates.map((l) => ({ 대상파일: l.file, 요약: l.result.summary, 제안내용: l.result.suggestedAddition, 근거: l.result.reasoning })), null, 2)}

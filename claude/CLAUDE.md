@@ -102,6 +102,14 @@
 |------|----------|------|------|
 | 2026-07-08 | 초기 구성 (에이전트 1·스킬 1·sync 훅) | agents/hermes-liaison, skills/hermes-bridge, hooks/hermes-sync | 헤르메스 도입(익일 예정) 사전 준비 |
 | 2026-07-08 | sync 버그 2건 수정 (게이트웨이 cwd 이중 주입 · AGENTS.md BOM 제거) — Windows 착오 설치(v0.18.2)에서 실측 발견 후 해당 설치는 제거 | hooks/hermes-sync.ps1/.sh, exports/HERMES-INTEGRATION.md | hermes는 AGENTS.md를 cwd에서만 로드하고 BOM 파일은 차단함. **오케스트레이터 설치 대상 = 맥미니** (Windows 업무 PC 아님) |
+| 2026-08-19 | 마커 블록 3종으로 확장: ①portable-rules에 "공통 지침 착지점(Vault 10_컨텍스트=정본)" 절 추가 ②Vault 연동 안내 정본화(hermes-vault-rules.md 신설 — 종전 `~/.hermes/AGENTS.md` 블록 밖에만 있어 실효 로드 파일 `~/AGENTS.md`에 전달 안 되던 결함 수정) ③vault-context 인덱스 캐시 블록(vault-index.py 재사용) | exports/portable-rules.md, exports/hermes-vault-rules.md(신설), hooks/hermes-sync.sh, exports/HERMES-INTEGRATION.md | 지침 3계(옵시디언·헤르메스·클로드코드) 단일 착지점 설계(옵션1+2) 승인 실행. 게이트웨이 실효 cwd=$HOME 실측 확인(terminal.cwd 플레이스홀더 폴백) |
+
+## 공통 지침 착지점 (Vault 10_컨텍스트 = 정본)
+
+- 사용자가 지속 적용될 지침·규칙·선호를 주면 옵시디언 Vault `10_컨텍스트`에 기록하세요 — Claude Code·hermes-agent 등 모든 AI 시스템의 공통 착지점(single source of truth)입니다. 쓰기 방법은 `claude-config/claude/protocols/vault-write.md` 참조(승인게이트 없음, 직접 Write/Edit 또는 `vault-obsidian` MCP).
+- Claude Code 자체 auto-memory(이 세션의 `~/.claude/projects/.../memory/`)는 캐시/보조로 취급하세요 — 지침 정본을 거기에만 남기지 마세요. 두 곳에 이중 기록해도 무방하되(auto-memory는 이 시스템 고유의 세션 요약·판단력 향상용), Vault 기록이 없으면 hermes-agent 등 다른 시스템이 그 지침을 영영 모릅니다.
+- 세션 시작 시 SessionStart 훅(`vault-context.sh`)이 `10_컨텍스트` 요약을 자동 주입합니다 — 그것부터 최신 지침으로 삼으세요.
+- 전파는 각 시스템의 다음 세션(시스템 프롬프트 재빌드)부터 반영됩니다 — 완전 실시간이 아닙니다.
 
 ## 사용자가 잊더라도 (능동적 보장)
 

@@ -33,13 +33,11 @@ SCOPE_FILE="$HOME/.claude/vault-scope.json"
     echo "신규 ${COUNT}건 감지 — 파이프라인 실행"
     CLAUDE_BIN="$(command -v claude || echo "$HOME/.local/bin/claude")"
     MEMORY_DIR="$HOME/.claude/projects/$(printf '%s' "$HOME" | sed 's#/#-#g')/memory"
-    SOOHA_CONTEXT_PATH="$HOME/hermes/SOOHA_CONTEXT.md"
     ARGS_JSON=$(jq -n \
       --arg vault10Path "$VAULT_PATH/10_컨텍스트" \
-      --arg soohaContextPath "$SOOHA_CONTEXT_PATH" \
       --arg utterancesPath "$DIR/gathered-utterances.json" \
       --arg memoryDirPath "$MEMORY_DIR" \
-      '{vault10Path: $vault10Path, soohaContextPath: $soohaContextPath, utterancesPath: $utterancesPath, memoryDirPath: $memoryDirPath}')
+      '{vault10Path: $vault10Path, utterancesPath: $utterancesPath, memoryDirPath: $memoryDirPath}')
 
     CLAUDE_EVENTS_OFF=1 CLAUDE_AUTOSYNC_OFF=1 "$CLAUDE_BIN" -p "$(cat <<PROMPT
 Workflow 도구로 $HOME/.claude/learning-pipeline/pipeline.workflow.js 를 scriptPath로, 다음 args와 함께 실행해라:
