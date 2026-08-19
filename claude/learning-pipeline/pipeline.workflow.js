@@ -1,6 +1,6 @@
 export const meta = {
   name: 'vault-learning-pipeline',
-  description: 'Claude Code(+Hermes) 대화에서 패턴을 뽑아 Vault 10_컨텍스트를 갱신 (hermes-agent 전달은 hermes-sync.sh의 vault-context 블록이 담당 — 2026-08-19 SOOHA_CONTEXT 레그 제거). 2026-08-19 Phase 1: 외부 사례(mem0/Graphiti) 기반 절대시간 고정 + 기존항목 재확인 카운트 + confidence×harm 반영기준 추가. Phase 2: Graphiti/mem0식 비파괴적 반영(삭제 대신 "폐기됨" 표시 후 신규 추가). Phase 3: Letta식 리플렉션 게이트 — 세션 내 자기정정 감지 후 렌즈에 전달(실패해도 파이프라인은 계속). Phase 4: Letta 스킬 파일식 감사 기록 — 매 실행분을 90_Hermes/학습이력/에 별도 파일로 먼저 남긴 뒤 캐노니컬 노트에 반영(vault90HermesPath 없으면 건너뜀). Phase 5(토큰최적화): 리플렉션+렌즈 3개 프롬프트가 전부 "다음 사용자 발화 데이터셋을 읽어라" 문장으로 동일하게 시작하도록 재배치 — Anthropic 공식 팬아웃 캐시공유 조건(동일 프리픽스) 충족 목적, 정보 내용은 불변 — 상세는 Vault 90_Hermes/보고서/2026-08-19_학습파이프라인-외부사례기반-고도화기획.md',
+  description: 'Claude Code(+Hermes) 대화에서 패턴을 뽑아 Vault 10_컨텍스트를 갱신 (hermes-agent 전달은 hermes-sync.sh의 vault-context 블록이 담당 — 2026-08-19 SOOHA_CONTEXT 레그 제거). 2026-08-19 Phase 1: 외부 사례(mem0/Graphiti) 기반 절대시간 고정 + 기존항목 재확인 카운트 + confidence×harm 반영기준 추가. Phase 2: Graphiti/mem0식 비파괴적 반영(삭제 대신 "폐기됨" 표시 후 신규 추가). Phase 3: Letta식 리플렉션 게이트 — 세션 내 자기정정 감지 후 렌즈에 전달(실패해도 파이프라인은 계속). Phase 4: Letta 스킬 파일식 감사 기록 — 매 실행분을 90_Hermes/학습이력/에 별도 파일로 먼저 남긴 뒤 캐노니컬 노트에 반영(vault90HermesPath 없으면 건너뜀). Phase 5(토큰최적화): 리플렉션+렌즈 3개 프롬프트가 전부 "다음 사용자 발화 데이터셋을 읽어라" 문장으로 동일하게 시작하도록 재배치 — Anthropic 공식 팬아웃 캐시공유 조건(동일 프리픽스) 충족 목적, 정보 내용은 불변 — 상세는 Vault 90_Hermes/보고서/2026-08-19_학습파이프라인-외부사례기반-고도화기획.md. Phase 6(2026-08-19, 자가고도화 루프 딥인터뷰): 종합단계 요약 맨 앞줄에 "재확인 N / 신규 M" 집계를 추가 — 실시간 패턴 기록(대화 중 즉시 반영)이 이번 주 무엇을 놓쳤는지 사후 감사하는 역할. 새 렌즈·새 LLM 호출 없이 기존 hasUpdate/summary만으로 집계(비용 불변).',
   phases: [
     { title: '리플렉션' },
     { title: '추출' },
@@ -124,7 +124,15 @@ const lensResults = await parallel(LENSES.map((lens) => () =>
 ))
 
 const withUpdates = lensResults.filter(Boolean).filter((l) => l.result?.hasUpdate)
-log(`추출 완료 — ${withUpdates.length}/${LENSES.length}개 렌즈에서 갱신 제안 발견`)
+
+// Phase 6: 재확인(실시간이 이미 잡았음) vs 신규(이번에 처음 잡힘 — 실시간이 놓쳤을 수 있음) 집계.
+// 렌즈 단위 집계다(패턴 건수 아님 — 렌즈 1개가 신규+재확인을 동시에 내면 summary 접두사에 따라 한쪽으로만 잡힘, 최대 3).
+// 새 렌즈·새 agent() 호출 없음 — 이미 있는 summary의 "[재확인]" 접두사만으로 판별(비용 불변).
+// String()+trimStart(): summary가 숫자 등 비문자열이거나 앞에 공백이 붙어도 안전하게 판별.
+const reconfirmedCount = withUpdates.filter((l) => String(l.result?.summary || '').trimStart().startsWith('[재확인]')).length
+const newCount = withUpdates.length - reconfirmedCount
+// 결정적 기록(0건 분기·LLM 복창 누락과 무관하게 항상 남음).
+log(`추출 완료 — ${withUpdates.length}/${LENSES.length}개 렌즈에서 갱신 제안 발견 (재확인 렌즈 ${reconfirmedCount} / 신규 렌즈 ${newCount})`)
 
 if (withUpdates.length === 0) {
   log('갱신할 새 패턴 없음 — 반영 단계 건너뜀')
@@ -147,7 +155,7 @@ ${VAULT_90_HERMES ? `- 감사 기록: 아래 렌즈별 제안을 검토해서 �
 렌즈별 제안:
 ${JSON.stringify(withUpdates.map((l) => ({ 대상파일: l.file, 요약: l.result.summary, 제안내용: l.result.suggestedAddition, 근거: l.result.reasoning, 대체대상: l.result.supersedes || '', 리플렉션영향: !!l.result.basedOnReflection })), null, 2)}
 
-작업 후 5줄 이내로 요약해서 답하라: 무엇을 어느 파일에 반영했는지.${VAULT_90_HERMES ? ' 그리고 감사 기록 파일을 실제로 썼는지 — 썼으면 정확한 경로, 못 썼거나 생략했으면 그 이유를 명시적으로 밝혀라(자기보고이니 사실대로).' : ''}`
+작업 후 5줄 이내로 요약해서 답하라: 첫 줄은 반드시 "실시간 기록 감사: 재확인 렌즈 ${reconfirmedCount}개(이미 실시간에 잡혔음) / 신규 렌즈 ${newCount}개(이번에 처음 잡힘, 실시간이 놓쳤을 수 있음)" 그대로(숫자는 이미 계산돼 있으니 다시 세지 마라) — 그다음 줄들에 무엇을 어느 파일에 반영했는지.${VAULT_90_HERMES ? ' 그리고 감사 기록 파일을 실제로 썼는지 — 썼으면 정확한 경로, 못 썼거나 생략했으면 그 이유를 명시적으로 밝혀라(자기보고이니 사실대로).' : ''}`
 
   const synthesis = await agent(synthesisPrompt, { label: 'synthesis', phase: '종합/반영', model: 'opus' })
   log(`반영 완료: ${synthesis}`)
