@@ -50,6 +50,12 @@
 
 - 비자명한 작업은 코드를 건드리기 전에 먼저 계획을 세워 제시하고, 단계로 나눠 진행하세요.
 
+## 크로스 시스템 패턴 이식 (타 AI 연동)
+
+- Claude Code로 구현한 것(코드·훅·설정)이 다른 AI 시스템(헤르메스·코덱스 등)에 그대로 안 돌아가도 거기서 멈추지 마세요. 구현물에서 패턴(원칙·구조·판단 기준)만 추출해 대상 시스템에 맞는 최적화 방안을 설계하고, 적용은 추천(드래프트/제안) 형태로 사람 승인 후 진행합니다. 패턴은 골라내지 않고 전부 흡수 대상으로 삼습니다 — 이식 자리가 없으면 그 사실과 대안을 보고하세요.
+- 예: 3티어 워크포스(claude-config 전용 코드)는 헤르메스에 코드로 이식 불가 → 원칙만 추출해 헤르메스 `routing-self-review` 크론이 자기 `config.yaml`과 대조 → Vault `90_Hermes/라우팅제안/`에 드래프트만 작성 → 사람 승인 후 적용.
+- 정본은 Vault `10_컨텍스트/업무_원칙_방법론.md` §4-14(§4-9 "불가능 단정 금지"와 연결). 이 절은 그 배포본. (2026-08-20 사용자 지시)
+
 ## 작업 플레이북 (작업유형 카탈로그)
 
 - 공통 작업유형(요구사항 확정·리서치·의사결정·검토)은 `claude-config/claude/playbooks/`(레포 경로는 `~/.claude/.config-sync-path`)의 플레이북을 참조해 *일하는 법*을 일관되게 적용하세요(도메인 무관·콜드스타트 시드). 비자명 작업이면 해당 플레이북의 **품질 바**를 완료 기준으로 삼습니다. 발견·적용·증식 절차는 `claude/skills/playbooks/SKILL.md`.
@@ -118,6 +124,8 @@
 | 2026-07-08 | sync 버그 2건 수정 (게이트웨이 cwd 이중 주입 · AGENTS.md BOM 제거) — Windows 착오 설치(v0.18.2)에서 실측 발견 후 해당 설치는 제거 | hooks/hermes-sync.ps1/.sh, exports/HERMES-INTEGRATION.md | hermes는 AGENTS.md를 cwd에서만 로드하고 BOM 파일은 차단함. **오케스트레이터 설치 대상 = 맥미니** (Windows 업무 PC 아님) |
 | 2026-08-19 | 마커 블록 3종으로 확장: ①portable-rules에 "공통 지침 착지점(Vault 10_컨텍스트=정본)" 절 추가 ②Vault 연동 안내 정본화(hermes-vault-rules.md 신설 — 종전 `~/.hermes/AGENTS.md` 블록 밖에만 있어 실효 로드 파일 `~/AGENTS.md`에 전달 안 되던 결함 수정) ③vault-context 인덱스 캐시 블록(vault-index.py 재사용) | exports/portable-rules.md, exports/hermes-vault-rules.md(신설), hooks/hermes-sync.sh, exports/HERMES-INTEGRATION.md | 지침 3계(옵시디언·헤르메스·클로드코드) 단일 착지점 설계(옵션1+2) 승인 실행. 게이트웨이 실효 cwd=$HOME 실측 확인(terminal.cwd 플레이스홀더 폴백) |
 | 2026-08-20 | 4중 동기화로 확장: 코덱스 CLI(`~/.codex`, 오늘 설치·GPT 구독 연동)를 규칙 동기화 4번째 대상으로 추가(codex-sync.sh 신설 — hermes-sync.sh와 같은 마커 블록 upsert 패턴, 대상은 `~/.codex/AGENTS.md` 1곳). 코덱스는 `$CODEX_HOME/AGENTS.md`를 cwd 무관 전역 지침으로 로드함을 실측 검증(테스트 마커 삽입 후 다른 cwd에서 `codex exec` 실행 → 그대로 인용됨). 헤르메스 쪽엔 별도로 주간 라우팅 자가점검 크론(`routing-self-review`, 매주 월 10:00) 등록 — 3티어 워크포스 SKILL.md와 자기 config.yaml의 provider/model 매핑을 대조해 불일치를 찾되, 제안은 Vault `90_Hermes/라우팅제안/` 드래프트로만 쓰고 config.yaml은 직접 수정하지 않음(사람 승인 원칙, §5.10과 동일 거버넌스를 헤르메스에도 적용) | hooks/codex-sync.sh(신설), exports/codex-vault-rules.md(신설), install.sh(hooks 링크·chmod 목록에 codex-sync.sh 추가 — vault-context.sh 때와 같은 "링크 누락 시 exit 127로 조용히 실패" 함정 재확인 후 반영. settings 자체 머지 로직은 기존 범용 코드 그대로, 변경 없음), settings.json(SessionStart 체인), hermes cron `routing-self-review` | 사용자 승인(2026-08-20, "4중 동기화로 가자") |
+
+| 2026-08-20 | Codex 2단계 안전화: Hermes 홈 AGENTS 격리, context-only 동기화와 명시적 보호 배포 분리, `vault_safe` permission profile로 `00_홈.md` read-only, 보호 훅·validator·scope 일반 파일 배포, case/hardlink/MCP/write_stdin 회귀 게이트 추가 | codex/, shared/skills/obsidian-vault/, hooks/codex-sync.sh, exports/codex-vault-rules.md, install.sh | 외부 검토에서 symlink 런타임·대소문자 alias·임의 deploy·훅 단독 경계 우회가 실증되어 구조적 sandbox 경계를 추가 |
 
 ## 공통 지침 착지점 (Vault 10_컨텍스트 = 정본)
 
