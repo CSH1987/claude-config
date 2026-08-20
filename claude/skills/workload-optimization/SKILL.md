@@ -59,7 +59,7 @@ description: 품질을 깎지 않는 작업량(토큰·비용) 최적화 규칙 
 | 스테이지 | 티어 | 경로 | 호출 방식 |
 |---|---|---|---|
 | 설계 | top | `opus` alias | 메인 세션(plan 단계) |
-| 검토 | **mid**(신설) | env 슬롯 `CLAUDE_CONFIG_MID_MODEL`(concrete id) | **headless 전용** |
+| 검토 | **mid**(신설) | env 슬롯 `CLAUDE_CONFIG_MID_MODEL`(concrete id, 세대별 Opus를 이름으로 자동 감지·유지 — model-watch, 2026-08-20) | **headless 전용** |
 | 최종산출 | exec | `sonnet` alias | **Agent 도구 세션 내 경로 전용** — headless 대상 아님 |
 
 Haiku는 릴레이 무관(기존 탐색·대량기계적 역할 그대로).
