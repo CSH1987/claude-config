@@ -22,7 +22,7 @@ description: 품질을 깎지 않는 작업량(토큰·비용) 최적화 규칙 
 - 판단 기준 한 줄: "**무엇을 만들지/어떻게 갈지 스스로 정해야 하면** top, **주어진 기준으로 합격·불합격만 판정하면** mid, **정해진 스펙을 그대로 수행하면** sonnet."
 - 메인 세션의 하이브리드 = **적응형 플랜**(설정값은 Claude Code 내장 별칭 `opusplan`): 플랜=Fable 5, 실행=Sonnet 5 자동 전환. 새 프런티어 모델이 나오면 model-watch 가 env 재매핑만 갱신해 자동 적응(직지정 금지). 실행 중 결정 지점은 어드바이저(`advisorModel: fable`)가 자동 보강.
 - **2026-08-18 조정**: `code-simplifier`를 opus→sonnet으로 하향. 원인은 [[fable-usage-balancing-routing]] 메모리가 명시한 opus 우선 원칙(2026-07-18, Fable 활용도가 낮다는 이유로 도입)이 실제로는 대형 워크플로의 opus-tier 서브에이전트 위임 건수를 늘려 Fable 사용량 급증으로 이어졌기 때문(ccusage 실측: 14일 Fable 지출의 62%가 세션 3개에 집중, 그중 다수가 Task/Agent 서브에이전트 위임). `code-simplifier`는 판단보다 절차적 성격이 강해 가장 낮은 리스크로 하향. 나머지 판단역할(planner·architect·critic 등)은 opus 유지.
-- **2026-08-20 조정 — 3티어 워크포스**: 위 62% 집중분을 역할별로 실측 분해한 결과(세션 트랜스크립트 직접 집계), 지배 역할은 비평·synthesis가 아니라 **code-reviewer/security-reviewer 검증·리뷰 위임**이었다(사회자/synthesis 서브에이전트는 검증 대상 세션에서 0건). "지시받은 기준으로 판단만 하는" 검증·리뷰·판정 역할은 top(Fable)까지 필요치 않다고 보고 mid(Opus 5)로 분리 — 기획·비평·synthesis처럼 스스로 방향을 정하는 역할만 top에 남긴다. Opus 5 정가는 Fable 5의 50%(2026-08 공식 요금표 확인 — 이 환경은 구독 OAuth 전용이라 실제 청구액이 아닌 정가 기준 비교치, 실제 절감 효과는 아래 §5.10의 실측 루프로 확인). 상세 라우팅 방법·fan-out 규약은 아래 "워크포스 라우팅" 절. [[fable-usage-balancing-routing]] 메모리도 이 역할 분해로 갱신.
+- **2026-08-20 조정 — 3티어 워크포스**: 위 62% 집중분을 역할별로 실측 분해한 결과(세션 트랜스크립트 직접 집계), 지배 역할은 비평·synthesis가 아니라 **code-reviewer/security-reviewer 검증·리뷰 위임**이었다(사회자/synthesis 서브에이전트는 검증 대상 세션에서 0건). "지시받은 기준으로 판단만 하는" 검증·리뷰·판정 역할은 top(Fable)까지 필요치 않다고 보고 mid(Opus 5)로 분리 — 기획·비평·synthesis처럼 스스로 방향을 정하는 역할만 top에 남긴다. Opus 5 정가는 Fable 5의 50%(2026-08 공식 요금표 확인 — 이 환경은 구독 OAuth 전용이라 실제 청구액이 아닌 정가 기준 비교치, 실제 절감 효과는 아래 §5.10의 실측 루프로 확인). 상세 라우팅 방법·fan-out 규약은 아래 §5.10. [[fable-usage-balancing-routing]] 메모리도 이 역할 분해로 갱신.
 
 ## 2. 컨텍스트 절약 (지출의 최대 지분)
 
@@ -117,7 +117,7 @@ settings의 mid 값을 손수 변경 + `~/.claude/model-watch/pin-mid` 생성(�
 - **로테이션 정책**: 주 1회 jq 점검 시 5,000줄(≈1MB) 초과면 `metrics-YYYYMM.jsonl`로 수동 이관 — 훅 없음 원칙 유지.
 - 한계 수용: 훅이 아닌 지침 기반이므로 기록 누락 가능 — 주 1회 jq 점검을 위 §4 측정 루틴에 편입해 누락 발견 시 보정한다. "새 자동화 훅 금지" 제약과의 의도적 트레이드오프.
 
-### 워크포스 라우팅 — 검증·리뷰·판정형 Workflow 스테이지 (2026-08-20)
+### §5.10 워크포스 라우팅 — 검증·리뷰·판정형 Workflow 스테이지 (2026-08-20)
 
 Fable=기획(top)·Opus 5=지시받은 기준으로 판단만 하는 "검증 직원"(mid)·Sonnet=구현(exec)이라는 3티어 워크포스를 Workflow 오케스트레이션(그래프 엔지니어링)에 적용하는 규약. §1 티어맵의 mid 행(code-reviewer/security-reviewer/verifier)과 위 릴레이 mid를 Workflow `agent()` 호출 단위로 구체화한다. **적용 범위는 Workflow `agent()` 경로에 한정** — §1에 명시했듯 Task(Agent) 도구로 같은 역할을 위임할 땐 alias enum 제약 때문에 opus(=top/Fable)로 대체되므로, Task 경로로 위임되는 몫에는 이 절의 mid 라우팅·절감이 적용되지 않는다.
 
