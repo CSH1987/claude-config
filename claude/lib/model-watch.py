@@ -9,11 +9,16 @@ The remap is also propagated to the local claude-config repo copy, so config-syn
 it to every machine on its normal commit/push/pull/deploy cycle.
 
 Mid tier (3단 릴레이 검토 슬롯): env CLAUDE_CONFIG_MID_MODEL holds the review-stage
-model. On a frontier swap the OUTGOING top cascades into it (the only deterministic
-source - never a position in the detected model list); every probe also checks the slot
-(exists / != top / valid) and recovers it from history when broken. Human intent always
-wins: a ~/.claude/model-watch/pin-mid file or state mid_source=="manual" turns ALL mid
-automation (cascade / consistency check / recovery) off.
+model. PRIORITY 1: the same detect_models() call that extracts top/sonnet also extracts
+a same-generation named Opus id (OPUS_ID_RE) from the models line - when present and
+distinct from top, it is promoted into mid directly (check_opus_mid, mid_source
+"named"). PRIORITY 2 (fallback, only when no named Opus is detected or it collides with
+top): on a frontier swap the OUTGOING top cascades into mid (the only deterministic
+position-free source); every probe also checks the slot (exists / != top / valid) and
+recovers it from history when broken. Human intent always wins: a
+~/.claude/model-watch/pin-mid file or state mid_source=="manual" turns ALL mid
+automation (named / cascade / consistency check / recovery) off. fallbackModel[0] is
+kept mirroring whatever the mid slot currently holds (new scope - see FALLBACK_KEY).
 
 Sonnet tier (env ANTHROPIC_DEFAULT_SONNET_MODEL) + GH Actions file sync: unlike mid,
 this tier IS independently detected - the same detect_models() call that extracts the
@@ -79,6 +84,8 @@ ENV_KEY = "ANTHROPIC_DEFAULT_OPUS_MODEL"  # adaptive plan: the frontier id lives
 MID_ENV_KEY = "CLAUDE_CONFIG_MID_MODEL"  # relay mid tier (review stage): claude-config owned slot, NOT a native alias env
 SONNET_ENV_KEY = "ANTHROPIC_DEFAULT_SONNET_MODEL"  # exec tier: also mirrored into 7 GH Actions files (see SONNET_SYNC_FILES)
 SONNET_ID_RE = r"claude-sonnet-[0-9][a-z0-9.\-]*"
+OPUS_ID_RE = r"claude-opus-[0-9][a-z0-9.\-]*"
+FALLBACK_KEY = "fallbackModel"  # settings.json array; existing convention is [opus-ish, sonnet]
 
 # Files (repo-relative) whose embedded Sonnet literal must mirror ANTHROPIC_DEFAULT_SONNET_MODEL.
 # GH Actions CI cannot read local settings.json env remaps (separate execution environment), so
@@ -191,21 +198,25 @@ def run_claude(prefix, args, prompt):
 
 
 def detect_models(prefix):
-    """Ask a headless session for the current frontier AND sonnet-tier model ids in ONE
-    call (same DETECT_PROMPT / ids list) - a second independent call would double the
-    live-probe cost and could race a mid-rollout inconsistency between two answers.
+    """Ask a headless session for the current frontier, sonnet-tier AND opus-tier model
+    ids in ONE call (same DETECT_PROMPT / ids list) - additional independent calls would
+    multiply the live-probe cost and could race a mid-rollout inconsistency between
+    answers.
 
     EXTRACTION, not judgment: models answer "which is most capable" with self-bias
     (opus judged opus; haiku judged sonnet - both wrong). Extracting the env
     block's "The most recent Claude models are ..." line verbatim is reliable:
-    Anthropic lists the frontier family FIRST, so list[0] is the frontier answer;
-    the sonnet answer is whichever listed id matches SONNET_ID_RE (position-independent -
-    plan_mid_cascade()'s docstring explains why position can't be trusted for anything
-    but the frontier's fixed-first convention).
+    Anthropic lists the frontier family FIRST, so list[0] is the frontier answer; the
+    sonnet/opus answers are whichever listed id matches SONNET_ID_RE/OPUS_ID_RE
+    (position-independent - plan_mid_cascade()'s docstring explains why position can't
+    be trusted for anything but the frontier's fixed-first convention). opus_id is a raw
+    pattern match only - it may equal the frontier id in a future generation where an
+    "opus"-branded model IS the top; callers (check_opus_mid) are responsible for the
+    top-collision guard, not this function.
     Judge = the currently configured model (no --model flag -> today's frontier
     detects tomorrow's), falling back to the `opus` alias if that call fails
     (e.g. the configured id was deprecated).
-    Returns (top_id | None, sonnet_id | None)."""
+    Returns (top_id | None, sonnet_id | None, opus_id | None)."""
     for model_args in ([], ["--model", "opus"]):
         try:
             rc, out = run_claude(prefix, ["-p"] + model_args, DETECT_PROMPT)
@@ -227,14 +238,15 @@ def detect_models(prefix):
         ]
         mc = str(obj.get("most_capable_id", "")).strip()
         sonnet = next((i for i in ids if re.fullmatch(SONNET_ID_RE, i)), None)
+        opus = next((i for i in ids if re.fullmatch(OPUS_ID_RE, i)), None)
         if not ids:
             if re.fullmatch(ID_RE, mc):
-                return mc, sonnet
+                return mc, sonnet, opus
             continue
         if mc and mc != ids[0]:  # structural order beats soft judgment; keep a trace
             log_history({"event": "detect_disagreement", "list_first": ids[0], "most_capable": mc})
-        return ids[0], sonnet
-    return None, None
+        return ids[0], sonnet, opus
+    return None, None, None
 
 
 def model_valid(prefix, model):
@@ -397,6 +409,133 @@ def repo_root():
         return None
 
 
+def propagate_mid_to_repo(new_mid):
+    """Best-effort mirror of a NAMED-DETECTION mid update into the repo settings.json,
+    same config-sync fleet distribution as propagate_sonnet_to_repo(). Distinct from
+    propagate_to_repo()'s cascade-mid write (bundled with a top remap, stale-guarded by
+    repo_top_already_new) - a named-detection mid update can happen on its own, with no
+    frontier swap involved. Never raises; skipped silently when the repo is absent."""
+    repo = repo_root()
+    if not repo:
+        return
+    try:
+        rs = os.path.join(repo, "claude", "settings.json")
+        s = load_json(rs)
+        if not isinstance(s, dict):
+            return
+        env = s.setdefault("env", {})
+        if not isinstance(env, dict):
+            return
+        if env.get(MID_ENV_KEY) == new_mid:
+            return
+        env[MID_ENV_KEY] = new_mid
+        write_json_atomic(rs, s)
+        log_history({"event": "repo_mid_propagated", "to": new_mid})
+    except Exception:
+        pass
+
+
+def check_opus_mid(prefix, ids_opus, top):
+    """Named-detection for the mid slot (PRIORITY 1, see module docstring): promotes a
+    same-probe-detected current-generation Opus id into mid, ahead of the legacy
+    frontier-swap cascade (plan_mid_cascade) and the recovery scan
+    (check_and_recover_mid) - those remain live as PRIORITY 2 fallbacks for when no
+    named Opus is present in the models line, or it collides with top (guard below).
+    Gated by mid_gate() (pin-mid / mid_source=="manual" - human intent wins, silently,
+    same as the cascade/recovery paths).
+    Top-collision guard: if the detected Opus id equals the current top (base_id
+    compare), skip entirely - a future generation where an "opus"-named model IS the
+    frontier must not collapse mid==top; the cascade/recovery fallbacks stay live for
+    that case.
+    Returns a notice string ("named:<id>") or None (no change / gated / not detected /
+    top-collision / validation failed)."""
+    if mid_gate(read_state()):
+        return None
+    if not ids_opus:
+        return None
+    if base_id(ids_opus) == base_id(top):
+        return None  # top-collision guard: never let mid == top via named detection
+    s = load_json(SETTINGS) or {}
+    cur = read_mid(s)
+    if base_id(ids_opus) == base_id(cur):
+        return None  # already current
+    if not model_valid(prefix, ids_opus):
+        log_history({"event": "mid_named_validation_failed", "detected": ids_opus})
+        return None
+    if not set_local_mid(ids_opus):
+        return None
+    propagate_mid_to_repo(ids_opus)
+    st = read_state()
+    st["mid_source"] = "named"
+    write_state(st)
+    log_history({"event": "mid_named_update", "from": cur or None, "to": ids_opus})
+    return "named:%s" % ids_opus
+
+
+def sync_fallback_slot(path, idx, new_id):
+    """Update fallbackModel[idx] in the settings.json at `path` to new_id, in place.
+    Non-destructive: if fallbackModel is missing, not a list, or too short, the array is
+    left untouched (logged as a shape skip - accepted as a dormant/rare path since every
+    fleet settings.json today has a 2-item array, not worth stateful dedup logging) rather
+    than reshaped/extended. Backs up the LOCAL settings.json first (same .bak.<epoch>
+    convention as set_local_mid/set_local_sonnet); the repo copy is git-versioned already,
+    so no backup is taken there (mirrors propagate_to_repo's convention). Returns True iff
+    the file was actually written. Never raises."""
+    try:
+        s = load_json(path)
+        if not isinstance(s, dict):
+            return False
+        arr = s.get(FALLBACK_KEY)
+        if not isinstance(arr, list) or len(arr) <= idx:
+            log_history({"event": "fallback_sync_skipped_shape", "path": path, "idx": idx})
+            return False
+        if arr[idx] == new_id:
+            return False
+        if path == SETTINGS:
+            try:
+                shutil.copy2(path, path + ".bak.%d" % int(time.time()))
+            except Exception:
+                pass
+        arr[idx] = new_id
+        write_json_atomic(path, s)
+        return True
+    except Exception:
+        return False
+
+
+def sync_fallback_from_env(idx, env_key, id_re):
+    """Mirror fallbackModel[idx] to match env[env_key] - independently for the LOCAL
+    settings.json and the REPO settings.json, each derived from THAT SAME FILE's own
+    env value, never from the other file or from a value computed on this machine and
+    pushed cross-file. This matters for multi-machine correctness: writing this
+    machine's local mid/sonnet value into the REPO's fallback slot could clobber a
+    fresher value another machine already wrote to the repo's own env slot, leaving repo
+    env and repo fallback mutually inconsistent until the next deploy/probe cycle
+    converges them (found by code-reviewer, reproduced in isolation, fixed by this
+    per-file derivation instead of a shared-value push).
+    idx 0 = mid (env_key=MID_ENV_KEY, id_re=ID_RE), idx 1 = sonnet
+    (env_key=SONNET_ENV_KEY, id_re=SONNET_ID_RE). NEW SCOPE: model-watch did not manage
+    fallbackModel before this. Best-effort, never raises; a file whose own env value is
+    absent/invalid is skipped (logged), and a missing repo checkout is skipped silently."""
+    paths = [("local", SETTINGS)]
+    repo = repo_root()
+    if repo:
+        paths.append(("repo", os.path.join(repo, "claude", "settings.json")))
+    for label, path in paths:
+        s = load_json(path)
+        if not isinstance(s, dict):
+            continue
+        env = s.get("env") if isinstance(s.get("env"), dict) else {}
+        cur = base_id((env.get(env_key) or "").strip())
+        if not cur:
+            continue
+        if not re.fullmatch(id_re, cur):
+            log_history({"event": "fallback_sync_skipped_invalid", "scope": label, "idx": idx, "cur": cur})
+            continue
+        if sync_fallback_slot(path, idx, cur):
+            log_history({"event": "fallback_synced" if label == "local" else "repo_fallback_synced", "idx": idx, "to": cur})
+
+
 def sonnet_gate(st):
     """Source gate (사람 의도 우선), mirrors mid_gate: a pin-sonnet file or state
     sonnet_source=="manual" means a human set the sonnet value deliberately - detection
@@ -534,6 +673,7 @@ def check_sonnet(prefix, ids_sonnet):
     base = base_id(cur)
     if base and re.fullmatch(SONNET_ID_RE, base):
         sync_sonnet_files(base)
+        sync_fallback_from_env(1, SONNET_ENV_KEY, SONNET_ID_RE)  # fallbackModel[1] mirrors sonnet
     elif cur:
         log_history({"event": "sonnet_sync_skipped_invalid", "cur": cur})
     return notice
@@ -643,7 +783,7 @@ def probe():
     s = s if isinstance(s, dict) else {}
     cur, mode = effective_frontier(s)
 
-    top, ids_sonnet = detect_models(prefix)
+    top, ids_sonnet, ids_opus = detect_models(prefix)
     st = read_state()
     st["top"] = top
     st["probed_at"] = now_iso()
@@ -654,7 +794,16 @@ def probe():
 
     # Mid consistency check runs BEFORE the top early-return on purpose: it must
     # also catch the "top already current but mid broken" case.
-    mid_note = check_and_recover_mid(prefix, s, top)
+    # Named detection (PRIORITY 1) runs first; check_and_recover_mid (PRIORITY 2,
+    # cascade/recovery) only fires when named detection made no change this probe.
+    mid_named_note = check_opus_mid(prefix, ids_opus, top)
+    mid_note = mid_named_note or check_and_recover_mid(prefix, s, top)
+    # fallbackModel[0] mirrors whatever the mid slot ends up holding this probe,
+    # regardless of which path (named/recovery/manual edit) produced it - gated by
+    # mid_gate() too, same as detection/cascade/recovery: a human who pinned mid wants
+    # NO automated writes tied to that slot, fallback mirror included.
+    if not mid_gate(read_state()):
+        sync_fallback_from_env(0, MID_ENV_KEY, ID_RE)
 
     # Sonnet check also runs BEFORE the top early-return, for the same reason as mid:
     # a sonnet-tier swap (or GH Actions file drift) must not wait for a frontier swap.
@@ -682,9 +831,11 @@ def probe():
             queue_sonnet_notice(sonnet_note)
         return
 
-    # Frontier swap: cascade the outgoing top into the mid slot (adaptive plan only).
+    # Frontier swap: cascade the outgoing top into the mid slot (adaptive plan only) -
+    # PRIORITY 2 fallback, skipped when named detection already updated mid this probe
+    # (mid_named_note truthy) so the cascade cannot clobber a fresher named value.
     new_mid, cascade_note = (None, None)
-    if mode == "env":
+    if mode == "env" and not mid_named_note:
         new_mid, cascade_note = plan_mid_cascade(prefix, cur, top)
     old_mid = read_mid(load_json(SETTINGS) or {})  # fresh read: recovery may have run above
 
@@ -717,6 +868,7 @@ def probe():
     log_history({"event": "remapped" if mode == "env" else "switched", "from": old, "to": chosen})
     if new_mid and status == "applied":
         log_history({"event": "mid_cascaded", "from": old_mid or None, "to": new_mid})
+        sync_fallback_from_env(0, MID_ENV_KEY, ID_RE)
 
 
 def spawn_probe_detached():
@@ -764,7 +916,7 @@ def start():
             lines.append(
                 "[model-watch] mid 슬롯(%s) 처리: %s. "
                 "수동 고정: ~/.claude/model-watch/pin-mid 생성(또는 state.json mid_source=\"manual\") — "
-                "이후 자동 캐스케이드·복구가 이 값을 건드리지 않습니다."
+                "이후 자동 감지·캐스케이드·복구가 이 값을 건드리지 않습니다."
                 % (MID_ENV_KEY, notice.get("mid"))
             )
         if notice.get("sonnet"):
