@@ -47,9 +47,9 @@ fi
 color="\033[32m"  # 기본: 초록(<50%)
 tag=""
 if [ -n "$pct_int" ]; then
-  if   [ "$pct_int" -ge 90 ]; then color="\033[1;31m"; tag=" 🔴 지금 정리!"    # 굵은 빨강(90%+, 즉시 정리)
-  elif [ "$pct_int" -ge 60 ]; then color="\033[33m";   tag=" 🟠 정리 고려"     # 주황(60%+, 정리 고려)
-  elif [ "$pct_int" -ge 30 ]; then color="\033[93m";   tag=" 🟡"              # 노랑(30%+, 인지만 — 저하 체감 시작 구간)
+  if   [ "$pct_int" -ge 90 ]; then color="\033[1;31m"; tag=" 🔴 지금 정리!(/compact)"    # 굵은 빨강(90%+, 즉시 정리)
+  elif [ "$pct_int" -ge 60 ]; then color="\033[33m";   tag=" 🟠 정리 고려(/compact)"     # 주황(60%+, 정리 고려)
+  elif [ "$pct_int" -ge 30 ]; then color="\033[93m";   tag=" 🟡 저하 체감 시작(/compact)"  # 노랑(30%+, 인지만 — 저하 체감 시작 구간. 명령어는 참고용, 반드시 지금 실행하라는 뜻 아님)
   fi
 fi
 reset="\033[0m"
