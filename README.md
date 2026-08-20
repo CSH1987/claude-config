@@ -17,26 +17,58 @@
 
 ## 0. 사전 준비 (새 머신, 한 번만)
 
-- **Claude Code CLI** 설치 + 로그인 (예: `npm i -g @anthropic-ai/claude-code`)
-- (선택) github MCP 토큰용으로 한 번 `gh auth login` — 아래 한 줄이 `gh` 를 자동 설치하니 그 뒤 로그인만 하면 됩니다. 안 해도 나머지 설정은 그대로 적용됩니다.
+- 통합 온라인 복구는 `git`·`gh`·Node와 누락된 CLI를 점검/설치하고, 필요한 로그인은 각 공식 CLI의 대화형 화면으로 넘깁니다.
+- GitHub 로그인은 private Vault clone과 이후 push에 필수입니다. 토큰은 스크립트가 읽거나 레포에 저장하지 않습니다.
 
-> 레포는 **공개**라 clone 에 인증이 필요 없고, 아래 **한 줄**이 git·gh·node 설치까지 알아서 합니다.
+> 설정 레포는 **공개**, 개인 Vault는 **비공개**입니다. 공개 레포에는 Vault 경로·API 키·토큰을 넣지 않습니다.
 
 ---
 
-## 1. 새 머신 셋업 — 진짜 "한 줄" (복붙, 이거 하나만 저장해 다니면 됨)
+## 1. 새 머신 셋업
 
-### 🍎 macOS / 🐧 Linux  (터미널)
+### 🍎 macOS / 🐧 Linux — 통합 온라인 복구(권장)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/CSH1987/claude-config/main/online-bootstrap.sh | bash
+```
+
+이 한 줄이 기존 `bootstrap.sh`/`install.sh`를 먼저 실행한 뒤 다음을 이어서 처리합니다.
+
+- 인증된 GitHub 계정의 `vault-backup` **PRIVATE** 저장소 확인 → `~/Documents/Vault` clone/update
+- `~/.claude/vault-scope.json`과 Hermes `.env`에 로컬 Vault 경로를 비밀 없이 원자적으로 연결
+- Obsidian·Claude Code·Codex·Hermes CLI 설치 여부 점검, 누락 항목 설치 시도
+- GitHub/Claude/Codex/Hermes 인증은 공식 대화형 로그인으로 인계
+- Codex/Hermes 공통 지침 동기화와 Git behind/ahead `0/0` 검증
+- 같은 명령을 다시 실행해도 같은 결과를 내는 멱등 복구
+
+Vault 저장소명/경로가 다르면 clone 전에 명시합니다.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/CSH1987/claude-config/main/online-bootstrap.sh | \
+  bash -s -- --vault-repo OWNER/PRIVATE_REPO --vault-path "$HOME/Documents/Vault"
+```
+
+Hermes CLI와 공통 규칙은 여러 장치에 둘 수 있지만, gateway·Telegram·cron 상시 운영은 Mac mini 한 곳에서만 합니다. 다른 장치에서 Hermes CLI도 필요 없으면 `--without-hermes`를 붙입니다.
+
+### 장치마다 한 번 필요한 Obsidian 단계
+
+- 처음 연 Vault에서 community plugins 사용을 신뢰/활성화해야 `obsidian-git`과 Local REST API가 동작합니다.
+- Local REST API 키와 Claude의 `vault-obsidian` MCP `Authorization` 헤더는 장치별 비밀 설정이라 공개 bootstrap이 복사하지 않습니다. Obsidian 플러그인을 연 뒤 해당 장치에서 다시 연결합니다.
+- 현재 전송 경로는 **private GitHub + Obsidian Git**입니다. 나중에 Obsidian native Sync를 도입하면 두 양방향 동기화를 겹치지 말고, Mac mini의 Git을 `backup-only`로 전환한 뒤 사용합니다.
+
+### Claude Code 설정만 복구하는 기존 bootstrap
+
+#### 🍎 macOS / 🐧 Linux  (터미널)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/CSH1987/claude-config/main/bootstrap.sh | bash
 ```
 
-### 🪟 Windows 11  (PowerShell)
+#### 🪟 Windows 11  (PowerShell)
 ```powershell
 irm https://raw.githubusercontent.com/CSH1987/claude-config/main/bootstrap.ps1 | iex
 ```
 
-→ 이 한 줄이: 누락된 **git·gh·node 설치** → 레포 **clone** → **install** 까지 전부. 끝나면 **새 터미널**을 열고 `claude`.
+→ 이 한 줄은 누락된 **git·gh·node 설치** → 공개 설정 레포 **clone** → Claude 설정 **install**까지만 처리합니다. private Vault와 다른 AI 클라이언트까지 연결하려면 위 통합 온라인 복구를 사용합니다.
 
 > 🪟 **Windows에서 Git Bash를 쓰거나 셸별 차이가 궁금하면** → [SETUP-NOTE.md](./SETUP-NOTE.md)
 > (PowerShell vs Git Bash, "공용 한 줄"이 없는 이유, 새 PC 실패 케이스 정리).
@@ -159,9 +191,11 @@ config 레포(설정)는 config-sync 가 늘 동기화하지만, **실제 작업
 
 ```
 claude-config/
-├── bootstrap.sh / bootstrap.ps1    # 한 줄 진입점 (git·gh·node 설치 → clone → install)
+├── online-bootstrap.sh             # private Vault + 연결된 AI 클라이언트 통합 온라인 복구
+├── bootstrap.sh / bootstrap.ps1    # 기본 진입점 (git·gh·node 설치 → clone → install)
 ├── install.sh                      # Mac/Linux 설치 (링크 + 머지 + 즉시 설치)
 ├── install.ps1                     # Windows 설치 (복사+머지 + 즉시 설치)
+├── test/online-bootstrap.sh        # 격리 HOME에서 clone·연결·멱등·센티널 불변 검증
 ├── test/fresh-install.ps1          # 설치 회귀 하네스 (Windows; 80+ 체크, Git Bash 로 bash 경로도 검증)
 └── claude/
     ├── settings.json               # 훅·플러그인·마켓플레이스 + effortLevel:high(바닥값)

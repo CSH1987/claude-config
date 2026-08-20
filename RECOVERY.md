@@ -8,15 +8,14 @@
 
 ## 1. 이 PC가 당신을 위해 *자동으로* 하는 일 (외울 필요 없음)
 
-- 🧠 **기억해요.** Claude가 세션마다 당신의 선호·결정·진행 중인 작업을 자동으로 기록해, 같은 걸
-  두 번 설명 안 해도 됩니다(이 PC 로컬에만 저장 — 아래 참고).
+- 🧠 **공통 원칙을 기억해요.** Obsidian Vault의 `10_컨텍스트`가 연결된 AI 시스템의 공통 정본이고,
+  private GitHub에 백업됩니다. 각 앱의 세션 기록·로컬 캐시는 여전히 장치 안에만 남을 수 있습니다.
 - 🔄 **최신으로 맞춰요.** 새 터미널을 열 때마다 설정을 알아서 최신화합니다.
-- ☁️ **설정은 백업해요.** 설정·규칙·도구는 클라우드(GitHub)에도 복사돼, PC가 고장나도 안
-  사라집니다. 단 **개인 기억(선호·결정)은 이 PC에만 있고 클라우드 백업이 없습니다** — 민감정보라
-  의도적으로 클라우드에 안 올립니다. PC가 완전히 사라지면 그 기억도 함께 사라집니다.
+- ☁️ **설정과 Vault를 분리 백업해요.** 설정·규칙·도구는 공개 `claude-config`, 개인 노트·공통 패턴은
+  private Vault 저장소에 저장됩니다. 토큰·API 키는 어느 공개 저장소에도 넣지 않고 장치별로 로그인합니다.
 
-→ 그래서 설정·도구는 **아무것도 기억 안 해도** 됩니다. 개인 기억은 이 PC를 잃으면 못
-  되찾는다는 것만 알아두세요.
+→ 그래서 설정과 공통 패턴은 복구할 수 있습니다. 단 각 앱의 로그인과 장치 전용 플러그인 권한은
+  새 장치에서 한 번 다시 승인해야 합니다.
 
 ---
 
@@ -24,16 +23,18 @@
 
 **터미널에 아래 한 줄**만 붙여넣으면 전부 되살아납니다. 그게 전부예요.
 
-- 🍎 **Mac / 🐧 Linux**
+- 🍎 **Mac / 🐧 Linux — private Vault까지 통합 복구**
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/<gh_handle>/claude-config/main/bootstrap.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/<gh_handle>/claude-config/main/online-bootstrap.sh | bash
   ```
-- 🪟 **Windows** (PowerShell)
+- 🪟 **Windows — Claude 설정 기본 복구** (PowerShell; private Vault 통합은 후속 수동)
   ```powershell
   irm https://raw.githubusercontent.com/<gh_handle>/claude-config/main/bootstrap.ps1 | iex
   ```
 
-> `<gh_handle>` = 당신의 GitHub 사용자명. 모르면 README.md 맨 위를 보세요. 끝나면 **새 터미널**을 열고 `claude`.
+> `<gh_handle>` = 당신의 GitHub 사용자명. GitHub/Claude/Codex/Hermes 로그인 화면이 나오면 해당 공식 화면에서 완료하세요. 끝나면 **새 터미널**을 엽니다.
+
+> Obsidian 첫 실행에서는 community plugins를 직접 신뢰/활성화해야 합니다. Local REST API 키와 Claude MCP Authorization 헤더도 장치별 비밀이라 자동 복사하지 않습니다. 현재는 private GitHub가 동기화 transport이며, Obsidian native Sync를 추가할 때는 Git 양방향 동기화를 함께 켜지 않습니다.
 
 ---
 
@@ -54,7 +55,8 @@
 | 무엇 | 어디 | 공개? | 백업? |
 |---|---|---|---|
 | **설정·규칙·도구** (남에게 줘도 되는 것) | `claude-config` (GitHub 공개 레포) | 🌍 공개 | ☁️ 자동 |
-| **내 기억·선호·진행상황** (나만의 것) | Claude Code 네이티브 메모리(이 PC의 `~/.claude/projects/`) | 🔒 비공개 | ⚠️ 없음(이 PC 로컬만) |
+| **공통 패턴·원칙·업무 노트** | Obsidian Vault `10_컨텍스트` 등 + private GitHub | 🔒 비공개 | ☁️ Git 백업 |
+| **앱별 세션·로컬 캐시** | 각 장치의 Claude/Codex/Hermes 로컬 데이터 | 🔒 비공개 | ⚠️ 앱별로 다름 |
 
 > 원칙: **개인정보는 절대 공개로 안 나갑니다.** 규칙·도구만 공개됩니다.
 

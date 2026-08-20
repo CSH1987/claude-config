@@ -2,7 +2,7 @@
 
 대상: [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent). 이 문서는 hermes 설치 **전에** 준비된 것으로, 설치 즉시 규칙이 자동 적용되도록 하는 체계와 내일 작업 체크리스트를 담는다.
 
-> **설치 대상 머신 = 맥미니** (오케스트레이터·게이트웨이 상시 가동 머신). Windows 업무 PC에는 설치하지 않는다 — Windows 쪽 할 일은 claude-config 엣지 배포(installer + deploy 스탬프)뿐. (2026-07-08 Windows 착오 설치→제거 후 명시)
+> **Hermes CLI·공통 규칙은 지원되는 여러 장치에 설치할 수 있다.** 다만 오케스트레이터·gateway·Telegram·cron 상시 운영은 중복 실행을 피하기 위해 맥미니 한 곳에서만 한다. Windows 업무 PC에는 자동 설치하지 않고 claude-config 엣지 배포(installer + deploy 스탬프)만 유지한다. (2026-07-08 Windows 착오 설치→제거 후 명시, 2026-08-20 온라인 연속성 원칙에 맞춰 CLI와 상시 서비스를 분리)
 
 ## 자동 적용 체계 (이미 준비 완료)
 
