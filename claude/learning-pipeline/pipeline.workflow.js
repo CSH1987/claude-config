@@ -117,36 +117,53 @@ const REFLECTION_NOTE = correctedSessions.length > 0
 이 리플렉션 힌트의 영향을 받아 만든 제안이면 basedOnReflection을 true로 표시해라(원문 발화만으로 독립적으로 판단했으면 false).`
   : ''
 
-const ROUTING_PROMPT = `너는 이 claude-config 환경의 3티어 에이전트 워크포스(Fable=기획/top, Opus 5=검증·리뷰·판정/mid, Sonnet=구현/exec — workload-optimization 스킬 §1·§5.10)가 지난 1주 실제로 얼마나 효율적으로 돌았는지 객관 수치로 분석해라. 이건 다른 렌즈와 달리 Vault 캐노니컬 문서를 고치는 게 아니라 라우팅 개선 "제안 드래프트"만 만드는 작업이다 — Vault 문서는 절대 건드리지 마라.
+const ROUTING_PROMPT = `너는 이 claude-config 환경의 3티어 에이전트 워크포스(Fable=기획/top, Opus 5=검증·리뷰·판정/mid, Sonnet=구현/exec — workload-optimization 스킬 §1과 "워크포스 라우팅" 절)가 지난 1주 실제로 얼마나 효율적으로 돌았는지 객관 수치로 분석해라.
+
+**쓰기 범위 — 반드시 지켜라(다른 렌즈와 다름)**:
+- 다음은 절대 수정하지 마라: Vault \`10_컨텍스트\` 아래 캐노니컬 문서 3종(AI_협업_패턴.md / 업무_원칙_방법론.md / 강점_약점_보완.md), claude-config 레포의 모든 파일(SKILL.md·CLAUDE.md·훅·설정 등 — 경로에 "claude-config" 또는 "/.claude/"가 들어간 레포 관리 파일 일체), \`~/.claude/settings.json\`.
+- 쓰기는 오직 아래 지시된 라우팅제안 드래프트 파일 **하나**로 한정한다. 그 외엔 전부 read-only로 조회만 해라.
 
 수집할 데이터(전부 Bash/Read로 네가 직접 조회해라, 실패하면 그 항목만 "데이터 없음"으로 남기고 계속 진행):
 1. \`npx --yes ccusage@latest claude daily --json\` 실행 → 최근 7~14일 모델별(claude-fable-5 / claude-opus-5 계열 / claude-sonnet-5) 일별 cost 추이. 급증·급감이 있으면 짚어라.
 2. \`~/.claude/model-relay/metrics.jsonl\` 존재하면 읽어서 stage(design/review/final)×tier(top/mid/exec)별 verdict(approve/reject) 분포와 반려율 계산. 없으면 "데이터 없음"이라고만 남겨라(추측 금지).
-3. \`~/.claude/projects/-Users-evershongdae1/\` 아래 최근 세션들의 서브에이전트 위임 라벨(subagent_type 또는 Workflow agent() 호출의 label/phase)을 훑어서, 검증·리뷰·판정 성격(code-reviewer/security-reviewer/verifier/moderator/verdict류) 역할인데 model이 미지정이거나 top(Fable)로 실행된 사례(=workload-optimization §5.10 ②의 "미지정=버그" 위반, 또는 아직 이관 안 된 사례)를 셈해라. 전수조사는 불필요 — 표본 위주로 방향성만 잡아라.
+3. 먼저 \`ls ~/.claude/projects/\`로 이 머신의 실제 프로젝트 디렉터리명을 확인해라(계정마다 다르다 — 특정 이름을 가정하지 마라). 그 아래 최근 세션들의 서브에이전트 위임 라벨(subagent_type 또는 Workflow agent() 호출의 label/phase)을 훑어서, 검증·리뷰·판정 성격(code-reviewer/security-reviewer/verifier/moderator/verdict류) 역할인데 model이 미지정이거나 top(Fable)로 실행된 사례("워크포스 라우팅" 절 ②의 "미지정=버그" 위반, 또는 아직 이관 안 된 사례)를 셈해라. 전수조사는 불필요 — 표본 위주로 방향성만 잡아라.
+4. 지금까지 수집한 데이터에 "Task(Agent) 도구로 위임된 검증·리뷰 역할"과 "Workflow agent()로 위임된 검증·리뷰 역할"을 구분할 수 있으면 구분해라 — 전자는 이번 3티어 절감 대상이 아니므로(§1 규약상 여전히 opus=Fable), 둘을 섞어 "전체 절감액"처럼 말하지 마라.
 
-위 데이터를 바탕으로 다음 형식의 마크다운 리포트를 작성해서, 있으면 다음 경로에 새 파일로 저장해라(Write 도구 사용): "${VAULT_90_HERMES}/라우팅제안/<오늘실제날짜 YYYY-MM-DD>_라우팅제안.md" (같은 날 재실행이면 "---" 구분선으로 새 절 이어붙이기). frontmatter: title/created/updated/category=라우팅제안/status=draft.
+위 데이터를 바탕으로 다음 형식의 마크다운 리포트를 작성해서, 있으면 다음 경로에 새 파일로 저장해라(Write 도구 사용, 이 파일 하나만): "${VAULT_90_HERMES}/라우팅제안/<오늘실제날짜 YYYY-MM-DD>_라우팅제안.md" (같은 날 재실행이면 "---" 구분선으로 새 절 이어붙이기). frontmatter: title/created/updated/category=라우팅제안/status=draft.
 
 리포트 본문 구성:
 - ## 지출 추이 (ccusage 실측)
 - ## 반려율 (metrics.jsonl 실측, 없으면 "데이터 없음— 아직 릴레이 사용 이력 부족")
-- ## 규약 위반/이관 후보 (역할×실효모델 적합성)
-- ## 제안 (사람 승인 필요) — 예시 카테고리를 참고해 실제 데이터 기반으로만 작성해라(데이터 없으면 그 카테고리는 생략): "역할 X 반려율 낮음(표본 n건) → mid 계속/top 승격 검토", "역할 Y가 N건 미지정으로 실행됨 → §5.10 규약 리마인드", "티어 Z 지출이 전주 대비 M% 변화 → 재검토". 데이터가 불충분하면 억지로 결론 내지 말고 "표본 부족, 다음 주 재확인" 이라고 정직하게 적어라.
+- ## 규약 위반/이관 후보 (역할×실효모델 적합성, Task 경로/Workflow 경로 구분)
+- ## 제안 (사람 승인 필요) — 예시 카테고리를 참고해 실제 데이터 기반으로만 작성해라(데이터 없으면 그 카테고리는 생략): "역할 X 반려율 낮음(표본 n건) → mid 계속/top 승격 검토", "역할 Y가 N건 미지정으로 실행됨 → 워크포스 라우팅 규약 리마인드", "티어 Z 지출이 전주 대비 M% 변화 → 재검토". 데이터가 불충분하면 억지로 결론 내지 말고 "표본 부족, 다음 주 재확인" 이라고 정직하게 적어라. 이 제안은 드래프트일 뿐이며 이 파이프라인이나 너 자신이 SKILL.md/CLAUDE.md를 직접 고치는 일은 절대 없다는 걸 전제로 써라 — 사람이 이 파일을 읽고 별도로 판단한다.
 
 작업 후 2줄 이내로 요약해서 답하라: 파일을 실제로 썼는지(경로) 또는 못 썼다면(vault90HermesPath 없음 등) 그 이유, 그리고 이번 주 핵심 발견 1줄.`
 
 phase('추출')
-const [lensResults, routingSummary] = await parallel([
-  () => Promise.all(LENSES.map((lens) =>
+const extractionThunks = [
+  ...LENSES.map((lens) => () =>
     agent(lens.prompt + REFLECTION_NOTE, { label: `lens:${lens.key}`, phase: '추출', model: 'sonnet', schema: LENS_SCHEMA })
       .then((r) => ({ ...lens, result: r }))
-  )),
-  () => VAULT_90_HERMES
-    ? agent(ROUTING_PROMPT, { label: 'lens:routing', phase: '추출', model: 'sonnet' })
-    : Promise.resolve(null),
-])
+  ),
+  VAULT_90_HERMES
+    ? () => agent(ROUTING_PROMPT, { label: 'lens:routing', phase: '추출', model: 'sonnet' })
+      .then((r) => ({ ok: true, summary: r }))
+      .catch((e) => ({ ok: false, summary: e && e.message ? e.message : String(e) }))
+    : null,
+].filter(Boolean)
+
+const extractionResults = await parallel(extractionThunks)
+// 렌즈 3개는 항상 앞쪽 LENSES.length개 — Promise.all로 한 thunk에 묶지 않았으므로
+// 렌즈 하나가 throw해도 parallel()이 그 항목만 null로 격리한다(다른 렌즈·라우팅에 전파 안 됨).
+const lensResults = extractionResults.slice(0, LENSES.length)
+const routingOutcome = VAULT_90_HERMES ? extractionResults[LENSES.length] : null
 
 if (VAULT_90_HERMES) {
-  log(`라우팅 제안(lens:routing) 완료: ${routingSummary}`)
+  if (routingOutcome && routingOutcome.ok) {
+    log(`라우팅 제안(lens:routing) 완료: ${routingOutcome.summary}`)
+  } else {
+    log(`라우팅 제안(lens:routing) 실패(다음 주 재시도): ${routingOutcome ? routingOutcome.summary : '결과 없음'}`)
+  }
 } else {
   log('라우팅 제안(lens:routing) 건너뜀 — vault90HermesPath 없음(구버전 run.sh)')
 }
