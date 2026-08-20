@@ -1,6 +1,6 @@
 export const meta = {
   name: 'vault-learning-pipeline',
-  description: 'Claude Code(+Hermes) 대화에서 패턴을 뽑아 Vault 10_컨텍스트를 갱신 (hermes-agent 전달은 hermes-sync.sh의 vault-context 블록이 담당 — 2026-08-19 SOOHA_CONTEXT 레그 제거). 2026-08-19 Phase 1: 외부 사례(mem0/Graphiti) 기반 절대시간 고정 + 기존항목 재확인 카운트 + confidence×harm 반영기준 추가. Phase 2: Graphiti/mem0식 비파괴적 반영(삭제 대신 "폐기됨" 표시 후 신규 추가). Phase 3: Letta식 리플렉션 게이트 — 세션 내 자기정정 감지 후 렌즈에 전달(실패해도 파이프라인은 계속). Phase 4: Letta 스킬 파일식 감사 기록 — 매 실행분을 90_Hermes/학습이력/에 별도 파일로 먼저 남긴 뒤 캐노니컬 노트에 반영(vault90HermesPath 없으면 건너뜀). Phase 5(토큰최적화): 리플렉션+렌즈 3개 프롬프트가 전부 "다음 사용자 발화 데이터셋을 읽어라" 문장으로 동일하게 시작하도록 재배치 — Anthropic 공식 팬아웃 캐시공유 조건(동일 프리픽스) 충족 목적, 정보 내용은 불변 — 상세는 Vault 90_Hermes/보고서/2026-08-19_학습파이프라인-외부사례기반-고도화기획.md. Phase 6(2026-08-19, 자가고도화 루프 딥인터뷰): 종합단계 요약 맨 앞줄에 "재확인 N / 신규 M" 집계를 추가 — 실시간 패턴 기록(대화 중 즉시 반영)이 이번 주 무엇을 놓쳤는지 사후 감사하는 역할. 새 렌즈·새 LLM 호출 없이 기존 hasUpdate/summary만으로 집계(비용 불변).',
+  description: 'Claude Code(+Hermes) 대화에서 패턴을 뽑아 Vault 10_컨텍스트를 갱신 (hermes-agent 전달은 hermes-sync.sh의 vault-context 블록이 담당 — 2026-08-19 SOOHA_CONTEXT 레그 제거). 2026-08-19 Phase 1: 외부 사례(mem0/Graphiti) 기반 절대시간 고정 + 기존항목 재확인 카운트 + confidence×harm 반영기준 추가. Phase 2: Graphiti/mem0식 비파괴적 반영(삭제 대신 "폐기됨" 표시 후 신규 추가). Phase 3: Letta식 리플렉션 게이트 — 세션 내 자기정정 감지 후 렌즈에 전달(실패해도 파이프라인은 계속). Phase 4: Letta 스킬 파일식 감사 기록 — 매 실행분을 90_Hermes/학습이력/에 별도 파일로 먼저 남긴 뒤 캐노니컬 노트에 반영(vault90HermesPath 없으면 건너뜀). Phase 5(토큰최적화): 리플렉션+렌즈 3개 프롬프트가 전부 "다음 사용자 발화 데이터셋을 읽어라" 문장으로 동일하게 시작하도록 재배치 — Anthropic 공식 팬아웃 캐시공유 조건(동일 프리픽스) 충족 목적, 정보 내용은 불변 — 상세는 Vault 90_Hermes/보고서/2026-08-19_학습파이프라인-외부사례기반-고도화기획.md. Phase 6(2026-08-19, 자가고도화 루프 딥인터뷰): 종합단계 요약 맨 앞줄에 "재확인 N / 신규 M" 집계를 추가 — 실시간 패턴 기록(대화 중 즉시 반영)이 이번 주 무엇을 놓쳤는지 사후 감사하는 역할. 새 렌즈·새 LLM 호출 없이 기존 hasUpdate/summary만으로 집계(비용 불변). Phase 7(2026-08-20, 3티어 워크포스 성장형 루프 — workload-optimization §5.10): `lens:routing` 추가 — ccusage 지출·model-relay/metrics.jsonl 반려율·역할×실효모델 적합성을 집계해 라우팅 개선 제안을 만든다. 다른 렌즈와 달리 Vault 캐노니컬 문서를 직접 고치지 않고 90_Hermes/라우팅제안/ 아래 드래프트 파일로만 남긴다(vault90HermesPath 없으면 건너뜀) — claude-config 동작(SKILL.md 티어맵) 변경은 사람 승인 게이트를 거쳐야 하므로(CLAUDE.md 2026-08-19), synthesis 단계의 자동 Edit 대상에서 의도적으로 제외한다.',
   phases: [
     { title: '리플렉션' },
     { title: '추출' },
@@ -117,11 +117,39 @@ const REFLECTION_NOTE = correctedSessions.length > 0
 이 리플렉션 힌트의 영향을 받아 만든 제안이면 basedOnReflection을 true로 표시해라(원문 발화만으로 독립적으로 판단했으면 false).`
   : ''
 
+const ROUTING_PROMPT = `너는 이 claude-config 환경의 3티어 에이전트 워크포스(Fable=기획/top, Opus 5=검증·리뷰·판정/mid, Sonnet=구현/exec — workload-optimization 스킬 §1·§5.10)가 지난 1주 실제로 얼마나 효율적으로 돌았는지 객관 수치로 분석해라. 이건 다른 렌즈와 달리 Vault 캐노니컬 문서를 고치는 게 아니라 라우팅 개선 "제안 드래프트"만 만드는 작업이다 — Vault 문서는 절대 건드리지 마라.
+
+수집할 데이터(전부 Bash/Read로 네가 직접 조회해라, 실패하면 그 항목만 "데이터 없음"으로 남기고 계속 진행):
+1. \`npx --yes ccusage@latest claude daily --json\` 실행 → 최근 7~14일 모델별(claude-fable-5 / claude-opus-5 계열 / claude-sonnet-5) 일별 cost 추이. 급증·급감이 있으면 짚어라.
+2. \`~/.claude/model-relay/metrics.jsonl\` 존재하면 읽어서 stage(design/review/final)×tier(top/mid/exec)별 verdict(approve/reject) 분포와 반려율 계산. 없으면 "데이터 없음"이라고만 남겨라(추측 금지).
+3. \`~/.claude/projects/-Users-evershongdae1/\` 아래 최근 세션들의 서브에이전트 위임 라벨(subagent_type 또는 Workflow agent() 호출의 label/phase)을 훑어서, 검증·리뷰·판정 성격(code-reviewer/security-reviewer/verifier/moderator/verdict류) 역할인데 model이 미지정이거나 top(Fable)로 실행된 사례(=workload-optimization §5.10 ②의 "미지정=버그" 위반, 또는 아직 이관 안 된 사례)를 셈해라. 전수조사는 불필요 — 표본 위주로 방향성만 잡아라.
+
+위 데이터를 바탕으로 다음 형식의 마크다운 리포트를 작성해서, 있으면 다음 경로에 새 파일로 저장해라(Write 도구 사용): "${VAULT_90_HERMES}/라우팅제안/<오늘실제날짜 YYYY-MM-DD>_라우팅제안.md" (같은 날 재실행이면 "---" 구분선으로 새 절 이어붙이기). frontmatter: title/created/updated/category=라우팅제안/status=draft.
+
+리포트 본문 구성:
+- ## 지출 추이 (ccusage 실측)
+- ## 반려율 (metrics.jsonl 실측, 없으면 "데이터 없음— 아직 릴레이 사용 이력 부족")
+- ## 규약 위반/이관 후보 (역할×실효모델 적합성)
+- ## 제안 (사람 승인 필요) — 예시 카테고리를 참고해 실제 데이터 기반으로만 작성해라(데이터 없으면 그 카테고리는 생략): "역할 X 반려율 낮음(표본 n건) → mid 계속/top 승격 검토", "역할 Y가 N건 미지정으로 실행됨 → §5.10 규약 리마인드", "티어 Z 지출이 전주 대비 M% 변화 → 재검토". 데이터가 불충분하면 억지로 결론 내지 말고 "표본 부족, 다음 주 재확인" 이라고 정직하게 적어라.
+
+작업 후 2줄 이내로 요약해서 답하라: 파일을 실제로 썼는지(경로) 또는 못 썼다면(vault90HermesPath 없음 등) 그 이유, 그리고 이번 주 핵심 발견 1줄.`
+
 phase('추출')
-const lensResults = await parallel(LENSES.map((lens) => () =>
-  agent(lens.prompt + REFLECTION_NOTE, { label: `lens:${lens.key}`, phase: '추출', model: 'sonnet', schema: LENS_SCHEMA })
-    .then((r) => ({ ...lens, result: r }))
-))
+const [lensResults, routingSummary] = await parallel([
+  () => Promise.all(LENSES.map((lens) =>
+    agent(lens.prompt + REFLECTION_NOTE, { label: `lens:${lens.key}`, phase: '추출', model: 'sonnet', schema: LENS_SCHEMA })
+      .then((r) => ({ ...lens, result: r }))
+  )),
+  () => VAULT_90_HERMES
+    ? agent(ROUTING_PROMPT, { label: 'lens:routing', phase: '추출', model: 'sonnet' })
+    : Promise.resolve(null),
+])
+
+if (VAULT_90_HERMES) {
+  log(`라우팅 제안(lens:routing) 완료: ${routingSummary}`)
+} else {
+  log('라우팅 제안(lens:routing) 건너뜀 — vault90HermesPath 없음(구버전 run.sh)')
+}
 
 const withUpdates = lensResults.filter(Boolean).filter((l) => l.result?.hasUpdate)
 

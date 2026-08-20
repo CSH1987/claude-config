@@ -13,14 +13,16 @@ description: 품질을 깎지 않는 작업량(토큰·비용) 최적화 규칙 
 
 | 작업 성격 | 별칭 | OMC 에이전트 | 실효 모델 |
 |---|---|---|---|
-| 계획·아키텍처·리뷰·보안·비평 (판단이 결과를 좌우) | `opus` | planner, architect, critic, analyst, code-reviewer, security-reviewer | **Fable 5** |
-| 구현·디버그·테스트·검증·문서조사·정리(스펙이 정해진 실행) | `sonnet` | executor, designer, debugger, test-engineer, verifier, tracer, qa-tester, scientist, git-master, document-specialist, code-simplifier | **Sonnet 5** |
+| 기획·아키텍처·비평·synthesis (최상위 판단, 결과를 좌우) | `opus` | planner, architect, critic, analyst | **Fable 5** |
+| 검증·리뷰·판정 (품질 게이트 — 지시받은 기준으로 판단만 수행) | **mid** | code-reviewer, security-reviewer, verifier | **Opus 5** (`CLAUDE_CONFIG_MID_MODEL`) |
+| 구현·디버그·테스트·문서조사·정리(스펙이 정해진 실행) | `sonnet` | executor, designer, debugger, test-engineer, tracer, qa-tester, scientist, git-master, document-specialist, code-simplifier | **Sonnet 5** |
 | 탐색·단순 문서화 (기계적·대량) | `haiku` | explore, writer | **Haiku 4.5** |
 
-- **Task 도구로 직접 위임할 때도 동일 기준**으로 `model` 파라미터를 명시한다 (`haiku`/`sonnet`/`opus`).
-- 판단 기준 한 줄: "결과 품질이 **판단력**에 좌우되면 상위 티어, **절차 수행**이면 하위 티어."
+- **Task 도구로 직접 위임할 때**는 `model` 파라미터가 alias enum(`haiku`/`sonnet`/`opus`)만 받아 mid를 직접 못 가리킨다 — mid 행 에이전트를 Task 도구로 위임할 땐 opus로 대체(품질 우선, 비용 최적은 §5.10의 Workflow 경로에서). Workflow `agent()`로 위임할 땐 §5.10 규약대로 mid를 구체 id로 명시.
+- 판단 기준 한 줄: "**무엇을 만들지/어떻게 갈지 스스로 정해야 하면** top, **주어진 기준으로 합격·불합격만 판정하면** mid, **정해진 스펙을 그대로 수행하면** sonnet."
 - 메인 세션의 하이브리드 = **적응형 플랜**(설정값은 Claude Code 내장 별칭 `opusplan`): 플랜=Fable 5, 실행=Sonnet 5 자동 전환. 새 프런티어 모델이 나오면 model-watch 가 env 재매핑만 갱신해 자동 적응(직지정 금지). 실행 중 결정 지점은 어드바이저(`advisorModel: fable`)가 자동 보강.
 - **2026-08-18 조정**: `code-simplifier`를 opus→sonnet으로 하향. 원인은 [[fable-usage-balancing-routing]] 메모리가 명시한 opus 우선 원칙(2026-07-18, Fable 활용도가 낮다는 이유로 도입)이 실제로는 대형 워크플로의 opus-tier 서브에이전트 위임 건수를 늘려 Fable 사용량 급증으로 이어졌기 때문(ccusage 실측: 14일 Fable 지출의 62%가 세션 3개에 집중, 그중 다수가 Task/Agent 서브에이전트 위임). `code-simplifier`는 판단보다 절차적 성격이 강해 가장 낮은 리스크로 하향. 나머지 판단역할(planner·architect·critic 등)은 opus 유지.
+- **2026-08-20 조정 — 3티어 워크포스**: 위 62% 집중분을 역할별로 실측 분해한 결과(세션 트랜스크립트 직접 집계), 지배 역할은 비평·synthesis가 아니라 **code-reviewer/security-reviewer 검증·리뷰 위임**이었다(사회자/synthesis 서브에이전트는 검증 대상 세션에서 0건). "지시받은 기준으로 판단만 하는" 검증·리뷰·판정 역할은 top(Fable)까지 필요치 않다고 보고 mid(Opus 5, 가격은 Fable의 정확히 50%)로 분리 — 기획·비평·synthesis처럼 스스로 방향을 정하는 역할만 top에 남긴다. 상세 라우팅 방법·fan-out 규약은 §5.10. [[fable-usage-balancing-routing]] 메모리도 이 역할 분해로 갱신.
 
 ## 2. 컨텍스트 절약 (지출의 최대 지분)
 
@@ -59,7 +61,7 @@ description: 품질을 깎지 않는 작업량(토큰·비용) 최적화 규칙 
 | 스테이지 | 티어 | 경로 | 호출 방식 |
 |---|---|---|---|
 | 설계 | top | `opus` alias | 메인 세션(plan 단계) |
-| 검토 | **mid**(신설) | env 슬롯 `CLAUDE_CONFIG_MID_MODEL`(concrete id, 세대별 Opus를 이름으로 자동 감지·유지 — model-watch, 2026-08-20) | **headless 전용** |
+| 검토 | **mid**(신설) | env 슬롯 `CLAUDE_CONFIG_MID_MODEL`(concrete id, 세대별 Opus를 이름으로 자동 감지·유지 — model-watch, 2026-08-20) | **headless 전용**(대규모 릴레이) **+ 세션 내 Workflow `agent()` 경로**(개별 검증·리뷰 스테이지, 2026-08-20 §5.10 확인) |
 | 최종산출 | exec | `sonnet` alias | **Agent 도구 세션 내 경로 전용** — headless 대상 아님 |
 
 Haiku는 릴레이 무관(기존 탐색·대량기계적 역할 그대로).
@@ -68,9 +70,13 @@ Haiku는 릴레이 무관(기존 탐색·대량기계적 역할 그대로).
 
 고정 임계치는 없다. 적응형 플랜 하에서 메인 세션은 **plan 단계에서만 top**이고 실행 단계에선 exec(sonnet-5)로 동작한다 — "메인 세션=항상 top"이 아니다. 따라서 규모 판단은 **plan 단계(top 티어)에서 내리는 것이 원칙**이고, 실행 중 규모가 재발견되는 경우는 이 원칙의 한계로 — 이때 plan 모드 복귀 또는 top 위임 재판단을 권고한다. 미달(규모 작음) 시 §1의 기존 단일 위임 티어맵을 그대로 적용한다.
 
-### mid 호출 — headless가 주 경로
+### mid 호출 — 대규모 릴레이는 headless, 개별 검증·리뷰 스테이지는 세션 내 Workflow 경로
 
-Agent 도구의 `model` 파라미터는 alias enum(`sonnet|opus|haiku|fable`)만 받고 `opus`는 top으로 리졸브되므로, **세션 내 도구로는 mid 호출 경로가 없다.** 주 경로(폴백 아님): `claude -p --model "$CLAUDE_CONFIG_MID_MODEL"`. 설계 산출물은 **파일 경로로 전달**, 검토 결과는 **파싱 가능한 verdict**로 회수 — 예: 마지막 줄 JSON `{"verdict":"approve|reject","reasons":[...]}`. exec은 headless 대상이 아니다 — Agent(`model:"sonnet"`) 세션 내 경로만 사용한다.
+**2026-08-20 정정**: "세션 내 도구로는 mid 호출 경로가 없다"는 서술은 낡았다 — Agent(Task) 도구의 `model` 파라미터는 여전히 alias enum(`sonnet|opus|haiku|fable`)만 받아 mid를 못 가리키지만(이 제약은 유효), **Workflow의 `agent()`는 구체 모델 id 문자열을 받는다**(공식 문서, 이 세션에서 실측 확인: `agent(prompt, {model:"claude-opus-5"})` → 실제 서빙 모델 응답 확인). §5.10에서 이 경로를 검증·리뷰·판정형 개별 스테이지의 mid 라우팅 정본으로 쓴다.
+
+이 절(§5.3)이 다루는 **대규모 설계→검토 릴레이**(전체 산출물을 통째로 재검토, 자기 세션과 분리된 컨텍스트 필요)는 여전히 headless가 주 경로: `claude -p --model "$CLAUDE_CONFIG_MID_MODEL"`. 설계 산출물은 **파일 경로로 전달**, 검토 결과는 **파싱 가능한 verdict**로 회수 — 예: 마지막 줄 JSON `{"verdict":"approve|reject","reasons":[...]}`. exec은 headless 대상이 아니다 — Agent(`model:"sonnet"`) 세션 내 경로만 사용한다.
+
+**구분 기준**: 릴레이 전체(설계 산출물 통짜 재검토, 자기 컨텍스트 오염 방지 필요) = headless. Workflow 파이프라인 내 개별 검증·리뷰·판정 스테이지(코드리뷰 fan-out, verdict 판정 등) = §5.10의 세션 내 Workflow 경로.
 
 ### headless mid 호출 규약 (전부 필수)
 
@@ -110,3 +116,23 @@ settings의 mid 값을 손수 변경 + `~/.claude/model-watch/pin-mid` 생성(�
 - **재검토 제안 로직**: 게이트 대상 최근 표본 ≥5건에서 반려율 ≥50% 또는 연속 3건 반려 → 사용자에게 투명하게 재검토 제안 1회. **재무장(re-arm)**: 제안 후 **30일 경과 OR (고위험 기준 개정·프런티어 교체) 이벤트 중 먼저 도달하는 쪽**에서 재발동.
 - **로테이션 정책**: 주 1회 jq 점검 시 5,000줄(≈1MB) 초과면 `metrics-YYYYMM.jsonl`로 수동 이관 — 훅 없음 원칙 유지.
 - 한계 수용: 훅이 아닌 지침 기반이므로 기록 누락 가능 — 주 1회 jq 점검을 위 §4 측정 루틴에 편입해 누락 발견 시 보정한다. "새 자동화 훅 금지" 제약과의 의도적 트레이드오프.
+
+## 5.10 워크포스 라우팅 — 검증·리뷰·판정형 Workflow 스테이지 (2026-08-20)
+
+Fable=기획(top)·Opus 5=지시받은 기준으로 판단만 하는 "검증 직원"(mid)·Sonnet=구현(exec)이라는 3티어 워크포스를 Workflow 오케스트레이션(그래프 엔지니어링)에 적용하는 규약. §1 티어맵의 mid 행(code-reviewer/security-reviewer/verifier)과 §5의 릴레이 mid를 Workflow `agent()` 호출 단위로 구체화한다.
+
+**① mid literal 주입 방법 — 영구 리터럴 0건**: Workflow 스크립트는 `args`로 현재 `CLAUDE_CONFIG_MID_MODEL` 값을 받아 `agent(prompt, {model: midModelId, ...})`에 그대로 넘긴다. 스크립트 코드 자체에 특정 모델명을 하드코딩하지 않으므로(호출 시점 env 값을 읽어 전달) model-watch 동기화 스코프 확장이 필요 없다 — 세대 교체 시에도 다음 실행부터 자동으로 새 mid를 쓴다.
+
+**② 판단·검증 스테이지 model 미지정 = 버그**: Workflow 파이프라인에서 검증·리뷰·판정(verdict/moderator/code-review 등) 역할의 `agent()` 호출에 `model`을 지정하지 않으면 메인 세션의 현재 모델(대개 exec=Sonnet)을 조용히 상속한다 — 품질 게이트가 알아채지 못한 채 강등되는 것과 같다. §5.9의 "훅 없음, 지침 기반" 트레이드오프와 동일한 계열의 한계이며, 새 워크플로 작성·기존 워크플로 수정 시 검증·리뷰·판정 스테이지는 반드시 `model: midModelId`를 명시한다. (실측 사례: `expert-debate.js`의 moderator/consensus 스테이지가 전부 미지정 상태로 Sonnet 실행 중이었음 — 2026-08-20 확인.)
+
+**③ 검증 fan-out 기본 3→5인**: 절감된 예산(mid=top의 50%)을 검증 품질에 재투자 — 같은 예산으로 리뷰어 3인(top 기준) 대신 5인(mid 기준)을 고용할 수 있다(mid 5인 비용 ≈ top 3인의 83%). 워크플로 설계 시 기본 fan-out을 5인으로 하되, 세션 이 워크플로 크기 가이드라인(기본 15 에이전트 미만)을 넘으면 배치 분할(pipeline 단계별로 나눠 실행)하거나, 사용자에게 `/config`의 "Dynamic workflow size" 상향을 안내한다 — 임의로 가이드라인을 넘기지 않는다.
+
+**④ 기존 파일 면제**: `expert-debate.js` 등 이 규약 이전에 작성된 워크플로는 소급 수정하지 않는다. 신규 작성 또는 다음 유지보수 수정 시점부터 이 규약을 적용한다.
+
+**⑤ 롤백 트리거**: 별도 임계치를 새로 만들지 않고 §5.9의 기존 재검토 임계치(게이트 대상 표본≥5건에서 반려율≥50% 또는 연속 3건 반려)를 그대로 재사용한다 — 해당 역할을 mid→top으로 복귀 제안. 단일 소스 유지(§5.9와 §5.10이 서로 다른 임계치를 갖지 않도록).
+
+**⑥ 구현(executor) 위생**: 구현·절차형 서브에이전트는 기존 규약대로 sonnet(상속 또는 명시) — mid/top으로 올리지 않는다. (실측 위반 사례: 2026-08-20 세션 분해에서 executor 구현 위임 12건이 Fable로 실행된 세션 1개 발견, 해당 세션 Fable 지출의 23.9% — 규약 재강조 근거.)
+
+**적용 범위 (단계적, 2026-08-20 결정)**: 이번 단계는 code-reviewer/security-reviewer/verifier류 검증·리뷰·판정 스테이지만 mid로 이관한다. critic·synthesis·moderator처럼 스스로 방향을 정하는 역할은 top(Fable) 잔류 — 이관 여부는 `lens:routing`(학습파이프라인, 아래) 주간 리포트의 반려율·지출 데이터를 본 뒤 사람 승인으로 판단한다.
+
+**성장형(자가개선) 루프**: 학습파이프라인(`claude/learning-pipeline/pipeline.workflow.js`)의 `lens:routing` 스테이지가 주 1회 ccusage 지출·`metrics.jsonl` 반려율·역할×실효모델 적합성(②의 미지정 위반 포함)을 집계해 라우팅 개선 **제안 드래프트**를 synthesis 단계 출력에 포함한다. 적용은 항상 사람 승인 후(CLAUDE.md "claude-config 동작 변경은 드래프트+사람승인" 규칙) — 측정·분석·제안은 자동, 라우팅 규약(이 문서) 변경만 게이트.
