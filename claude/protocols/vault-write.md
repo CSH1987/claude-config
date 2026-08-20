@@ -50,21 +50,11 @@ about or opted to remove:
   unlikely). `_ev_config()` **fail-opens** on a sentinel mismatch — see the Claude-side
   check in §2a step 3, which is the only defense in exactly that failure scenario.
 
-**Known gap this change does *not* by itself close:** `10_컨텍스트`'s files/directory
-were set to `444`/`555` (read-only, no-write-even-for-owner) at the OS level back in
-Phase 1, independently of the guard. Removing the guard-level block does **not** revert
-that — an actual write attempt there still fails with `EACCES` (confirmed empirically:
-`Write` to a new file under `10_컨텍스트` throws `EACCES` even with the code-level gate
-removed). Claude Code cannot revert this itself either — the Bash-channel `chmod`
-protection (kept, see above) blocks any `chmod` command whose target path normalizes
-under a protected folder, **and** (after a follow-up fix — the vault root itself was
-initially a gap here, since it doesn't normalize *under* any specific protected prefix)
-any write-marker command targeting the vault root, so a `chmod -R` on the whole vault is
-blocked too, not just one aimed directly at `10_컨텍스트`. **If the intent is for
-`10_컨텍스트` to be genuinely writable, the human needs to manually run**
-`chmod -R u+w` (or `644`/`755`) **on it** the same way they manually set it to `444`/`555`
-during Phase 1. Until then, the guard *permits* the write attempt but the filesystem
-still rejects it.
+**Current OS permission policy:** the Phase 1 `444`/`555` read-only experiment has been
+retired. `10_컨텍스트` follows normal Vault permissions (files 644, directories 755), so
+the current direct-write policy works without a separate chmod step. Do not reapply
+folder-wide read-only permissions during restore. `00_홈.md` remains the only sentinel
+whose modification is prohibited by the existing system instructions and guard.
 
 `_ev_has_approved_proposal` (the old gate-check function) and the staged `_pending`
 workflow described below are **not deleted** — they're simply no longer *required*.
@@ -78,7 +68,7 @@ restore) and re-enabling the sections below.
 
 | Vault path | Write channel | Gate |
 |---|---|---|
-| `10_컨텍스트` | Write/Edit/MultiEdit, or `vault-obsidian` `vault_write`/`vault_patch`/`open_file`/`vault_append` | none — direct write allowed (see OS-permission caveat above) |
+| `10_컨텍스트` | Write/Edit/MultiEdit, or `vault-obsidian` `vault_write`/`vault_patch`/`open_file`/`vault_append` | none — direct write allowed |
 | `90_Hermes` | same as above | none — direct write allowed (no longer Hermes-exclusive; provenance is no longer guaranteed) |
 | `30_결정로그` | Write tool, direct | none (unchanged from before) |
 | `20_업무위키/_pending/<id>/` | Write tool, direct | none — Write channel unchanged from before; `vault_append` here was blocked pre-2026-07-31 ("예외없이") and is now allowed along with everything else, since that block existed only to protect the now-removed approval queue |

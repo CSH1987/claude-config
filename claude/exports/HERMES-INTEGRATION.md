@@ -36,9 +36,9 @@
 6. **페르소나(SOUL.md)**: portable-rules는 작업 규칙만 담음 — 말투·성격은 SOUL.md에서 별도 관리 (자동 주입 안 함, 의도적)
 7. **성장형 운영**: hermes MEMORY.md·skills가 성장 축 — 잘 통하는 패턴은 claude-config 쪽 플레이북과 상호 이식(retro→promote 흐름과 동일 원리)
 
-## 코덱스(codex CLI) 연동 — 4번째 동기화 대상 (2026-08-20)
+## 코덱스(codex CLI) 연동 — 연동 시스템 전체 동기화 대상에 포함 (2026-08-20)
 
-대상: OpenAI Codex CLI(`/opt/homebrew/bin/codex`, 맥미니에 2026-08-20 설치·GPT 구독 연동). hermes-sync와 같은 마커 블록 upsert 패턴을 `codex-sync.sh`로 재사용.
+대상: OpenAI Codex CLI(`/opt/homebrew/bin/codex`, 맥미니에 2026-08-20 설치·GPT 구독 연동). 현재 연동된 모든 시스템을 동기화한다는 계약에 따라, hermes-sync와 같은 마커 블록 upsert 패턴을 `codex-sync.sh`로 재사용한다. 새 시스템이 연동되면 같은 정본·동기화 구조에 포함한다.
 
 | 구성요소 | 위치 | 역할 |
 |---|---|---|
