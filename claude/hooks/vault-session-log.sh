@@ -16,6 +16,12 @@
 # 세션 종료를 절대 막지 않는다 — 항상 exit 0.
 set -u
 
+ai_system="${1:-claude-code}"
+case "$ai_system" in
+  codex|claude-code) : ;;
+  *) ai_system="claude-code" ;;
+esac
+
 host="$(hostname 2>/dev/null || echo '')"
 case "$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')" in
   *macmini*) : ;;
@@ -61,7 +67,13 @@ project="${cwd##*/}"
 [ -z "$project" ] && project="(알수없음)"
 reason=$(printf '%s' "$input" | jq -r '.reason // "other"' 2>/dev/null || echo "other")
 transcript=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null || true)
-[ -z "$transcript" ] && transcript="~/.claude/projects/*/${session_id}.jsonl"  # stdin 에 없을 때만 추정치로 폴백
+if [ -z "$transcript" ]; then
+  if [ "$ai_system" = "codex" ]; then
+    transcript="~/.codex/sessions/**/${session_id}.jsonl"
+  else
+    transcript="~/.claude/projects/*/${session_id}.jsonl"
+  fi
+fi
 
 today="$(date +%Y-%m-%d 2>/dev/null || echo unknown-date)"
 log_dir="$VAULT/90_Hermes/로그"
@@ -72,7 +84,9 @@ find "$log_dir" -maxdepth 1 -name 'session-*.md' -type f -mtime +90 -delete 2>/d
 
 # 세션당 파일 1개(재실행돼도 안 겹침) — 짧은 세션ID 접미사로 같은 날 여러 세션 구분
 short_id="${safe_id:0:8}"
-target="$log_dir/session-${today}-${short_id}.md"
+prefix="session"
+[ "$ai_system" = "codex" ] && prefix="session-codex"
+target="$log_dir/${prefix}-${today}-${short_id}.md"
 [ -f "$target" ] && exit 0  # 이미 기록됨(같은 세션의 재종료 이벤트 등) — 중복 방지
 
 now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "$today")"
@@ -88,6 +102,7 @@ status: raw
 tags: [세션로그, 자동캡처]
 related: []
 source: vault-session-log.sh (SessionEnd, LLM 호출 없음)
+ai_system: ${ai_system}
 ---
 
 # 세션 로그 ${today} — ${project}
@@ -95,6 +110,7 @@ source: vault-session-log.sh (SessionEnd, LLM 호출 없음)
 자동 캡처된 세션 메타데이터. 요약이 아니라 브레드크럼입니다.
 
 - session_id: ${session_id}
+- AI 시스템: ${ai_system}
 - 작업 디렉터리: ${cwd}
 - 종료 사유: ${reason}
 - 종료 시각(UTC): ${now_iso}

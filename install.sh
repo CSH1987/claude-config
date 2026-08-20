@@ -154,6 +154,37 @@ install_codex_home_override() {
   echo "  ✓ Codex home override linked (~/AGENTS.override.md)"
 }
 
+# Codex 전용 훅·스킬·설정을 플랫폼 네이티브 형식으로 배포한다.
+# AGENTS.md는 아래 codex-sync가 다시 만드는 캐시이고, config/hooks의 기존 사용자 값은
+# configure-codex-integration.py가 보존·병합한다.
+install_codex_runtime() {
+  local codex_home="$HOME/.codex"
+  local configure_script="$REPO_DIR/codex/scripts/configure-codex-integration.py"
+  local source_path target_path skill_source
+  [ -d "$codex_home" ] || return 0
+  [ -f "$configure_script" ] || { echo "  ! Codex 설정 병합기 없음: $configure_script" >&2; return 1; }
+
+  mkdir -p "$codex_home/hooks" "$codex_home/skills" "$HOME/.claude/vault-state"
+  chmod 700 "$codex_home/hooks" "$codex_home/skills" "$HOME/.claude/vault-state" 2>/dev/null || true
+  for source_path in "$REPO_DIR"/codex/hooks/*.sh; do
+    [ -f "$source_path" ] || continue
+    target_path="$codex_home/hooks/$(basename "$source_path")"
+    backup_conflicting_path "$target_path"
+    ln -sfn "$source_path" "$target_path"
+  done
+
+  skill_source="$REPO_DIR/codex/skills/workload-optimization"
+  if [ -d "$skill_source" ]; then
+    target_path="$codex_home/skills/workload-optimization"
+    backup_conflicting_path "$target_path"
+    ln -sfn "$skill_source" "$target_path"
+  fi
+
+  chmod +x "$REPO_DIR"/codex/hooks/*.sh "$configure_script" "$REPO_DIR/claude/hooks/vault-catalog.py" 2>/dev/null || true
+  python3 "$configure_script" --codex-home "$codex_home" --repo-dir "$REPO_DIR"
+  echo "  ✓ Codex native hooks/config/skill installed"
+}
+
 # Vault 절대경로는 공개 레포에 넣지 않고 머신 로컬 scope에만 둔다.
 # 우선순위: 명시적 OBSIDIAN_VAULT_PATH → 기존 유효 scope → Hermes .env → ~/Documents/Vault.
 # 후보는 00_홈.md와 10_컨텍스트가 실제로 있는 Vault만 허용한다.
@@ -397,6 +428,7 @@ ln -sfn "$REPO_DIR/claude/hooks/skill-watch.sh"      "$DST/hooks/skill-watch.sh"
 # — 2026-08-01 세션 초반에 발견만 하고 못 고쳤던 것을 이번 정리 김에 반영).
 ln -sfn "$REPO_DIR/claude/hooks/vault-context.sh" "$DST/hooks/vault-context.sh"
 ln -sfn "$REPO_DIR/claude/hooks/vault-index.py" "$DST/hooks/vault-index.py"
+ln -sfn "$REPO_DIR/claude/hooks/vault-catalog.py" "$DST/hooks/vault-catalog.py"
 ln -sfn "$REPO_DIR/claude/hooks/vault-staleness-scan.py" "$DST/hooks/vault-staleness-scan.py"
 ln -sfn "$REPO_DIR/claude/hooks/vault-session-log.sh" "$DST/hooks/vault-session-log.sh"
 # learning-pipeline-setup.sh: vault-context.sh와 동일 컨벤션(맥미니+볼트 게이팅은 훅 내부, 다른
@@ -404,7 +436,7 @@ ln -sfn "$REPO_DIR/claude/hooks/vault-session-log.sh" "$DST/hooks/vault-session-
 ln -sfn "$REPO_DIR/claude/hooks/learning-pipeline-setup.sh" "$DST/hooks/learning-pipeline-setup.sh"
 ln -sfn "$REPO_DIR/claude/hooks/statusline.sh"       "$DST/hooks/statusline.sh"
 ln -sfn "$REPO_DIR/claude/hooks/context-notify.sh"   "$DST/hooks/context-notify.sh"
-chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/model-watch.sh" "$REPO_DIR/claude/hooks/auto-update.sh" "$REPO_DIR/claude/hooks/guardrails.sh" "$REPO_DIR/claude/hooks/edit-track.sh" "$REPO_DIR/claude/hooks/edit-nudge.sh" "$REPO_DIR/claude/hooks/stop-metrics.sh" "$REPO_DIR/claude/hooks/filter-test-output.sh" "$REPO_DIR/claude/hooks/hermes-sync.sh" "$REPO_DIR/claude/hooks/codex-sync.sh" "$REPO_DIR/claude/hooks/skill-watch.sh" "$REPO_DIR/claude/hooks/vault-context.sh" "$REPO_DIR/claude/hooks/learning-pipeline-setup.sh" "$REPO_DIR/claude/hooks/statusline.sh" "$REPO_DIR/claude/hooks/context-notify.sh" "$REPO_DIR/claude/hooks/vault-session-log.sh"
+chmod +x "$REPO_DIR/claude/hooks/ensure-harness.sh" "$REPO_DIR/claude/hooks/effort-reminder.sh" "$REPO_DIR/claude/hooks/config-sync.sh" "$REPO_DIR/claude/hooks/work-autosync.sh" "$REPO_DIR/claude/hooks/model-watch.sh" "$REPO_DIR/claude/hooks/auto-update.sh" "$REPO_DIR/claude/hooks/guardrails.sh" "$REPO_DIR/claude/hooks/edit-track.sh" "$REPO_DIR/claude/hooks/edit-nudge.sh" "$REPO_DIR/claude/hooks/stop-metrics.sh" "$REPO_DIR/claude/hooks/filter-test-output.sh" "$REPO_DIR/claude/hooks/hermes-sync.sh" "$REPO_DIR/claude/hooks/codex-sync.sh" "$REPO_DIR/claude/hooks/skill-watch.sh" "$REPO_DIR/claude/hooks/vault-context.sh" "$REPO_DIR/claude/hooks/vault-catalog.py" "$REPO_DIR/claude/hooks/learning-pipeline-setup.sh" "$REPO_DIR/claude/hooks/statusline.sh" "$REPO_DIR/claude/hooks/context-notify.sh" "$REPO_DIR/claude/hooks/vault-session-log.sh"
 printf '%s' "$REPO_DIR" > "$DST/.config-sync-path"   # config-sync 가 레포 위치를 찾도록
 echo "  ✓ hooks linked (ensure-harness, effort-reminder, config-sync, work-autosync, model-watch, auto-update, guardrails, edit-track, edit-nudge, stop-metrics, filter-test-output, hermes-sync, codex-sync, skill-watch, learning-pipeline-setup, statusline, context-notify, vault-session-log)"
 
@@ -491,6 +523,7 @@ echo "  ✓ lib linked (memdir resolver, events instrument, model-watch + skill-
 # 새 환경에서도 홈 범위 Codex 라우팅과 Vault 경로가 즉시 복구되도록 설치 payload에 포함한다.
 install_codex_home_override
 ensure_vault_scope
+install_codex_runtime
 run_connected_system_sync
 
 # .leakwords 는 더 이상 자동시드하지 않는다(2026-08-02: 시드 입력원이던 profile 은퇴).
@@ -714,6 +747,7 @@ ensure_runtimes
 
 # 전체 설치에서 방금 확보한 python으로 로컬 scope를 재검증하고 Vault 인덱스까지 재생성한다(멱등).
 ensure_vault_scope
+install_codex_runtime
 run_connected_system_sync
 
 # 즉시 설치

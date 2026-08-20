@@ -128,6 +128,10 @@ SENTINEL_HASH="$(git --git-dir="$REMOTE_DIR" show main:00_홈.md | shasum -a 256
 CLAUDE_INSTALL_DEPLOY_ONLY=1 bash "$REPO_DIR/install.sh"
 [ -L "$TEST_HOME/AGENTS.override.md" ]
 [ "$(readlink "$TEST_HOME/AGENTS.override.md")" = "$REPO_DIR/codex/home-AGENTS.override.md" ]
+[ -L "$TEST_HOME/.codex/hooks/session-context.sh" ]
+[ -L "$TEST_HOME/.codex/hooks/session-end.sh" ]
+[ -L "$TEST_HOME/.codex/skills/workload-optimization" ]
+[ -f "$TEST_HOME/.codex/hooks.json" ]
 [ -L "$TEST_HOME/.claude/skills/playbooks" ]
 [ -L "$TEST_HOME/.claude/agents/hermes-liaison.md" ]
 [ -L "$TEST_HOME/.claude/exports" ]
@@ -148,6 +152,21 @@ grep -q '^SECRET_KEY=keep-me$' "$TEST_HOME/.hermes/.env"
 [ "$(grep -cF '<!-- claude-config:hermes-vault-rules:start -->' "$TEST_HOME/.hermes/AGENTS.md")" = "1" ]
 [ "$(grep -cF '<!-- claude-config:vault-context:start -->' "$TEST_HOME/.codex/AGENTS.md")" = "1" ]
 [ "$(grep -cF '<!-- claude-config:vault-context:start -->' "$TEST_HOME/.hermes/AGENTS.md")" = "1" ]
+[ "$(grep -cF '<!-- claude-config:vault-catalog:start -->' "$TEST_HOME/.codex/AGENTS.md")" = "1" ]
+[ "$(grep -cF '<!-- claude-config:vault-catalog:start -->' "$TEST_HOME/.hermes/AGENTS.md")" = "1" ]
+grep -q '^hooks = true$' "$TEST_HOME/.codex/config.toml"
+grep -q '^memories = true$' "$TEST_HOME/.codex/config.toml"
+grep -q '^generate = true$' "$TEST_HOME/.codex/config.toml"
+python3 - "$TEST_HOME/.codex/hooks.json" "$TEST_HOME/.claude/vault-state/full-vault-index.json" <<'PY'
+import json, sys
+hooks=json.load(open(sys.argv[1]))['hooks']
+commands=[h['command'] for groups in hooks.values() for group in groups for h in group['hooks']]
+assert commands.count('bash "$HOME/.codex/hooks/session-context.sh"') == 1
+assert commands.count('bash "$HOME/.codex/hooks/session-end.sh"') == 1
+catalog=json.load(open(sys.argv[2]))
+assert catalog['version'] == 1
+assert catalog['counts']['semanticDocuments'] > 0
+PY
 extract_managed_block() {
   awk -v start="$2" -v end="$3" '
     $0 == start { capture=1; next }

@@ -1,12 +1,13 @@
 #!/bin/bash
 # hermes-sync: claude-config 규칙을 hermes-agent(~/.hermes)에 자동 적용
-# - AGENTS.md에 마커 블록 3종을 upsert (hermes 자체 내용은 보존, 재실행 멱등):
+# - AGENTS.md에 마커 블록 4종을 upsert (hermes 자체 내용은 보존, 재실행 멱등):
 #   1) claude-config:portable-rules     — exports/portable-rules.md (규칙 정본)
 #   2) claude-config:hermes-vault-rules — exports/hermes-vault-rules.md (Vault 연동 안내 —
 #      2026-08-19 정본화: 종전엔 ~/.hermes/AGENTS.md 블록 밖에만 있어 실효 로드 파일인
 #      실효 게이트웨이 cwd/AGENTS.md 에는 전달되지 않던 결함 수정)
 #   3) claude-config:vault-context      — Vault 10_컨텍스트 인덱스 캐시 (정본=옵시디언 Vault,
 #      생성 로직은 vault-context.sh 와 동일하게 vault-index.py 재사용 — 중복 구현 금지)
+#   4) claude-config:vault-catalog      — Vault 전체 파일 커버리지·변경 상태 요약
 # - hermes는 AGENTS.md를 "세션 작업 디렉터리(cwd)"에서만 로드한다
 #   (hermes-agent agent/prompt_builder.py `_load_agents_md` — cwd only, v0.18.2 확인).
 #   게이트웨이 기본 cwd = config.yaml terminal.cwd 이고, 플레이스홀더("."|"auto"|"cwd")면
@@ -91,6 +92,23 @@ if [ -n "$VC_BODY" ]; then
     echo "$VC_END"; } > "$TMP.vc"
 fi
 
+# ── 블록 4: vault-catalog (전체 Vault 커버리지 지도) ───────────────
+CAT_START='<!-- claude-config:vault-catalog:start -->'
+CAT_END='<!-- claude-config:vault-catalog:end -->'
+CATALOGER="$HOOK_DIR/vault-catalog.py"
+CAT_BODY=""
+if [ -n "${VAULT:-}" ] && [ -d "${VAULT:-}" ] && [ -f "$CATALOGER" ]; then
+  STATE_FILE="$HOME/.claude/learning-pipeline/vault-state.json"
+  CATALOG_FILE="$HOME/.claude/vault-state/full-vault-index.json"
+  CAT_BODY="$(python3 "$CATALOGER" "$VAULT" --overview --state "$STATE_FILE" --catalog-out "$CATALOG_FILE" 2>/dev/null)"
+fi
+if [ -n "$CAT_BODY" ]; then
+  { echo "$CAT_START"
+    echo "## Vault 전체 지식 지도 (자동 생성 캐시 — 원문 정본은 옵시디언 Vault)"
+    echo "$CAT_BODY"
+    echo "$CAT_END"; } > "$TMP.cat"
+fi
+
 # ── 실효 게이트웨이 cwd 결정: terminal.cwd(절대경로·비플레이스홀더·존재) → 그 외 $HOME ──
 GATEWAY_CWD="$HOME"
 CONFIG_YAML="$HERMES_DIR/config.yaml"
@@ -117,8 +135,9 @@ for t in $TARGETS; do
   upsert_block "$t" "$PR_START" "$PR_END" "$TMP.pr"
   [ -f "$TMP.vr" ] && upsert_block "$t" "$VR_START" "$VR_END" "$TMP.vr"
   [ -f "$TMP.vc" ] && upsert_block "$t" "$VC_START" "$VC_END" "$TMP.vc"
+  [ -f "$TMP.cat" ] && upsert_block "$t" "$CAT_START" "$CAT_END" "$TMP.cat"
 done
-rm -f "$TMP" "$TMP.pr" "$TMP.vr" "$TMP.vc"
+rm -f "$TMP" "$TMP.pr" "$TMP.vr" "$TMP.vc" "$TMP.cat"
 
 SKILL_SRC="$SOURCE_DIR/skills/workload-optimization"
 if [ -d "$SKILL_SRC" ]; then

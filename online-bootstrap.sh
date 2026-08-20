@@ -332,6 +332,11 @@ elif ! codex login status >/dev/null 2>&1; then
   interactive_handoff "Codex 로그인" "codex login" codex login \
     || { warn "Codex 인증 미완료"; INCOMPLETE=1; }
 fi
+if command -v codex >/dev/null 2>&1; then
+  say "Codex 네이티브 컨텍스트·학습 구조 재배포"
+  CLAUDE_INSTALL_DEPLOY_ONLY=1 bash "$CONFIG_DIR/install.sh" \
+    || { warn "Codex 훅·메모리·스킬 설정 배포 실패"; INCOMPLETE=1; }
+fi
 
 if [ "$HERMES_MODE" = "yes" ]; then
   if ! install_cli_if_missing hermes "Hermes Agent" hermes; then
@@ -474,8 +479,9 @@ verify_sync_markers() {
 if [ -f "$HOME/.codex/AGENTS.md" ] && verify_sync_markers "$HOME/.codex/AGENTS.md" \
   '<!-- claude-config:portable-rules:start -->' \
   '<!-- claude-config:codex-vault-rules:start -->' \
-  '<!-- claude-config:vault-context:start -->'; then
-  ok "Codex 공통 지침·Vault 규칙·컨텍스트 마커 확인"
+  '<!-- claude-config:vault-context:start -->' \
+  '<!-- claude-config:vault-catalog:start -->'; then
+  ok "Codex 공통 지침·Vault 전체 지도·컨텍스트 마커 확인"
 else
   warn "Codex 공통 지침·Vault 규칙·컨텍스트 마커 검증 실패"
   INCOMPLETE=1
@@ -484,8 +490,9 @@ if [ "$HERMES_MODE" = "yes" ]; then
   if [ -f "$HOME/.hermes/AGENTS.md" ] && verify_sync_markers "$HOME/.hermes/AGENTS.md" \
     '<!-- claude-config:portable-rules:start -->' \
     '<!-- claude-config:hermes-vault-rules:start -->' \
-    '<!-- claude-config:vault-context:start -->'; then
-    ok "Hermes 공통 지침·Vault 규칙·컨텍스트 마커 확인"
+    '<!-- claude-config:vault-context:start -->' \
+    '<!-- claude-config:vault-catalog:start -->'; then
+    ok "Hermes 공통 지침·Vault 전체 지도·컨텍스트 마커 확인"
   else
     warn "Hermes 공통 지침·Vault 규칙·컨텍스트 마커 검증 실패"
     INCOMPLETE=1
@@ -509,7 +516,8 @@ if [ "$INCOMPLETE" -eq 0 ]; then
   info "현재 Vault 전송 경로는 private GitHub + Obsidian Git입니다."
   info "Obsidian native Sync를 도입하면 양방향 동기화를 겹치지 말고, Mac mini의 Git을 backup-only로 전환한 뒤 사용하세요."
   info "새 장치에서 Obsidian 첫 실행 시 community plugins 신뢰/활성화를 직접 승인해야 합니다."
-  info "Local REST API 키와 Claude의 vault-obsidian MCP Authorization 헤더는 장치별 비밀 설정이라 자동 복사하지 않습니다."
+  info "Local REST API 키는 저장소에 복사하지 않습니다. Obsidian 플러그인 활성화 뒤 install.sh를 다시 실행하면 이 장치의 Codex MCP 로컬 설정에만 연결됩니다(Claude MCP는 기존 장치별 설정 유지)."
+  info "Codex CLI에서 /hooks를 한 번 열어 새 lifecycle hooks의 내용을 검토·신뢰한 뒤 새 세션을 시작하세요."
   info "Hermes CLI는 여러 장치에서 쓸 수 있지만 gateway/Telegram/cron 상시 운영은 Mac mini 한 곳만 사용하세요."
   exit 0
 fi

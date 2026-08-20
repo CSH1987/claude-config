@@ -34,7 +34,7 @@
 
 > `<gh_handle>` = 당신의 GitHub 사용자명. GitHub/Claude/Codex/Hermes 로그인 화면이 나오면 해당 공식 화면에서 완료하세요. 끝나면 **새 터미널**을 엽니다.
 
-> Obsidian 첫 실행에서는 community plugins를 직접 신뢰/활성화해야 합니다. Local REST API 키와 Claude MCP Authorization 헤더도 장치별 비밀이라 자동 복사하지 않습니다. 현재는 private GitHub가 동기화 transport이며, Obsidian native Sync를 추가할 때는 Git 양방향 동기화를 함께 켜지 않습니다.
+> Obsidian 첫 실행에서는 community plugins를 직접 신뢰/활성화해야 합니다. Local REST API 키는 복사하지 않습니다. 플러그인을 켠 뒤 `bash ~/claude-config/install.sh`를 다시 실행하면 이 장치의 Codex MCP에만 비밀값을 노출 없이 연결합니다. Claude MCP Authorization은 기존처럼 장치별로 유지합니다. Codex CLI에서는 `/hooks`를 한 번 열어 새 훅을 검토·신뢰하세요. 현재는 private GitHub가 동기화 transport이며, Obsidian native Sync를 추가할 때는 Git 양방향 동기화를 함께 켜지 않습니다.
 
 ---
 
@@ -56,7 +56,7 @@
 |---|---|---|---|
 | **설정·규칙·도구** (남에게 줘도 되는 것) | `claude-config` (GitHub 공개 레포) | 🌍 공개 | ☁️ 자동 |
 | **공통 패턴·원칙·업무 노트** | Obsidian Vault `10_컨텍스트` 등 + private GitHub | 🔒 비공개 | ☁️ Git 백업 |
-| **앱별 세션·로컬 캐시** | 각 장치의 Claude/Codex/Hermes 로컬 데이터 | 🔒 비공개 | ⚠️ 앱별로 다름 |
+| **앱별 세션·로컬 캐시** | 각 장치의 Claude/Codex/Hermes 로컬 데이터와 Vault 전체 지도 | 🔒 비공개 | ⚠️ 앱별로 다름, 지도는 Vault에서 재생성 |
 
 > 원칙: **개인정보는 절대 공개로 안 나갑니다.** 규칙·도구만 공개됩니다.
 

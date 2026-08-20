@@ -1,6 +1,6 @@
 export const meta = {
   name: 'vault-learning-pipeline',
-  description: 'Claude Code(+Hermes) 대화에서 패턴을 뽑아 Vault 10_컨텍스트를 갱신 (hermes-agent 전달은 hermes-sync.sh의 vault-context 블록이 담당 — 2026-08-19 SOOHA_CONTEXT 레그 제거). 2026-08-19 Phase 1: 외부 사례(mem0/Graphiti) 기반 절대시간 고정 + 기존항목 재확인 카운트 + confidence×harm 반영기준 추가. Phase 2: Graphiti/mem0식 비파괴적 반영(삭제 대신 "폐기됨" 표시 후 신규 추가). Phase 3: Letta식 리플렉션 게이트 — 세션 내 자기정정 감지 후 렌즈에 전달(실패해도 파이프라인은 계속). Phase 4: Letta 스킬 파일식 감사 기록 — 매 실행분을 90_Hermes/학습이력/에 별도 파일로 먼저 남긴 뒤 캐노니컬 노트에 반영(vault90HermesPath 없으면 건너뜀). Phase 5(토큰최적화): 리플렉션+렌즈 3개 프롬프트가 전부 "다음 사용자 발화 데이터셋을 읽어라" 문장으로 동일하게 시작하도록 재배치 — Anthropic 공식 팬아웃 캐시공유 조건(동일 프리픽스) 충족 목적, 정보 내용은 불변 — 상세는 Vault 90_Hermes/보고서/2026-08-19_학습파이프라인-외부사례기반-고도화기획.md. Phase 6(2026-08-19, 자가고도화 루프 딥인터뷰): 종합단계 요약 맨 앞줄에 "재확인 N / 신규 M" 집계를 추가 — 실시간 패턴 기록(대화 중 즉시 반영)이 이번 주 무엇을 놓쳤는지 사후 감사하는 역할. 새 렌즈·새 LLM 호출 없이 기존 hasUpdate/summary만으로 집계(비용 불변). Phase 7(2026-08-20, 3티어 워크포스 성장형 루프 — workload-optimization §5.10): `lens:routing` 추가 — ccusage 지출·model-relay/metrics.jsonl 반려율·역할×실효모델 적합성을 집계해 라우팅 개선 제안을 만든다. 다른 렌즈와 달리 Vault 캐노니컬 문서를 직접 고치지 않고 90_Hermes/라우팅제안/ 아래 드래프트 파일로만 남긴다(vault90HermesPath 없으면 건너뜀) — claude-config 동작(SKILL.md 티어맵) 변경은 사람 승인 게이트를 거쳐야 하므로(CLAUDE.md 2026-08-19), synthesis 단계의 자동 Edit 대상에서 의도적으로 제외한다.',
+  description: 'Claude Code·Hermes·Codex 대화와 Vault 전체 변경 문서에서 패턴을 뽑아 Vault 10_컨텍스트를 갱신한다. 전체 원문은 Vault에 유지하고, 로컬 카탈로그·증분 지문으로 모든 파일의 커버리지를 확인한다. 기존 리플렉션·3개 렌즈·비파괴 반영·감사 기록·라우팅 제안 구조는 유지한다.',
   phases: [
     { title: '리플렉션' },
     { title: '추출' },
@@ -10,20 +10,29 @@ export const meta = {
 
 // 전부 args로 받는다(머신·계정마다 경로가 다름 — 하드코딩 금지, Node API 접근도 없어서 process.env도 못 씀).
 // run.sh가 실행 시점에 $HOME 기준 실제 경로를 채워서 넘긴다. args 누락 시 명확히 실패시킨다(잘못된 경로로 조용히 진행 금지).
-if (!args || !args.vault10Path || !args.utterancesPath) {
-  throw new Error('args.vault10Path / utterancesPath 가 전부 필요합니다 — run.sh에서 채워 넘겨야 함')
+if (!args || !args.vault10Path || !args.utterancesPath || !args.vaultDocumentsPath) {
+  throw new Error('args.vault10Path / utterancesPath / vaultDocumentsPath 가 전부 필요합니다 — run.sh에서 채워 넘겨야 함')
 }
 const VAULT = args.vault10Path
 const UTTERANCES_PATH = args.utterancesPath
+const VAULT_DOCUMENTS_PATH = args.vaultDocumentsPath
 const MEMORY_DIR = args.memoryDirPath || ''
 const VAULT_90_HERMES = args.vault90HermesPath || '' // 없으면(구버전 run.sh 등) Phase 4 감사 기록만 건너뜀 — 핵심 기능엔 영향 없음
+
+const EVIDENCE_PREFIX = `다음 사용자 발화 데이터셋을 읽어라: ${UTTERANCES_PATH}
+다음 Vault 전체 변경 문서 데이터셋도 읽어라: ${VAULT_DOCUMENTS_PATH}`
+const VAULT_EVIDENCE_RULES = `
+Vault 데이터셋은 모든 파일을 목록화한 결과 중 변경된 서술형 원문이다. authorship=human은 직접 근거, authorship=generated는 보조 근거로만 사용해라. generated 자료만으로 사용자 성향을 확정하거나 같은 AI 산출물을 재학습해 부풀리지 마라.
+프로젝트 상태·가격·일회성 사실은 패턴으로 승격하지 말고 원래 업무위키/결정로그에 남겨라. 사용자·고객 식별 정보, 비밀값, 원문 데이터 행은 suggestedAddition·reasoning·감사 로그에 복사하지 마라.
+변경 문서를 전부 확인했어도 새 지속 패턴이 없으면 hasUpdate=false가 정상이다. 삭제 상태는 기존 패턴 근거가 사라졌는지 확인하는 신호일 뿐, 캐노니컬 문장을 자동 삭제하는 지시가 아니다.`
 
 const LENSES = [
   {
     key: 'ai-collab',
     file: `${VAULT}/AI_협업_패턴.md`,
-    prompt: `다음 사용자 발화 데이터셋을 읽어라: ${UTTERANCES_PATH}
+    prompt: `${EVIDENCE_PREFIX}
 이 파일도 읽어라: ${VAULT}/AI_협업_패턴.md (기존 캐노니컬 문서 — 활동 프로파일/지시스타일/교정루프/세션운용/표기체계 섹션 구조).
+${VAULT_EVIDENCE_RULES}
 건수·세션수·기간은 파일 안에서 직접 확인해라(이 프롬프트에 미리 적힌 숫자는 없다 — 매 실행마다 실제 파일 크기가 다르다). 표본이 작으면(수십 건 미만 등) 그 사실 자체를 근거 판단에 반영해라.
 각 발화의 ts(원본 타임스탬프)를 절대 날짜 기준으로 삼아라 — suggestedAddition에 "최근"·"요즘"·"얼마 전" 같은 상대시간 표현 대신 실제 날짜(YYYY-MM-DD)를 못박아 써라(이 문서는 계속 남아 나중에 읽히므로 "최근"은 시간이 지나면 의미를 잃는다).
 새로운 패턴뿐 아니라, 기존 문서에 이미 있는 항목을 다시 뒷받침하는 근거를 발견했다면 그것도 보고해라 — 이 경우에도 hasUpdate는 true로 표시하고, summary 맨 앞에 "[재확인]"을 붙이고 reasoning에 "기존 항목 재확인"이라고 명시해라(새 패턴 발견과 기존 판단 재확인을 구분해서 알려달라).
@@ -34,8 +43,9 @@ const LENSES = [
   {
     key: 'principles',
     file: `${VAULT}/업무_원칙_방법론.md`,
-    prompt: `다음 사용자 발화 데이터셋을 읽어라: ${UTTERANCES_PATH}
+    prompt: `${EVIDENCE_PREFIX}
 이 파일도 읽어라: ${VAULT}/업무_원칙_방법론.md (검증된 판단 규칙만 수록하는 캐노니컬 문서).
+${VAULT_EVIDENCE_RULES}
 건수·세션수·기간은 파일 안에서 직접 확인해라(이 프롬프트에 미리 적힌 숫자는 없다 — 매 실행마다 실제 파일 크기가 다르다).
 각 발화의 ts(원본 타임스탬프)를 절대 날짜 기준으로 삼아라 — suggestedAddition에 "최근"·"요즘"·"얼마 전" 같은 상대시간 표현 대신 실제 날짜(YYYY-MM-DD)를 못박아 써라(이 문서는 계속 남아 나중에 읽히므로 "최근"은 시간이 지나면 의미를 잃는다).
 새로운 규칙뿐 아니라, 기존 문서에 이미 있는 원칙을 다시 뒷받침하는 근거를 발견했다면 그것도 보고해라 — 이 경우에도 hasUpdate는 true로 표시하고, summary 맨 앞에 "[재확인]"을 붙이고 reasoning에 "기존 항목 재확인"이라고 명시해라(새 규칙 발견과 기존 판단 재확인을 구분해서 알려달라).
@@ -46,8 +56,9 @@ const LENSES = [
   {
     key: 'strengths-weaknesses',
     file: `${VAULT}/강점_약점_보완.md`,
-    prompt: `다음 사용자 발화 데이터셋을 읽어라: ${UTTERANCES_PATH}
+    prompt: `${EVIDENCE_PREFIX}
 이 파일도 읽어라: ${VAULT}/강점_약점_보완.md (자기분석 + 보완장치 캐노니컬 문서).
+${VAULT_EVIDENCE_RULES}
 건수·세션수·기간은 파일 안에서 직접 확인해라(이 프롬프트에 미리 적힌 숫자는 없다 — 매 실행마다 실제 파일 크기가 다르다). 표본이 작으면 그 사실 자체를 근거 판단에 반영해라.
 각 발화의 ts(원본 타임스탬프)를 절대 날짜 기준으로 삼아라 — suggestedAddition에 "최근"·"요즘"·"얼마 전" 같은 상대시간 표현 대신 실제 날짜(YYYY-MM-DD)를 못박아 써라(이 문서는 계속 남아 나중에 읽히므로 "최근"은 시간이 지나면 의미를 잃는다).
 새로운 관찰뿐 아니라, 기존 문서에 이미 있는 강점/약점/보완장치를 다시 뒷받침하는 근거를 발견했다면 그것도 보고해라 — 이 경우에도 hasUpdate는 true로 표시하고, summary 맨 앞에 "[재확인]"을 붙이고 reasoning에 "기존 항목 재확인"이라고 명시해라(새 관찰과 기존 판단 재확인을 구분해서 알려달라).

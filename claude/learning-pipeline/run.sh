@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # vault-learning-pipeline: launchd가 주기 호출하는 진입점.
-# 1) gather.sh로 커서 이후 신규 발화 수집 2) 없으면 스킵(비용 절약)
+# 1) gather.sh로 신규 발화+Vault 변경 문서 수집 2) 둘 다 없으면 스킵(비용 절약)
 # 3) 있으면 claude -p로 Workflow 실행(경로는 이 머신 기준으로 매번 계산해 args로 전달)
 # 4) 성공시에만 commit-cursor.sh로 커서 커밋
 # 전부 $HOME/vault-scope.json 기준 — 계정명·볼트경로 하드코딩 없음.
@@ -25,22 +25,25 @@ SCOPE_FILE="$HOME/.claude/vault-scope.json"
   fi
 
   bash "$DIR/gather.sh"
-  COUNT=$(jq 'length' "$DIR/gathered-utterances.json" 2>/dev/null || echo 0)
+  TALK_COUNT=$(jq 'length' "$DIR/gathered-utterances.json" 2>/dev/null || echo 0)
+  VAULT_COUNT=$(jq '.changes | length' "$DIR/gathered-vault-documents.json" 2>/dev/null || echo 0)
+  COUNT=$(( ${TALK_COUNT:-0} + ${VAULT_COUNT:-0} ))
 
   if [ "${COUNT:-0}" -eq 0 ] 2>/dev/null; then
-    echo "신규 발화 없음 — 워크플로 스킵"
+    echo "신규 대화·Vault 변경 문서 없음 — 워크플로 스킵"
   else
-    echo "신규 ${COUNT}건 감지 — 파이프라인 실행"
+    echo "신규 대화 ${TALK_COUNT}건 + Vault 변경 문서 ${VAULT_COUNT}건 감지 — 파이프라인 실행"
     CLAUDE_BIN="$(command -v claude || echo "$HOME/.local/bin/claude")"
     MEMORY_DIR="$HOME/.claude/projects/$(printf '%s' "$HOME" | sed 's#/#-#g')/memory"
     ARGS_JSON=$(jq -n \
       --arg vault10Path "$VAULT_PATH/10_컨텍스트" \
       --arg utterancesPath "$DIR/gathered-utterances.json" \
+      --arg vaultDocumentsPath "$DIR/gathered-vault-documents.json" \
       --arg memoryDirPath "$MEMORY_DIR" \
       --arg vault90HermesPath "$VAULT_PATH/90_Hermes" \
-      '{vault10Path: $vault10Path, utterancesPath: $utterancesPath, memoryDirPath: $memoryDirPath, vault90HermesPath: $vault90HermesPath}')
+      '{vault10Path: $vault10Path, utterancesPath: $utterancesPath, vaultDocumentsPath: $vaultDocumentsPath, memoryDirPath: $memoryDirPath, vault90HermesPath: $vault90HermesPath}')
 
-    CLAUDE_EVENTS_OFF=1 CLAUDE_AUTOSYNC_OFF=1 "$CLAUDE_BIN" -p "$(cat <<PROMPT
+    CLAUDE_EVENTS_OFF=1 CLAUDE_AUTOSYNC_OFF=1 CLAUDE_CONFIG_NO_SYNC=1 "$CLAUDE_BIN" -p "$(cat <<PROMPT
 Workflow 도구로 $HOME/.claude/learning-pipeline/pipeline.workflow.js 를 scriptPath로, 다음 args와 함께 실행해라:
 $ARGS_JSON
 완료 후 결과의 agents_error가 0이면 성공이다 — Bash로 "bash $HOME/.claude/learning-pipeline/commit-cursor.sh"를 실행해서 커서를 커밋해라.

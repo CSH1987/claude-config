@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# claude-config:learning-pipeline-setup — 대화 학습 파이프라인(Vault 10_컨텍스트 + Hermes
-# SOOHA_CONTEXT.md 갱신용)을 이 머신 환경에 맞게 자동 설치/복구한다.
+# claude-config:learning-pipeline-setup — Claude·Hermes·Codex 대화와 Vault 전체 변경분에서
+# 패턴을 학습해 10_컨텍스트를 갱신하는 파이프라인을 자동 설치/복구한다.
 # 머신게이트: 맥미니 + vault-scope.json(볼트) 둘 다 있어야 설치(헤르메스는 선택 — gather.sh가
 # 없으면 조용히 스킵). 다른 머신(윈도우 등)은 조용히 스킵 — 거기엔 이 전제가 없는 게 정상.
 # 세션은 절대 막지 않는다 — 항상 exit 0. 끄려면 CLAUDE_LEARNING_PIPELINE_OFF=1.
@@ -50,12 +50,16 @@ SRC="$REPO_DIR/claude/learning-pipeline"
 DIR="$HOME/.claude/learning-pipeline"
 mkdir -p "$DIR"
 
-# 스크립트 4개는 심볼릭 링크(다른 훅과 동일 컨벤션) — 매 세션 재실행해도 무해(덮어쓰기).
+# 스크립트와 수집기는 심볼릭 링크(다른 훅과 동일 컨벤션) — 재실행해도 무해.
 ln -sfn "$SRC/gather.sh" "$DIR/gather.sh"
 ln -sfn "$SRC/commit-cursor.sh" "$DIR/commit-cursor.sh"
 ln -sfn "$SRC/run.sh" "$DIR/run.sh"
 ln -sfn "$SRC/pipeline.workflow.js" "$DIR/pipeline.workflow.js"
-chmod +x "$SRC/gather.sh" "$SRC/commit-cursor.sh" "$SRC/run.sh" 2>/dev/null
+ln -sfn "$SRC/collect-codex-user-prompts.py" "$DIR/collect-codex-user-prompts.py"
+ln -sfn "$REPO_DIR/claude/hooks/vault-catalog.py" "$DIR/vault-catalog.py"
+chmod 700 "$DIR" 2>/dev/null || true
+chmod +x "$SRC/gather.sh" "$SRC/commit-cursor.sh" "$SRC/run.sh" \
+  "$SRC/collect-codex-user-prompts.py" "$REPO_DIR/claude/hooks/vault-catalog.py" 2>/dev/null
 
 # 커서 없으면 최초 1회 초기화(7일 전부터 시작).
 CURSOR_FILE="$DIR/cursor.json"
@@ -63,7 +67,12 @@ if [ ! -f "$CURSOR_FILE" ]; then
   DEFAULT_TS=$(date -u -v-7d +"%Y-%m-%dT%H:%M:%S.000Z" 2>/dev/null || date -u -d "7 days ago" +"%Y-%m-%dT%H:%M:%S.000Z")
   python3 -c "
 import json
-json.dump({'lastProcessed': '$DEFAULT_TS', 'committedAt': None}, open('$CURSOR_FILE', 'w'), indent=2)
+    json.dump({
+        'version': 2,
+        'lastProcessed': '$DEFAULT_TS',
+        'sources': {'claude-code': '$DEFAULT_TS', 'hermes': '$DEFAULT_TS', 'codex': '$DEFAULT_TS'},
+        'committedAt': None,
+    }, open('$CURSOR_FILE', 'w'), indent=2)
 " 2>/dev/null
 fi
 

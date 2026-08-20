@@ -1,9 +1,10 @@
 #!/bin/bash
 # codex-sync: claude-config 규칙을 codex CLI(~/.codex)에 자동 적용
-# - AGENTS.md에 마커 블록 3종을 upsert (codex 자체 내용은 보존, 재실행 멱등):
+# - AGENTS.md에 마커 블록 4종을 upsert (codex 자체 내용은 보존, 재실행 멱등):
 #   1) claude-config:portable-rules   — exports/portable-rules.md (규칙 정본)
 #   2) claude-config:codex-vault-rules — exports/codex-vault-rules.md (Vault 연동 안내)
 #   3) claude-config:vault-context    — Vault 10_컨텍스트 인덱스 캐시 (vault-index.py 재사용)
+#   4) claude-config:vault-catalog    — Vault 전체 파일 커버리지·변경 상태 요약
 # - codex는 $CODEX_HOME/AGENTS.md(기본 ~/.codex/AGENTS.md)를 cwd 무관 전역 지침으로 로드한다
 #   (2026-08-20 실측 검증: 테스트 마커를 넣고 다른 cwd에서 `codex exec --sandbox read-only`
 #   실행 → 그대로 인용됨. hermes와 달리 게이트웨이 cwd 종속이 아니라 대상 파일 1곳으로 충분).
@@ -75,12 +76,30 @@ if [ -n "$VC_BODY" ]; then
     echo "$VC_END"; } > "$TMP.vc"
 fi
 
+# ── 블록 4: vault-catalog (전체 Vault 커버리지 지도) ───────────────
+CAT_START='<!-- claude-config:vault-catalog:start -->'
+CAT_END='<!-- claude-config:vault-catalog:end -->'
+CATALOGER="$HOOK_DIR/vault-catalog.py"
+CAT_BODY=""
+if [ -n "${VAULT:-}" ] && [ -d "${VAULT:-}" ] && [ -f "$CATALOGER" ]; then
+  STATE_FILE="$HOME/.claude/learning-pipeline/vault-state.json"
+  CATALOG_FILE="$HOME/.claude/vault-state/full-vault-index.json"
+  CAT_BODY="$(python3 "$CATALOGER" "$VAULT" --overview --state "$STATE_FILE" --catalog-out "$CATALOG_FILE" 2>/dev/null)"
+fi
+if [ -n "$CAT_BODY" ]; then
+  { echo "$CAT_START"
+    echo "## Vault 전체 지식 지도 (자동 생성 캐시 — 원문 정본은 옵시디언 Vault)"
+    echo "$CAT_BODY"
+    echo "$CAT_END"; } > "$TMP.cat"
+fi
+
 AGENTS_MD="$CODEX_DIR/AGENTS.md"
 upsert_block "$AGENTS_MD" "$PR_START" "$PR_END" "$TMP.pr"
 [ -f "$TMP.vr" ] && upsert_block "$AGENTS_MD" "$VR_START" "$VR_END" "$TMP.vr"
 [ -f "$TMP.vc" ] && upsert_block "$AGENTS_MD" "$VC_START" "$VC_END" "$TMP.vc"
+[ -f "$TMP.cat" ] && upsert_block "$AGENTS_MD" "$CAT_START" "$CAT_END" "$TMP.cat"
 
-rm -f "$TMP" "$TMP.pr" "$TMP.vr" "$TMP.vc"
+rm -f "$TMP" "$TMP.pr" "$TMP.vr" "$TMP.vc" "$TMP.cat"
 
 echo "codex-sync: rules applied to $AGENTS_MD"
 exit 0

@@ -8,3 +8,6 @@
   예외 없이 차단한다(구조적 안전장치, 다른 경로의 자유쓰기와 무관하게 유지).
 - `llm-wiki` 스킬(research/llm-wiki)은 이 볼트와 구조가 달라(SCHEMA.md/index.md/entities 등
   Karpathy 패턴) 이 볼트에 연결하지 않는다 — `WIKI_PATH`는 Vault를 가리키지 않음.
+- Vault의 모든 폴더·문서는 동기화·검색 범위다. AGENTS의 전체 지도와 `10_컨텍스트` 패턴을 먼저 적용하고, 비자명한 답변 전에는 obsidian 스킬 또는 파일시스템으로 Vault 전체를 검색해 관련 원문을 직접 읽는다.
+- 큰 CSV·JSON·첨부도 전체 지도에 유지한다. 원문 전체를 프롬프트에 복사하지 않고 자료 종류에 맞는 도구로 필요한 부분을 조회한다.
+- `~/.claude/vault-state/full-vault-index.json`은 모든 시스템이 다시 만들 수 있는 로컬 캐시이고, 정본은 Vault 원문이다.

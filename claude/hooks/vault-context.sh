@@ -23,6 +23,7 @@ print(json.dumps({'hookSpecificOutput': {'hookEventName': 'SessionStart', 'addit
 HOOK_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
 [ -n "$HOOK_DIR" ] || exit 0
 INDEXER="$HOOK_DIR/vault-index.py"
+CATALOGER="$HOOK_DIR/vault-catalog.py"
 SCOPE_FILE="$HOME/.claude/vault-scope.json"
 
 command -v python3 >/dev/null 2>&1 || exit 0
@@ -56,6 +57,13 @@ fi
 [ -f "$INDEXER" ] || emit "[Vault] vault-index.py가 없습니다 — 배포 확인 필요."
 CONTEXT_10="$(python3 "$INDEXER" "$VAULT/10_컨텍스트" 2>/dev/null)"
 [ -n "$CONTEXT_10" ] || CONTEXT_10="[Vault 10_컨텍스트] 인덱스 생성 실패"
+OVERVIEW=""
+if [ -f "$CATALOGER" ]; then
+  OVERVIEW="$(python3 "$CATALOGER" "$VAULT" \
+    --overview \
+    --state "$HOME/.claude/learning-pipeline/vault-state.json" \
+    --catalog-out "$HOME/.claude/vault-state/full-vault-index.json" 2>/dev/null)"
+fi
 
 PROJECTS="$(python3 -c "
 import json, sys
@@ -88,7 +96,14 @@ $PROJECTS
 PROJ_EOF
 fi
 
-FULL="$CONTEXT_10"
+FULL="$OVERVIEW"
+if [ -n "$FULL" ]; then
+  FULL="$FULL
+
+$CONTEXT_10"
+else
+  FULL="$CONTEXT_10"
+fi
 if [ "$IN_SCOPE" = "1" ]; then
   CONTEXT_20="$(python3 "$INDEXER" "$VAULT/20_업무위키" --recursive 2>/dev/null)"
   [ -n "$CONTEXT_20" ] && FULL="$FULL

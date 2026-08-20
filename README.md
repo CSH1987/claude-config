@@ -39,6 +39,7 @@ curl -fsSL https://raw.githubusercontent.com/CSH1987/claude-config/main/online-b
 - Obsidian·Claude Code·Codex·Hermes CLI 설치 여부 점검, 누락 항목 설치 시도
 - GitHub/Claude/Codex/Hermes 인증은 공식 대화형 로그인으로 인계
 - Codex/Hermes 공통 지침 동기화와 Git behind/ahead `0/0` 검증
+- Vault 전체 파일 지도 재생성, Codex SessionStart/SessionEnd 훅·로컬 memories·작업량 최적화 스킬 배포
 - 같은 명령을 다시 실행해도 같은 결과를 내는 멱등 복구
 
 Vault 저장소명/경로가 다르면 clone 전에 명시합니다.
@@ -53,8 +54,16 @@ Hermes CLI와 공통 규칙은 여러 장치에 둘 수 있지만, gateway·Tele
 ### 장치마다 한 번 필요한 Obsidian 단계
 
 - 처음 연 Vault에서 community plugins 사용을 신뢰/활성화해야 `obsidian-git`과 Local REST API가 동작합니다.
-- Local REST API 키와 Claude의 `vault-obsidian` MCP `Authorization` 헤더는 장치별 비밀 설정이라 공개 bootstrap이 복사하지 않습니다. Obsidian 플러그인을 연 뒤 해당 장치에서 다시 연결합니다.
+- Local REST API 키는 장치별 비밀이라 저장소에 복사하지 않습니다. Obsidian 플러그인을 활성화한 뒤 `bash ~/claude-config/install.sh`를 다시 실행하면, 설치기가 키 값을 출력하지 않고 이 장치의 Codex `vault-obsidian` MCP 설정에만 연결합니다. Claude의 기존 MCP Authorization도 장치별 설정이라 별도로 유지합니다.
+- 새 Codex 훅은 해시가 바뀔 때 한 번 신뢰 확인이 필요합니다. Codex CLI에서 `/hooks`를 열어 `~/.codex/hooks.json`의 두 훅을 검토·신뢰한 뒤 새 세션을 시작합니다.
 - 현재 전송 경로는 **private GitHub + Obsidian Git**입니다. 나중에 Obsidian native Sync를 도입하면 두 양방향 동기화를 겹치지 말고, Mac mini의 Git을 `backup-only`로 전환한 뒤 사용합니다.
+
+### Vault 전체 파악과 토큰 사용
+
+- Vault 원문은 폴더를 가리지 않고 모두 동기화·검색 범위에 둡니다.
+- `~/.claude/vault-state/full-vault-index.json`은 모든 파일의 지문·종류·변경 상태를 담는 장치 로컬 캐시입니다. Git에는 넣지 않고 새 장치에서 다시 만듭니다.
+- 세션에는 전체 원문 대신 짧은 지도와 `10_컨텍스트` 패턴을 넣습니다. 질문을 받으면 Vault 전체를 검색해 관련 원문을 직접 읽습니다.
+- 주간 학습은 Claude Code·Hermes·Codex 사용자 발화와 변경된 Vault 서술 문서를 함께 분석합니다. 큰 CSV·JSON은 전체 지도에 남기고 관련 질문 때 필요한 행만 조회합니다.
 
 ### Claude Code 설정만 복구하는 기존 bootstrap
 
@@ -196,6 +205,9 @@ claude-config/
 ├── install.sh                      # Mac/Linux 설치 (링크 + 머지 + 즉시 설치)
 ├── install.ps1                     # Windows 설치 (복사+머지 + 즉시 설치)
 ├── test/online-bootstrap.sh        # 격리 HOME에서 clone·연결·멱등·센티널 불변 검증
+├── test/vault-catalog.sh           # Vault 전체 커버리지·비밀·변경 감지 검증
+├── test/codex-integration.sh       # Codex 훅·config·MCP·멱등 병합 검증
+├── codex/                          # Codex 네이티브 훅·설정 병합기·작업량 최적화 스킬
 ├── test/fresh-install.ps1          # 설치 회귀 하네스 (Windows; 80+ 체크, Git Bash 로 bash 경로도 검증)
 └── claude/
     ├── settings.json               # 훅·플러그인·마켓플레이스 + effortLevel:high(바닥값)
