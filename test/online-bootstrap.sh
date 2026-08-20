@@ -93,8 +93,7 @@ cat > "$BIN_DIR/git" <<'EOF'
 #!/usr/bin/env bash
 set -eu
 if [ "${1:-}" = "-C" ] && [ "${2:-}" = "${TEST_CONFIG_DIR:-}" ]; then
-  shift 2
-  case "${1:-} ${2:-}" in
+  case "${3:-} ${4:-}" in
     "rev-list --left-right") printf '0\t0\n'; exit 0 ;;
     "status --porcelain") exit 0 ;;
   esac
