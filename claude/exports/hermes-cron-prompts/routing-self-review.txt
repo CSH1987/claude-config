@@ -1,0 +1,8 @@
+주간 라우팅 자가점검. 다음 순서로 진행하라.
+
+1. ~/.hermes/skills/workload-optimization/SKILL.md 를 읽어 3티어 워크포스 원칙(top=스스로 방향을 정하는 판단, mid=주어진 기준으로 판정만, exec=정해진 스펙 수행)을 파악하라.
+2. ~/.hermes/config.yaml 에서 model / auxiliary(20개 역할) / delegation / moa 섹션의 provider·model 매핑을 전부 읽어라.
+3. 역할과 티어가 안 맞는 지점을 찾아라 — 예: 판정형 역할(approval 등)이 provider: auto 로 방치돼 실제 어떤 모델이 뜨는지 불명확한 경우, moa aggregator 가 구세대 모델(claude-opus-4.8)로 고정된 경우, 반대로 단순 절차형 역할에 과한 모델이 붙은 경우.
+4. 찾은 불일치마다 "현재 상태 → 문제 → 제안 → 근거"를 짧게 써라. 확실하지 않은 추정은 추정이라고 표시하라.
+5. 결과는 Vault 파일 90_Hermes/라우팅제안/오늘날짜_hermes-라우팅제안.md 에 새로 써라. 이 파일 작성 외에 config.yaml 이나 다른 어떤 파일도 수정하지 마라 — 적용은 사람이 직접 검토 후 결정한다.
+6. 텔레그램으로는 "이번 주 라우팅 제안 N건, 상세는 Vault 파일 참고" 수준의 짧은 요약만 보내라.
