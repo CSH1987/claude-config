@@ -8,7 +8,7 @@
 #   (2026-08-20 실측 검증: 테스트 마커를 넣고 다른 cwd에서 `codex exec --sandbox read-only`
 #   실행 → 그대로 인용됨. hermes와 달리 게이트웨이 cwd 종속이 아니라 대상 파일 1곳으로 충분).
 # - codex 미설치 시 exit 0 (SessionStart 체인에 안전하게 상주 — 코덱스 없는 머신 안전)
-CODEX_DIR="${1:-$HOME/.codex}"
+CODEX_DIR="${1:-${CODEX_HOME:-$HOME/.codex}}"
 SOURCE_DIR="${2:-$HOME/.claude}"
 
 [ ! -d "$CODEX_DIR" ] && exit 0

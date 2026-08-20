@@ -47,9 +47,9 @@
 | SessionStart 훅 등록 | `settings.json` | hermes-sync 다음 순번으로 실행 |
 
 동작 방식 (2026-08-20 실측 검증):
-1. 코덱스는 `$CODEX_HOME/AGENTS.md`(기본 `~/.codex/AGENTS.md`)를 **cwd 무관 전역 지침**으로 로드한다 — hermes와 달리 게이트웨이 cwd 종속이 아니라 대상 파일 1곳(`$CODEX_DIR/AGENTS.md`)이면 충분. 검증 방법: 테스트 마커 문장을 `~/.codex/AGENTS.md`에 심고 다른 cwd(`/Users/evershongdae1/claude-config`)에서 `codex exec --sandbox read-only "..."` 실행 → 마커 그대로 인용됨 확인.
+1. 코덱스는 `$CODEX_HOME/AGENTS.md`(기본 `~/.codex/AGENTS.md`)를 **cwd 무관 전역 지침**으로 로드한다 — hermes와 달리 게이트웨이 cwd 종속이 아니라 대상 파일 1곳(`$CODEX_DIR/AGENTS.md`)이면 충분. 검증 방법: 테스트 마커 문장을 `~/.codex/AGENTS.md`에 심고 다른 cwd(`~/claude-config`)에서 `codex exec --sandbox read-only "..."` 실행 → 마커 그대로 인용됨 확인.
 2. 마커 블록 3종: `claude-config:portable-rules` / `claude-config:codex-vault-rules` / `claude-config:vault-context` (hermes와 동일 3종, 대상 파일만 다름).
-3. **install.sh에 훅 파일 링크 추가를 잊으면 매 세션 exit 127로 조용히 실패한다** — vault-context.sh 때 실측된 것과 같은 함정(§변경이력 2026-08-01 각주 참고). settings.json SessionStart 등록 + install.sh `ln -sfn`/chmod 목록 둘 다 반드시 갱신할 것.
+3. **install.sh에 훅 파일 링크 추가를 잊으면 매 세션 exit 127로 조용히 실패한다** — vault-context.sh 때 실측된 것과 같은 함정(기록: `install.sh:183-186` 주석). settings.json SessionStart 등록 + install.sh `ln -sfn`/chmod 목록 둘 다 반드시 갱신할 것.
 
 재설치·재등록 시:
 - 규칙 재주입: `bash ~/.claude/hooks/codex-sync.sh` 수동 실행(멱등 — 몇 번 실행해도 마커 블록 각 1개 유지).
@@ -60,7 +60,7 @@
 헤르메스가 자기 `config.yaml`의 provider/model 매핑을 `workload-optimization` SKILL.md(3티어 원칙)와 대조해 불일치를 찾고, **제안만** Vault `90_Hermes/라우팅제안/`에 드래프트로 남기는 주간 크론.
 
 - 프롬프트 원문(정본): `claude/exports/hermes-cron-prompts/routing-self-review.txt`
-- 등록 명령: `hermes cron create --name routing-self-review --deliver "telegram:8256862032" '0 10 * * 1' "$(cat claude/exports/hermes-cron-prompts/routing-self-review.txt)"`
+- 등록 명령: `hermes cron create --name routing-self-review --deliver "telegram:<chat_id>" '0 10 * * 1' "$(cat claude/exports/hermes-cron-prompts/routing-self-review.txt)"` — `<chat_id>`는 로컬 `~/.hermes/config.yaml`(또는 기존 vegas 잡)에서 확인, PUBLIC 레포에 실제 chat ID를 적지 않는다.
 - 잡 ID: `b5ce6f889daa` (등록일 2026-08-20, 첫 실행 2026-08-24 10:00).
 - **거버넌스**: config.yaml 직접 수정 금지 — 검색·분석·제안까지만 자동, 적용은 사람 승인(claude-config `lens:routing` 루프와 같은 원칙, CLAUDE.md 2026-08-19 "동작·라우팅을 바꾸는 규칙은 드래프트+사람승인" 규정을 헤르메스 쪽에도 동일 적용).
 - 확인: `hermes cron list`로 등록 여부, `hermes cron run routing-self-review`(또는 다음 정기 실행)로 Vault 드래프트 생성 + config.yaml 해시 불변 확인.
