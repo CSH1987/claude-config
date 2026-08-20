@@ -130,6 +130,166 @@ ensure_runtimes() {
   fi
 }
 
+# Codex가 홈에서 Hermes용 ~/AGENTS.md를 잘못 상속하지 않도록 홈 범위 override를 배포한다.
+# 일반 파일이 이미 있으면 덮어쓰지 않고 1회 백업한 뒤 관리 심링크로 전환한다.
+install_codex_home_override() {
+  local src="$REPO_DIR/codex/home-AGENTS.override.md"
+  local dst="$HOME/AGENTS.override.md"
+  local backup
+  [ -f "$src" ] || { echo "  ! Codex 홈 override 소스 없음: $src" >&2; return 1; }
+  if [ -d "$dst" ] && [ ! -L "$dst" ]; then
+    echo "  ! $dst 가 디렉터리라 Codex 홈 override 링크를 설치하지 못함" >&2
+    return 1
+  fi
+  if [ -e "$dst" ] && [ ! -L "$dst" ]; then
+    backup="$dst.bak.$(date +%s)"
+    mv "$dst" "$backup"
+    echo "  i 기존 AGENTS.override.md 보존: $backup"
+  fi
+  ln -sfn "$src" "$dst"
+  [ "$(readlink "$dst" 2>/dev/null || true)" = "$src" ] || {
+    echo "  ! Codex 홈 override 링크 검증 실패: $dst" >&2
+    return 1
+  }
+  echo "  ✓ Codex home override linked (~/AGENTS.override.md)"
+}
+
+# Vault 절대경로는 공개 레포에 넣지 않고 머신 로컬 scope에만 둔다.
+# 우선순위: 명시적 OBSIDIAN_VAULT_PATH → 기존 유효 scope → Hermes .env → ~/Documents/Vault.
+# 후보는 00_홈.md와 10_컨텍스트가 실제로 있는 Vault만 허용한다.
+ensure_vault_scope() {
+  local scope_file="$DST/vault-scope.json"
+  local vault_path=""
+  local existing_path=""
+  local hermes_env_path=""
+  local explicit_path="${OBSIDIAN_VAULT_PATH:-}"
+
+  normalize_home_path() {
+    case "$1" in
+      "~") printf '%s\n' "$HOME" ;;
+      "~/"*) printf '%s/%s\n' "$HOME" "${1#\~/}" ;;
+      *) printf '%s\n' "$1" ;;
+    esac
+  }
+  valid_vault_path() {
+    case "$1" in
+      /*) [ -f "$1/00_홈.md" ] && [ -d "$1/10_컨텍스트" ] ;;
+      *) return 1 ;;
+    esac
+  }
+
+  if [ -n "$explicit_path" ]; then
+    explicit_path="$(normalize_home_path "$explicit_path")"
+    if valid_vault_path "$explicit_path"; then
+      vault_path="$explicit_path"
+    else
+      echo "  ! OBSIDIAN_VAULT_PATH가 유효한 Vault가 아님 — 기존/기본 경로 탐색 계속" >&2
+    fi
+  fi
+
+  if [ -f "$scope_file" ] && command -v python3 >/dev/null 2>&1; then
+    existing_path="$(python3 - "$scope_file" <<'PY' 2>/dev/null || true
+import json, os, sys
+try:
+    value = json.load(open(sys.argv[1], encoding='utf-8')).get('vaultPath', '')
+    print(os.path.expanduser(value) if isinstance(value, str) else '')
+except Exception:
+    pass
+PY
+)"
+    if [ -z "$vault_path" ] && valid_vault_path "$existing_path"; then
+      vault_path="$existing_path"
+    fi
+  elif [ -f "$scope_file" ] && ! command -v python3 >/dev/null 2>&1; then
+    # 전체 설치 후 ensure_runtimes가 python을 확보하면 다시 호출해 검증·갱신한다.
+    echo "  i python3 미탐지 — 기존 vault-scope.json 보존 후 런타임 설치 뒤 재확인"
+    return 0
+  fi
+
+  if [ -z "$vault_path" ] && [ -f "$HOME/.hermes/.env" ]; then
+    hermes_env_path="$(awk '
+      /^[[:space:]]*OBSIDIAN_VAULT_PATH[[:space:]]*=/ {
+        sub(/^[[:space:]]*OBSIDIAN_VAULT_PATH[[:space:]]*=[[:space:]]*/, "")
+        sub(/[[:space:]]*\r$/, "")
+        print
+        exit
+      }' "$HOME/.hermes/.env" 2>/dev/null || true)"
+    case "$hermes_env_path" in
+      \"*\") hermes_env_path="${hermes_env_path#\"}"; hermes_env_path="${hermes_env_path%\"}" ;;
+      \'*\') hermes_env_path="${hermes_env_path#\'}"; hermes_env_path="${hermes_env_path%\'}" ;;
+    esac
+    hermes_env_path="$(normalize_home_path "$hermes_env_path")"
+    valid_vault_path "$hermes_env_path" && vault_path="$hermes_env_path"
+  fi
+
+  if [ -z "$vault_path" ] && valid_vault_path "$HOME/Documents/Vault"; then
+    vault_path="$HOME/Documents/Vault"
+  fi
+  if [ -z "$vault_path" ]; then
+    echo "  i Vault 미탐지 — OBSIDIAN_VAULT_PATH=/absolute/path 로 재실행하면 연결됨"
+    return 0
+  fi
+
+  if [ "$existing_path" = "$vault_path" ]; then
+    echo "  ✓ vault-scope preserved (existing valid Vault)"
+    return 0
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$scope_file" "$vault_path" <<'PY'
+import json, os, sys
+scope_file, vault_path = sys.argv[1:]
+try:
+    with open(scope_file, encoding='utf-8') as stream:
+        data = json.load(stream)
+    if not isinstance(data, dict):
+        data = {}
+except (FileNotFoundError, json.JSONDecodeError, OSError):
+    data = {}
+data['vaultPath'] = vault_path
+data.setdefault('projects', [])
+temporary = scope_file + '.tmp-install'
+with open(temporary, 'w', encoding='utf-8') as stream:
+    json.dump(data, stream, indent=2, ensure_ascii=False)
+    stream.write('\n')
+os.replace(temporary, scope_file)
+PY
+  elif [ ! -e "$scope_file" ]; then
+    # Python이 없는 최소 환경용 신규 파일 fallback. 기존 파일은 다른 키 보존을 위해 건드리지 않는다.
+    local escaped_path
+    escaped_path="$(printf '%s' "$vault_path" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+    printf '{\n  "vaultPath": "%s",\n  "projects": []\n}\n' "$escaped_path" > "$scope_file"
+  else
+    echo "  ! python3가 없어 기존 vault-scope.json을 안전하게 갱신하지 못함" >&2
+    return 1
+  fi
+  echo "  ✓ vault-scope ensured (local-only, portable path discovery)"
+}
+
+# 설치 직후 연결된 시스템에 정본 규칙을 적용하고 핵심 마커가 정확히 1개인지 확인한다.
+run_connected_system_sync() {
+  local count
+  if [ -d "$HOME/.codex" ]; then
+    "$DST/hooks/codex-sync.sh"
+    for marker in \
+      '<!-- claude-config:portable-rules:start -->' \
+      '<!-- claude-config:codex-vault-rules:start -->'; do
+      count="$(grep -cF "$marker" "$HOME/.codex/AGENTS.md" 2>/dev/null || true)"
+      [ "$count" = "1" ] || { echo "  ! Codex 동기화 검증 실패: $marker ($count)" >&2; return 1; }
+    done
+    echo "  ✓ Codex rules synced and verified"
+  fi
+  if [ -d "$HOME/.hermes" ]; then
+    "$DST/hooks/hermes-sync.sh"
+    for marker in \
+      '<!-- claude-config:portable-rules:start -->' \
+      '<!-- claude-config:hermes-vault-rules:start -->'; do
+      count="$(grep -cF "$marker" "$HOME/.hermes/AGENTS.md" 2>/dev/null || true)"
+      [ "$count" = "1" ] || { echo "  ! Hermes 동기화 검증 실패: $marker ($count)" >&2; return 1; }
+    done
+    echo "  ✓ Hermes rules synced and verified"
+  fi
+}
+
 # Windows(Git Bash/MSYS/Cygwin) 감지 — 핵심 분기.
 # Claude Code 는 훅을 "사용자가 claude 를 켠 셸"이 아니라 자기가 직접 스폰한다. 그래서 bash-form
 # 훅(`bash "$HOME/...".sh`)을 settings.json 에 박으면 PowerShell 로 켠 세션에서도 그 명령이
@@ -276,6 +436,11 @@ ln -sfn "$REPO_DIR/claude/exports" "$DST/exports"
 echo "  ✓ exports linked (portable-rules → ~/.claude/exports)"
 chmod +x "$REPO_DIR/claude/lib/memdir.sh" "$REPO_DIR/claude/lib/events.sh"
 echo "  ✓ lib linked (memdir resolver, events instrument, model-watch + skill-watch + auto-update engines)"
+
+# 새 환경에서도 홈 범위 Codex 라우팅과 Vault 경로가 즉시 복구되도록 설치 payload에 포함한다.
+install_codex_home_override
+ensure_vault_scope
+run_connected_system_sync
 
 # .leakwords 는 더 이상 자동시드하지 않는다(2026-08-02: 시드 입력원이던 profile 은퇴).
 # gate2b(bare 실명 스캔) 활성화는 이제 사용자가 promote 스킬 최초 실행 시 1회 수동으로 한다
@@ -495,6 +660,9 @@ fi
 # 런타임 부트스트랩(node + python≥3.10). 플러그인 설치보다 먼저, CLAUDECODE 세션 가드 밖에서 실행한다:
 # brew 설치는 중첩 claude 를 띄우지 않아 세션 안에서도 안전하고, 플러그인 훅이 node 를 필요로 하기 때문.
 ensure_runtimes
+
+# 전체 설치에서 방금 확보한 python으로 Vault 인덱스까지 재생성한다(멱등).
+run_connected_system_sync
 
 # 즉시 설치
 # claude 세션 내부에서 install.sh 를 돌리면, 플러그인 설치가 띄우는 중첩 claude 프로세스의
