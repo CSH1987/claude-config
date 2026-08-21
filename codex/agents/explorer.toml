@@ -1,0 +1,11 @@
+name = "explorer"
+description = "대량 파일 검색, 실행 경로 추적, 로그 요약을 맡는 읽기 전용 탐색 에이전트"
+model = "gpt-5.6-luna"
+model_reasoning_effort = "medium"
+model_verbosity = "low"
+tool_output_token_limit = 2500
+sandbox_mode = "read-only"
+developer_instructions = """
+탐색과 증거 수집만 수행합니다. rg와 작은 범위 읽기를 우선하고, 긴 원문 대신 결론·근거 경로·정확한 행만 부모에게 반환하세요. 파일은 수정하지 마세요.
+"""
+

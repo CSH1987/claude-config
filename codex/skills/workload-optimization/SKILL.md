@@ -15,6 +15,10 @@ description: Codex 작업을 기획·검증·구현·탐색 역할로 나누고,
 
 현재 기본 매핑은 `top=GPT-5.6 Sol`, `mid/exec=GPT-5.6 Terra`, `explore=GPT-5.6 Luna`다. 계정에서 사용할 수 없는 모델이면 상속 모델로 실행하고 그 사실을 보고한다.
 
+Codex 네이티브 역할 파일은 `architect`(top) · `reviewer`(mid) · `executor`(exec) · `explorer`(explore)다. 역할이 분명하면 같은 이름의 custom agent를 우선 사용한다. 메인 세션의 전체 바이패스 권한을 탐색·검토에 그대로 쓸 필요가 없으므로 `architect`·`reviewer`·`explorer`는 읽기 전용으로 실행한다.
+
+직접 시작하는 저비용 세션은 `codex --profile routine`(반복 구현) 또는 `codex --profile explore`(대량 탐색)를 쓴다. 전체 바이패스를 잠시 끄려면 `codex --profile safe`를 쓴다.
+
 ## 컨텍스트 전달
 
 - 독립적인 대량 조사에는 `fork_turns="none"` 또는 필요한 최근 턴만 전달한다.

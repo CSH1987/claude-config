@@ -164,11 +164,25 @@ install_codex_runtime() {
   [ -d "$codex_home" ] || return 0
   [ -f "$configure_script" ] || { echo "  ! Codex 설정 병합기 없음: $configure_script" >&2; return 1; }
 
-  mkdir -p "$codex_home/hooks" "$codex_home/skills" "$HOME/.claude/vault-state"
-  chmod 700 "$codex_home/hooks" "$codex_home/skills" "$HOME/.claude/vault-state" 2>/dev/null || true
+  mkdir -p "$codex_home/hooks" "$codex_home/skills" "$codex_home/agents" "$HOME/.claude/vault-state"
+  chmod 700 "$codex_home/hooks" "$codex_home/skills" "$codex_home/agents" "$HOME/.claude/vault-state" 2>/dev/null || true
   for source_path in "$REPO_DIR"/codex/hooks/*.sh; do
     [ -f "$source_path" ] || continue
     target_path="$codex_home/hooks/$(basename "$source_path")"
+    backup_conflicting_path "$target_path"
+    ln -sfn "$source_path" "$target_path"
+  done
+
+  for source_path in "$REPO_DIR"/codex/profiles/*.config.toml; do
+    [ -f "$source_path" ] || continue
+    target_path="$codex_home/$(basename "$source_path")"
+    backup_conflicting_path "$target_path"
+    ln -sfn "$source_path" "$target_path"
+  done
+
+  for source_path in "$REPO_DIR"/codex/agents/*.toml; do
+    [ -f "$source_path" ] || continue
+    target_path="$codex_home/agents/$(basename "$source_path")"
     backup_conflicting_path "$target_path"
     ln -sfn "$source_path" "$target_path"
   done

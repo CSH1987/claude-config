@@ -35,9 +35,19 @@ COMPACT_PROMPT = (
     "4) 사용자가 확정한 결정과 이유. "
     "중간 탐색과 중복 출력은 줄이고, Vault 전체 지도와 10_컨텍스트는 compact 뒤 SessionStart 훅이 다시 넣는다."
 )
+STATUS_LINE_ITEMS = [
+    "model-with-reasoning",
+    "context-used",
+    "five-hour-limit",
+    "weekly-limit",
+    "used-tokens",
+    "estimated-thread-cost",
+    "git-branch",
+]
 MANAGED_HOOK_COMMANDS = {
     'bash "$HOME/.codex/hooks/session-context.sh"',
     'bash "$HOME/.codex/hooks/session-end.sh"',
+    'bash "$HOME/.codex/hooks/compact-lifecycle.sh"',
 }
 
 
@@ -149,6 +159,15 @@ def upsert_top_level_key(text: str, key: str, value: str) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def remove_top_level_key(text: str, key: str) -> str:
+    """서로 배타적인 옛 최상위 설정 키만 제거한다."""
+    lines = text.splitlines()
+    first_section = next((i for i, line in enumerate(lines) if re.match(r"^\s*\[.+\]", line)), len(lines))
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
+    kept = [line for index, line in enumerate(lines) if not (index < first_section and pattern.match(line))]
+    return "\n".join(kept).rstrip() + "\n"
+
+
 def remove_mcp_section(text: str, name: str) -> str:
     lines = text.splitlines()
     prefix = f"mcp_servers.{name}"
@@ -201,8 +220,37 @@ def obsidian_mcp_settings(vault_path: Path | None) -> tuple[str, str] | None:
 
 def build_config(existing: str, mcp: tuple[str, str] | None) -> tuple[str, str]:
     text = existing
+    existing_status_line: list[str] = []
+    if tomllib is not None and existing.strip():
+        existing_data = tomllib.loads(existing)
+        candidate = existing_data.get("tui", {}).get("status_line", [])
+        if isinstance(candidate, list) and all(isinstance(item, str) for item in candidate):
+            existing_status_line = candidate
+    status_line = existing_status_line + [item for item in STATUS_LINE_ITEMS if item not in existing_status_line]
     text = upsert_top_level_key(text, "compact_prompt", json.dumps(COMPACT_PROMPT, ensure_ascii=False))
+    # Claude Code의 bypassPermissions 패턴을 Codex 네이티브 권한 조합으로 이식한다.
+    # 외부 앱 발송·결제 같은 행동 게이트는 AGENTS/Vault 공통 규칙이 별도로 유지한다.
+    # beta permission profiles와 legacy sandbox 키는 함께 쓰지 않는다.
+    text = remove_top_level_key(text, "default_permissions")
+    text = upsert_top_level_key(text, "approval_policy", json.dumps("never"))
+    text = upsert_top_level_key(text, "sandbox_mode", json.dumps("danger-full-access"))
+    text = upsert_top_level_key(text, "model_verbosity", json.dumps("low"))
     text = upsert_section_keys(text, "features", {"hooks": "true", "memories": "true"})
+    text = upsert_section_keys(
+        text,
+        "agents",
+        {
+            "max_concurrent_threads_per_session": "3",
+            "default_subagent_model": json.dumps("gpt-5.6-terra"),
+            "default_subagent_reasoning_effort": json.dumps("high"),
+        },
+    )
+    text = upsert_section_keys(
+        text,
+        "tui",
+        {"status_line": json.dumps(status_line)},
+    )
+    text = upsert_section_keys(text, "notice", {"hide_full_access_warning": "true"})
     # 1차 구현이 쓴 `generate`/`use`는 Codex 0.148 strict schema에 없는 키다.
     # 공식 키로 이관하되 [memories]의 다른 사용자 조정값은 그대로 둔다.
     text = remove_section_keys(text, "memories", {"generate", "use"})

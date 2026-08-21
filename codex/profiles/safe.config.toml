@@ -1,0 +1,4 @@
+# 전체 바이패스를 잠시 끄는 복구 프로필: codex --profile safe
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
