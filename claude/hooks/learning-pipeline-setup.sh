@@ -56,10 +56,14 @@ ln -sfn "$SRC/commit-cursor.sh" "$DIR/commit-cursor.sh"
 ln -sfn "$SRC/run.sh" "$DIR/run.sh"
 ln -sfn "$SRC/pipeline.workflow.js" "$DIR/pipeline.workflow.js"
 ln -sfn "$SRC/collect-codex-user-prompts.py" "$DIR/collect-codex-user-prompts.py"
+ln -sfn "$SRC/finalize-gathered-prompts.py" "$DIR/finalize-gathered-prompts.py"
+ln -sfn "$SRC/validate-vault-output.py" "$DIR/validate-vault-output.py"
 ln -sfn "$REPO_DIR/claude/hooks/vault-catalog.py" "$DIR/vault-catalog.py"
 chmod 700 "$DIR" 2>/dev/null || true
 chmod +x "$SRC/gather.sh" "$SRC/commit-cursor.sh" "$SRC/run.sh" \
-  "$SRC/collect-codex-user-prompts.py" "$REPO_DIR/claude/hooks/vault-catalog.py" 2>/dev/null
+  "$SRC/collect-codex-user-prompts.py" "$SRC/finalize-gathered-prompts.py" \
+  "$SRC/validate-vault-output.py" \
+  "$REPO_DIR/claude/hooks/vault-catalog.py" 2>/dev/null
 
 # 커서 없으면 최초 1회 초기화(7일 전부터 시작).
 CURSOR_FILE="$DIR/cursor.json"
@@ -71,6 +75,8 @@ json.dump({
         'version': 2,
         'lastProcessed': '$DEFAULT_TS',
         'sources': {'claude-code': '$DEFAULT_TS', 'hermes': '$DEFAULT_TS', 'codex': '$DEFAULT_TS'},
+        'boundaryIds': {'claude-code': [], 'hermes': [], 'codex': []},
+        'boundaryStarts': {'claude-code': '$DEFAULT_TS', 'hermes': '$DEFAULT_TS', 'codex': '$DEFAULT_TS'},
         'committedAt': None,
     }, open('$CURSOR_FILE', 'w'), indent=2)
 " 2>/dev/null

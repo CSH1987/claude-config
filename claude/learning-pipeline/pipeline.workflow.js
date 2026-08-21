@@ -10,20 +10,22 @@ export const meta = {
 
 // 전부 args로 받는다(머신·계정마다 경로가 다름 — 하드코딩 금지, Node API 접근도 없어서 process.env도 못 씀).
 // run.sh가 실행 시점에 $HOME 기준 실제 경로를 채워서 넘긴다. args 누락 시 명확히 실패시킨다(잘못된 경로로 조용히 진행 금지).
-if (!args || !args.vault10Path || !args.utterancesPath || !args.vaultDocumentsPath) {
-  throw new Error('args.vault10Path / utterancesPath / vaultDocumentsPath 가 전부 필요합니다 — run.sh에서 채워 넘겨야 함')
+if (!args || !args.vault10Path || !args.utterancesPath || !args.vaultDocumentsPath || !/^\d{4}-\d{2}-\d{2}$/.test(args.outputDate || '')) {
+  throw new Error('args.vault10Path / utterancesPath / vaultDocumentsPath / outputDate 가 전부 필요합니다 — run.sh에서 채워 넘겨야 함')
 }
 const VAULT = args.vault10Path
 const UTTERANCES_PATH = args.utterancesPath
 const VAULT_DOCUMENTS_PATH = args.vaultDocumentsPath
 const MEMORY_DIR = args.memoryDirPath || ''
 const VAULT_90_HERMES = args.vault90HermesPath || '' // 없으면(구버전 run.sh 등) Phase 4 감사 기록만 건너뜀 — 핵심 기능엔 영향 없음
+const OUTPUT_DATE = args.outputDate
 
 const EVIDENCE_PREFIX = `다음 사용자 발화 데이터셋을 읽어라: ${UTTERANCES_PATH}
 다음 Vault 전체 변경 문서 데이터셋도 읽어라: ${VAULT_DOCUMENTS_PATH}`
 const VAULT_EVIDENCE_RULES = `
 Vault 데이터셋은 모든 파일을 목록화한 결과 중 변경된 서술형 원문이다. authorship=human은 직접 근거, authorship=generated는 보조 근거로만 사용해라. generated 자료만으로 사용자 성향을 확정하거나 같은 AI 산출물을 재학습해 부풀리지 마라.
-프로젝트 상태·가격·일회성 사실은 패턴으로 승격하지 말고 원래 업무위키/결정로그에 남겨라. 사용자·고객 식별 정보, 비밀값, 원문 데이터 행은 suggestedAddition·reasoning·감사 로그에 복사하지 마라.
+프로젝트·상품·시장·플랫폼 이름, 실행 시각·세션 수 같은 운영 세부, 가격·일회성 사실은 패턴으로 승격하지 말고 원래 업무위키/결정로그에 남겨라. suggestedAddition·reasoning·감사 로그에는 사용자의 직접 발화를 인용하지 말고 일반화된 패턴, 근거 날짜, 독립 표본 수, 신뢰도만 남겨라.
+사용자·고객 식별 정보, 비밀값, 원문 데이터 행, 로컬 계정명, 절대경로, session/workflow/agent ID는 어떤 출력에도 복사하지 마라. 경로가 꼭 필요하면 Vault 상대경로나 <HOME>만 쓰고, 운영 식별자는 집계 건수로만 표현해라.
 변경 문서를 전부 확인했어도 새 지속 패턴이 없으면 hasUpdate=false가 정상이다. 삭제 상태는 기존 패턴 근거가 사라졌는지 확인하는 신호일 뿐, 캐노니컬 문장을 자동 삭제하는 지시가 아니다.`
 
 const LENSES = [
@@ -73,8 +75,8 @@ const LENS_SCHEMA = {
   properties: {
     hasUpdate: { type: 'boolean', description: '새 패턴 제안이 있거나, 기존 항목을 재확인하는 근거를 찾았으면 true(재확인만 있고 새 내용이 없어도 true)' },
     summary: { type: 'string', description: '변경 제안 요약, 없으면 빈 문자열' },
-    suggestedAddition: { type: 'string', description: '문서에 추가/수정할 구체 문구(마크다운), 없으면 빈 문자열' },
-    reasoning: { type: 'string', description: '근거가 된 발화/패턴 설명' },
+    suggestedAddition: { type: 'string', description: '문서에 추가/수정할 일반화된 구체 문구(마크다운). 직접 발화·프로젝트 세부·식별자·절대경로는 금지, 없으면 빈 문자열' },
+    reasoning: { type: 'string', description: '근거 날짜·독립 표본 수·신뢰도 중심의 짧은 설명. 직접 발화·프로젝트 세부·식별자·절대경로는 금지' },
     supersedes: { type: 'string', description: '이 제안이 기존 문서의 특정 문장/항목과 내용상 배치되거나 그것을 대체한다면 그 기존 문장을 원문 그대로 인용. 그런 경우가 아니면(대부분) 빈 문자열' },
     basedOnReflection: { type: 'boolean', description: '이 제안이 리플렉션 힌트(세션 자기정정 감지)의 영향을 받았으면 true, 원문 발화만으로 독립 판단했으면 false' },
   },
@@ -133,6 +135,7 @@ const ROUTING_PROMPT = `너는 이 claude-config 환경의 3티어 에이전트 
 **쓰기 범위 — 반드시 지켜라(다른 렌즈와 다름)**:
 - 다음은 절대 수정하지 마라: Vault \`10_컨텍스트\` 아래 캐노니컬 문서 3종(AI_협업_패턴.md / 업무_원칙_방법론.md / 강점_약점_보완.md), claude-config 레포의 모든 파일(SKILL.md·CLAUDE.md·훅·설정 등 — 경로에 "claude-config" 또는 "/.claude/"가 들어간 레포 관리 파일 일체), \`~/.claude/settings.json\`.
 - 쓰기는 오직 아래 지시된 라우팅제안 드래프트 파일 **하나**로 한정한다. 그 외엔 전부 read-only로 조회만 해라.
+- 리포트에는 로컬 계정명·절대경로·session/workflow/agent ID를 적지 마라. 경로는 `~` 또는 기능명으로 일반화하고, 개별 실행 흔적은 ID 대신 역할별 집계 건수만 남겨라. 직접 발화나 원시 JSON도 복사하지 마라.
 
 수집할 데이터(전부 Bash/Read로 네가 직접 조회해라, 실패하면 그 항목만 "데이터 없음"으로 남기고 계속 진행):
 1. \`npx --yes ccusage@latest claude daily --json\` 실행 → 최근 7~14일 모델별(claude-fable-5 / claude-opus-5 계열 / claude-sonnet-5) 일별 cost 추이. 급증·급감이 있으면 짚어라.
@@ -140,7 +143,7 @@ const ROUTING_PROMPT = `너는 이 claude-config 환경의 3티어 에이전트 
 3. 먼저 \`ls ~/.claude/projects/\`로 이 머신의 실제 프로젝트 디렉터리명을 확인해라(계정마다 다르다 — 특정 이름을 가정하지 마라). 그 아래 최근 세션들의 서브에이전트 위임 라벨(subagent_type 또는 Workflow agent() 호출의 label/phase)을 훑어서, 검증·리뷰·판정 성격(code-reviewer/security-reviewer/verifier/moderator/verdict류) 역할인데 model이 미지정이거나 top(Fable)로 실행된 사례(§5.10 ②의 "미지정=버그" 위반, 또는 아직 이관 안 된 사례)를 셈해라. 전수조사는 불필요 — 표본 위주로 방향성만 잡아라.
 4. 지금까지 수집한 데이터에 "Task(Agent) 도구로 위임된 검증·리뷰 역할"과 "Workflow agent()로 위임된 검증·리뷰 역할"을 구분할 수 있으면 구분해라 — 전자는 이번 3티어 절감 대상이 아니므로(§1 규약상 여전히 opus=Fable), 둘을 섞어 "전체 절감액"처럼 말하지 마라.
 
-위 데이터를 바탕으로 다음 형식의 마크다운 리포트를 작성해서, 있으면 다음 경로에 새 파일로 저장해라(Write 도구 사용, 이 파일 하나만): "${VAULT_90_HERMES}/라우팅제안/<오늘실제날짜 YYYY-MM-DD>_라우팅제안.md" (같은 날 재실행이면 "---" 구분선으로 새 절 이어붙이기). frontmatter: title/created/updated/category=라우팅제안/status=draft.
+위 데이터를 바탕으로 다음 형식의 마크다운 리포트를 작성해서, 있으면 다음 정확한 경로에 새 파일로 저장해라(Write 도구 사용, 이 파일 하나만): "${VAULT_90_HERMES}/라우팅제안/${OUTPUT_DATE}_라우팅제안.md". 날짜를 다시 계산하거나 다른 이름을 쓰지 마라. 같은 날 재실행이면 "---" 구분선으로 새 절 이어붙이기. frontmatter는 title/created/updated/category=라우팅제안/status=draft/tags=[라우팅, 비용, 주간점검]/related=[] 7필드를 전부 넣어라.
 
 리포트 본문 구성:
 - ## 지출 추이 (ccusage 실측)
@@ -154,7 +157,14 @@ phase('추출')
 const extractionThunks = [
   ...LENSES.map((lens) => () =>
     agent(lens.prompt + REFLECTION_NOTE, { label: `lens:${lens.key}`, phase: '추출', model: 'sonnet', schema: LENS_SCHEMA })
-      .then((r) => ({ ...lens, result: r }))
+      .then((r) => {
+        // agent()는 스킵/터미널 오류에서 throw가 아니라 null을 돌려줄 수 있다.
+        // null을 객체 안에 감싸면 lensResults 길이는 정상처럼 보여 커서가 잘못 전진한다.
+        if (r == null || typeof r !== 'object' || typeof r.hasUpdate !== 'boolean') {
+          throw new Error(`핵심 렌즈 ${lens.key}가 유효한 결과를 반환하지 않음`)
+        }
+        return { ...lens, result: r }
+      })
   ),
   VAULT_90_HERMES
     ? () => agent(ROUTING_PROMPT, { label: 'lens:routing', phase: '추출', model: 'sonnet' })
@@ -181,6 +191,8 @@ if (VAULT_90_HERMES) {
 }
 
 const withUpdates = lensResults.filter(Boolean).filter((l) => l.result?.hasUpdate)
+let synthesisCompleted = false
+let auditReported = false
 
 // Phase 6: 재확인(실시간이 이미 잡았음) vs 신규(이번에 처음 잡힘 — 실시간이 놓쳤을 수 있음) 집계.
 // 렌즈 단위 집계다(패턴 건수 아님 — 렌즈 1개가 신규+재확인을 동시에 내면 summary 접두사에 따라 한쪽으로만 잡힘, 최대 3).
@@ -200,29 +212,46 @@ if (withUpdates.length === 0) {
 현재 정책(vault-write.md, 2026-07-31): 이 볼트는 승인 게이트 없이 직접 쓰기가 허용된다 — _pending 제안 절차 쓰지 말고 바로 반영해라.
 
 반영 시 지켜야 할 것:
-- 각 파일 상단 frontmatter의 updated 필드를 오늘 날짜로 갱신
+- 각 파일 상단 frontmatter의 updated 필드를 이 실행에 고정된 날짜 ${OUTPUT_DATE}로 갱신
 - 기존 문서의 어조/구조(제목 레벨, 표 형식 등)를 그대로 유지하며 자연스럽게 통합 — 통째로 갈아엎지 마라
 - 3개 파일에 걸쳐 서로 모순되거나 중복되는 내용이 없게 조율 (hermes-agent 전달용 별도 파일은 쓰지 마라 — Vault가 정본이고, hermes-agent에는 hermes-sync.sh가 vault-context 블록으로 자동 전달한다)
 - 반영 여부·강도를 정할 때 두 가지를 같이 봐라: (1) 확신도 — 근거가 얼마나 탄탄한가, (2) 위해도 — 만약 이 판단이 틀렸다면 앞으로의 세션들에 얼마나 잘못 퍼질까. 확신도가 낮거나 위해도가 높은 항목(특히 강점_약점_보완.md처럼 협업 방식 전반에 영향을 주는 문서)은 더 보수적으로("[관찰 중 · 잠정]" 태그, 표본 크기 명시 등) 반영해라.
+- 10_컨텍스트에는 일반화된 규칙·근거 날짜·독립 표본 수·신뢰도만 남겨라. 직접 발화, 프로젝트·상품·시장·플랫폼 이름, 세션 시간·세션/에이전트 수, 구현 경로 같은 상세 사례는 옮기지 마라.
+- "점검·감사 요청 뒤 수정까지" 같은 실행 권한 패턴은 사용자가 수정을 명시적으로 요청했거나 이미 승인한 범위에만 적용한다. 진단·리뷰·보고처럼 명시적으로 read-only인 요청을 수정 권한으로 넓히지 마라. 단일 표본이면 [관찰 중 · 잠정]으로만 기록해라.
+- 모든 출력에서 로컬 계정명·절대경로·session/workflow/agent ID를 제거해라. 경로 포인터가 꼭 필요하면 Vault 상대경로나 <HOME>만 쓰고, 운영 식별자는 집계 건수로만 표현해라.
 - 렌즈가 summary를 "[재확인]"으로 표시한 제안은 새 문단을 추가하지 말고 해당 항목을 갱신해라. 먼저 그 항목에 이미 재확인 기록이 있는지 확인해라 — 서술형이든("...두 차례 반복 확인" 같은 문장) 태그형이든 이미 쓰인 표기 방식이 있으면 **그 방식을 그대로 따라** 갱신하고(새 형식을 억지로 섞지 마라), 그 항목에 재확인 기록이 전혀 없을 때만 새로 "(재확인: 1회, YYYY-MM-DD)" 형식을 도입해라. 카운트는 "이번 파이프라인 실행 1회 = 재확인 1회"로 센다 — reasoning에 그 실행에서 인용된 발화가 여러 건이어도 이번 실행에서는 1만 더한다(발화 건수만큼 여러 번 올리지 마라). 단, 같은 날짜에 여러 세션이 사실상 같은 사건을 동시에 보고한 경우(예: 병렬 터미널에 같은 지시를 브로드캐스트)는 애초에 독립적인 재확인이 아닐 수 있으니, 서로 다른 날짜·다른 맥락에서 나온 근거인지 먼저 판별한 뒤에만 반영해라.
 - 대체대상(옛 supersedes)이 채워진 제안은 **비파괴적으로** 반영해라 — 그 기존 문장을 삭제하거나 덮어쓰지 마라. 먼저 그 파일에 이미 폐기/무효화를 표시하는 관례가 있는지 확인해라(재확인과 마찬가지로 서술형이든 태그형이든) — 있으면 그 방식을 그대로 따르고, 없을 때만 새로 "폐기됨(YYYY-MM-DD): <왜 바뀌었는지 한 줄>" 형식을 도입해라. 인용된 문장이 표(마크다운 테이블) 셀이나 리스트 중첩 안에 있어서 그 자리에 바로 끼워넣으면 표/리스트 구조가 깨질 경우, 셀/줄 안에 억지로 넣지 말고 그 표/블록 바로 아래에 별도 문장으로 "폐기됨(YYYY-MM-DD): <원문 요약> — <이유>" 형태로 남겨라. 새 판단은 근처에 별도 문장/불릿으로 추가해라(기존 문장은 그대로 남긴다 — 나중에 왜 판단이 바뀌었는지 추적할 수 있어야 한다). 대체대상에 인용된 문장을 그 파일에서 실제로 못 찾겠으면(문서가 이미 바뀌었거나 인용이 부정확한 경우) 억지로 짜맞추지 말고, 그 제안은 일반 신규 추가로 취급하고 이유를 반영 요약에 남겨라. 이 규칙은 대체대상이 채워진 제안에만 적용한다 — 순수 신규 추가(대체대상이 빈 문자열)까지 "폐기됨" 낙인을 찍지 마라.
 - 리플렉션영향이 true인 제안은 렌즈 하나가 다른 LLM의 리플렉션 추정을 한 겹 더 거쳐 만든 재해석이다 — 원문 발화에서 바로 뽑은 제안보다 확신도를 한 단계 낮춰 취급해라(위 확신도×위해도 규칙과 같이 적용). 특히 강점_약점_보완.md처럼 위해도가 큰 문서에 반영할 땐 "[관찰 중 · 잠정]" 같은 보수적 표기를 우선 고려하고, 근거가 약하면 아예 보류해도 된다.
-${VAULT_90_HERMES ? `- 감사 기록: 아래 렌즈별 제안을 검토해서 무엇을 어떻게 반영할지(또는 반영하지 않을지) **전부 최종 결정한 뒤**, 그 최종 결정 내용 그대로 ${VAULT_90_HERMES}/학습이력/ 안에 파일 하나를 먼저 써라. 파일명: 오늘 실제 날짜를 YYYY-MM-DD 형식으로 채운 뒤 "_학습분.md"를 붙인다 — 예: 2026-08-19_학습분.md(이건 형식 예시일 뿐이다, "오늘날짜"라는 글자를 그대로 파일명에 쓰면 안 되고 실제 오늘 날짜 숫자를 넣어야 한다). 그 파일이 이미 있으면(같은 날 두 번째 실행) 덮어쓰지 말고 "---" 구분선 + 실행 시각으로 새 절을 이어붙여라. 없으면 새로 만들어라(frontmatter: title/created/updated/category=학습이력/status=active/tags/related — related엔 이번에 실제로 손댈 캐노니컬 파일들을 [[위키링크]]로). 내용: (1) 아래 렌즈별 제안 전체를 그대로(요약·근거·대체대상·재확인여부·리플렉션영향 포함) (2) 이번에 실제로 반영하기로 결정한 것과, 반영 안 하기로 한 것(중복/사소해서 뺀 것 포함)과 그 이유. 이 감사 기록을 쓴 다음에 캐노니컬 노트를 편집해라 — 그리고 그 편집 내용은 감사 기록에 적은 결정과 정확히 일치해야 한다(편집 도중 계획이 바뀌면 — 예를 들어 대체대상 인용문을 캐노니컬 파일에서 못 찾아 신규 추가로 전환하는 경우 — 감사 기록도 그 최종 내용에 맞게 고쳐써서 둘이 어긋나지 않게 해라). 이 파일은 hermes-agent에 전달되는 대상이 아니다(vault-context 블록은 10_컨텍스트만 다룬다) — 순수 감사 기록용이니 hermes-agent 전달용 표현으로 다듬을 필요 없다.` : ''}
+${VAULT_90_HERMES ? `- 감사 기록: 아래 렌즈별 제안을 검토해서 무엇을 어떻게 반영할지(또는 반영하지 않을지) **전부 최종 결정한 뒤**, 정확한 경로 ${VAULT_90_HERMES}/학습이력/${OUTPUT_DATE}_학습분.md 에 파일 하나를 먼저 써라. 날짜를 다시 계산하거나 다른 이름을 쓰지 마라. 그 파일이 이미 있으면(같은 날 두 번째 실행) 덮어쓰지 말고 "---" 구분선 + 실행 시각으로 새 절을 이어붙여라. 없으면 새로 만들어라(frontmatter: title/created/updated/category=학습이력/status=active/tags/related — related엔 이번에 실제로 손댈 캐노니컬 파일들을 [[위키링크]]로). 내용은 렌즈마다 대상·반영 여부·일반화 요약·근거 날짜와 독립 표본 수·신뢰도·결정 이유만 짧게 기록한다. 제안 JSON, suggestedAddition·reasoning 원문, 직접 발화, 프로젝트 세부, 로컬 계정명·절대경로·운영 ID는 복사하지 않는다. 이 감사 기록을 쓴 다음에 캐노니컬 노트를 편집해라 — 그리고 그 편집 내용은 감사 기록에 적은 결정과 정확히 일치해야 한다(편집 도중 계획이 바뀌면 감사 기록도 최종 내용에 맞게 고쳐써라). 이 파일은 hermes-agent에 전달되는 대상이 아닌 짧은 감사 포인터다.` : ''}
 
 렌즈별 제안:
-${JSON.stringify(withUpdates.map((l) => ({ 대상파일: l.file, 요약: l.result.summary, 제안내용: l.result.suggestedAddition, 근거: l.result.reasoning, 대체대상: l.result.supersedes || '', 리플렉션영향: !!l.result.basedOnReflection })), null, 2)}
+${JSON.stringify(withUpdates.map((l) => ({ 대상파일: l.file.replace(`${VAULT}/`, ''), 요약: l.result.summary, 제안내용: l.result.suggestedAddition, 근거: l.result.reasoning, 대체대상: l.result.supersedes || '', 리플렉션영향: !!l.result.basedOnReflection })), null, 2)}
 
 작업 후 5줄 이내로 요약해서 답하라: 첫 줄은 반드시 "실시간 기록 감사: 재확인 렌즈 ${reconfirmedCount}개(이미 실시간에 잡혔음) / 신규 렌즈 ${newCount}개(이번에 처음 잡힘, 실시간이 놓쳤을 수 있음)" 그대로(숫자는 이미 계산돼 있으니 다시 세지 마라) — 그다음 줄들에 무엇을 어느 파일에 반영했는지.${VAULT_90_HERMES ? ' 그리고 감사 기록 파일을 실제로 썼는지 — 썼으면 정확한 경로, 못 썼거나 생략했으면 그 이유를 명시적으로 밝혀라(자기보고이니 사실대로).' : ''}`
 
   const synthesis = await agent(synthesisPrompt, { label: 'synthesis', phase: '종합/반영', model: 'opus' })
+  if (synthesis == null || String(synthesis).trim() === '') {
+    throw new Error('종합/반영 에이전트가 결과 없이 종료됨')
+  }
+  synthesisCompleted = true
   log(`반영 완료: ${synthesis}`)
-  if (VAULT_90_HERMES && !/학습이력|학습분\.md/.test(synthesis || '')) {
-    log('⚠️ 감사 기록(90_Hermes/학습이력) 작성 여부가 synthesis 응답에서 확인 안 됨 — 다음 실행 시 직접 확인 필요')
+  auditReported = !VAULT_90_HERMES || /학습이력|학습분\.md/.test(String(synthesis))
+  if (!auditReported) {
+    throw new Error('종합/반영 결과에서 필수 학습이력 작성 확인을 찾지 못함')
   }
 }
 
 return {
-  reflection: reflectionSessions,
-  // filter(Boolean) 필수 — 렌즈 하나가 스킵/터미널에러로 null이 되면(parallel()의 격리 결과) .map이 바로 TypeError.
+  reflection: {
+    sessionCount: reflectionSessions.length,
+    correctedCount: correctedSessions.length,
+  },
+  synthesisRequired: withUpdates.length > 0,
+  synthesisCompleted,
+  auditRequired: Boolean(VAULT_90_HERMES) && withUpdates.length > 0,
+  auditReported,
+  routingRequired: Boolean(VAULT_90_HERMES),
+  routingCompleted: !VAULT_90_HERMES || Boolean(routingOutcome && routingOutcome.ok),
+  // filter(Boolean)으로 실제 성공한 핵심 렌즈 수를 보존한다. 바깥 쉘은 정확히 3개만 성공으로 인정한다.
   lensResults: lensResults.filter(Boolean).map((l) => ({ key: l.key, hasUpdate: l.result?.hasUpdate, summary: l.result?.summary })),
 }

@@ -4,7 +4,8 @@
 원칙:
 - `.git`은 전송 장치의 내부 자료라 Vault 내용에서 제외한다.
 - 나머지 파일은 모두 인벤토리에 넣는다.
-- 사람이 읽는 텍스트는 본문까지 변경분에 넣는다.
+- 사람이 작성한 텍스트는 본문까지 변경분에 넣는다. AI 생성 폴더는 목록·변경 사실만
+  넣고 본문은 다시 학습시키지 않아 자기복제와 토큰 낭비를 막는다.
 - Obsidian 설정·플러그인·시크릿 후보·바이너리는 메타데이터만 기록한다.
 - stdout의 overview에는 파일명·본문·시크릿을 내보내지 않는다.
 """
@@ -15,6 +16,7 @@ import argparse
 import hashlib
 import json
 import os
+import sys
 import tempfile
 import unicodedata
 from collections import Counter
@@ -32,16 +34,25 @@ GENERATED_PREFIXES = (
     "90_Hermes/일일요약/",
     "90_Hermes/학습이력/",
 )
-SENSITIVE_PARTS = (
-    ".env",
-    "credential",
-    "credentials",
-    "secret",
-    "token",
-    "api-key",
-    "apikey",
-    "obsidian-local-rest-api/data.json",
-)
+CANONICAL_CONTEXT_PATHS = {
+    "10_컨텍스트/AI_협업_패턴.md",
+    "10_컨텍스트/업무_원칙_방법론.md",
+    "10_컨텍스트/강점_약점_보완.md",
+}
+SENSITIVE_EXACT_PATHS = {".obsidian/plugins/obsidian-local-rest-api/data.json"}
+SENSITIVE_DIRECTORIES = {"credentials", "secrets", ".secrets"}
+SENSITIVE_BASENAMES = {
+    "credential.json",
+    "credentials.json",
+    "credentials.yaml",
+    "credentials.yml",
+    "credentials.toml",
+    "secret.json",
+    "secrets.json",
+    "token.json",
+    "api-key.json",
+    "apikey.json",
+}
 
 
 def utc_iso(timestamp: float | None = None) -> str:
@@ -55,7 +66,15 @@ def normalized_relative(path: Path, root: Path) -> str:
 
 def is_sensitive(relative_path: str) -> bool:
     lowered = relative_path.lower()
-    return any(part in lowered for part in SENSITIVE_PARTS)
+    parts = lowered.split("/")
+    basename = parts[-1]
+    return (
+        lowered in SENSITIVE_EXACT_PATHS
+        or any(part in SENSITIVE_DIRECTORIES for part in parts[:-1])
+        or basename in SENSITIVE_BASENAMES
+        or basename == ".env"
+        or basename.startswith(".env.")
+    )
 
 
 def classify(relative_path: str, suffix: str) -> tuple[str, str]:
@@ -74,10 +93,15 @@ def read_bytes_and_hash(path: Path) -> tuple[bytes, str]:
     return content, hashlib.sha256(content).hexdigest()
 
 
-def vault_entries(root: Path) -> list[Path]:
+def vault_entries(root: Path, strict: bool = False) -> list[Path]:
     """`.git`은 순회 자체를 하지 않고, symlink는 링크 항목으로만 돌려준다."""
     entries: list[Path] = []
-    for directory, dirnames, filenames in os.walk(root, followlinks=False):
+
+    def traversal_error(error: OSError) -> None:
+        if strict:
+            raise error
+
+    for directory, dirnames, filenames in os.walk(root, followlinks=False, onerror=traversal_error):
         current = Path(directory)
         kept_directories: list[str] = []
         for name in sorted(dirnames):
@@ -93,20 +117,22 @@ def vault_entries(root: Path) -> list[Path]:
     return sorted(entries, key=lambda item: unicodedata.normalize("NFC", item.as_posix()))
 
 
-def scan_once(root: Path) -> dict[str, Any]:
+def scan_once(root: Path, strict: bool = False) -> dict[str, Any]:
     files: dict[str, dict[str, Any]] = {}
     section_counts: Counter[str] = Counter()
     kind_counts: Counter[str] = Counter()
     semantic_count = 0
     fingerprint = hashlib.sha256()
 
-    for path in vault_entries(root):
+    for path in vault_entries(root, strict=strict):
         if path.is_symlink():
             relative_path = normalized_relative(path, root)
             try:
                 link_target = os.readlink(path)
                 stat = path.lstat()
             except OSError:
+                if strict:
+                    raise
                 continue
             digest = hashlib.sha256(link_target.encode("utf-8", errors="replace")).hexdigest()
             section = relative_path.split("/", 1)[0]
@@ -135,6 +161,8 @@ def scan_once(root: Path) -> dict[str, Any]:
             content, digest = read_bytes_and_hash(path)
             stat = path.stat()
         except OSError:
+            if strict:
+                raise
             continue
         suffix = path.suffix.lower()
         kind, authorship = classify(relative_path, suffix)
@@ -172,14 +200,16 @@ def scan_once(root: Path) -> dict[str, Any]:
     }
 
 
-def scan(root: Path) -> dict[str, Any]:
+def scan(root: Path, strict: bool = False) -> dict[str, Any]:
     """Obsidian/Git 동기화 중간 상태를 피하려고 안정된 두 스캔을 찾는다."""
-    previous = scan_once(root)
+    previous = scan_once(root, strict=strict)
     for _ in range(2):
-        current = scan_once(root)
+        current = scan_once(root, strict=strict)
         if current.get("vaultFingerprint") == previous.get("vaultFingerprint"):
             return current
         previous = current
+    if strict:
+        raise RuntimeError("Vault snapshot did not stabilize")
     return previous
 
 
@@ -222,9 +252,12 @@ def changed_paths(current: dict[str, Any], previous: dict[str, Any]) -> tuple[li
     return sorted(changed), deleted
 
 
-def decode_semantic_document(path: Path) -> str | None:
+def decode_semantic_document(path: Path, expected_hash: str) -> str | None:
     try:
-        return path.read_text(encoding="utf-8")
+        content = path.read_bytes()
+        if hashlib.sha256(content).hexdigest() != expected_hash:
+            return None
+        return content.decode("utf-8")
     except (OSError, UnicodeDecodeError):
         return None
 
@@ -241,18 +274,28 @@ def make_changes(root: Path, current: dict[str, Any], previous: dict[str, Any]) 
         if not record.get("semantic"):
             metadata_only += 1
             continue
-        text = decode_semantic_document(root / relative_path)
-        if text is None:
-            metadata_only += 1
-            continue
+        authorship = record.get("authorship", "human")
+        if authorship == "generated" or relative_path in CANONICAL_CONTEXT_PATHS:
+            text = ""
+        else:
+            text = decode_semantic_document(root / relative_path, str(record.get("sha256", "")))
+            if text is None:
+                raise RuntimeError("human semantic document decode failed")
+        if authorship == "generated":
+            content_policy = "generated-metadata-only"
+        elif relative_path in CANONICAL_CONTEXT_PATHS:
+            content_policy = "canonical-read-separately"
+        else:
+            content_policy = "full-text"
         documents.append(
             {
                 "source": "vault-document",
                 "path": relative_path,
                 "ts": record.get("mtime"),
                 "status": "changed" if relative_path in previous_files else "added",
-                "authorship": record.get("authorship", "human"),
+                "authorship": authorship,
                 "text": text,
+                "contentPolicy": content_policy,
             }
         )
 
@@ -310,6 +353,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--documents-out")
     parser.add_argument("--catalog-out")
     parser.add_argument("--overview", action="store_true")
+    parser.add_argument("--strict", action="store_true")
     return parser.parse_args()
 
 
@@ -318,16 +362,19 @@ def main() -> int:
     root = Path(args.vault_root).expanduser().resolve()
     if not root.is_dir():
         return 0
-    current = scan(root)
+    current = scan(root, strict=args.strict)
     state_path = Path(args.state).expanduser() if args.state else None
     previous = load_state(state_path)
+    # decode 같은 후속 검증이 실패해도 state/documents 한쪽만 교체되지 않도록 모든
+    # 산출물을 메모리에서 먼저 완성한 뒤 원자적으로 기록한다.
+    documents = make_changes(root, current, previous) if args.documents_out else None
 
     if args.catalog_out:
         atomic_json(Path(args.catalog_out).expanduser(), current)
     if args.pending_state:
         atomic_json(Path(args.pending_state).expanduser(), current)
-    if args.documents_out:
-        atomic_json(Path(args.documents_out).expanduser(), make_changes(root, current, previous))
+    if args.documents_out and documents is not None:
+        atomic_json(Path(args.documents_out).expanduser(), documents)
     if args.overview:
         print(overview(current, previous))
     return 0
@@ -337,5 +384,8 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception:
-        # SessionStart에서 호출돼도 대화를 막지 않는 fail-open 계약.
+        # SessionStart 지도는 fail-open, 커서가 걸린 학습 수집은 --strict로 fail-closed.
+        if "--strict" in sys.argv:
+            print("ERROR: Vault 카탈로그를 완전하게 생성하지 못함", file=sys.stderr)
+            raise SystemExit(1)
         raise SystemExit(0)

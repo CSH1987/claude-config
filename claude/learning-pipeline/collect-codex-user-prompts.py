@@ -7,7 +7,9 @@ import argparse
 import hashlib
 import json
 import os
+import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -18,11 +20,32 @@ INJECTED_PREFIXES = (
     "<environment_context>",
 )
 
+SYNTHETIC_USER_PREFIXES = (
+    "<task-notification>",
+    "<local-command-stdout>",
+    "<command-name>",
+    "<command-message>",
+    "<system-reminder>",
+    (
+        "This session is being continued from a previous conversation that ran out of context. "
+        "The summary below covers the earlier portion of the conversation."
+    ),
+)
+
+LEGACY_IMPORT_WINDOW = timedelta(seconds=5)
+LEGACY_IMPORT_MIN_SESSIONS = 10
+LEGACY_IMPORT_INITIAL_GRACE = timedelta(seconds=2)
+
+
+class CollectionError(RuntimeError):
+    """세션 파일 일부를 신뢰성 있게 읽지 못해 전체 수집을 재시도해야 함."""
+
 
 def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--sessions-root", required=True)
     parser.add_argument("--cursor", required=True)
+    parser.add_argument("--overlap-hours", type=int, default=24)
     parser.add_argument("--output", required=True)
     return parser.parse_args()
 
@@ -48,18 +71,20 @@ def read_objects(path: Path) -> list[dict[str, Any]]:
     try:
         with path.open(encoding="utf-8") as stream:
             for line in stream:
+                if not line.strip():
+                    continue
                 try:
                     value = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
+                except json.JSONDecodeError as exc:
+                    raise CollectionError("Codex 세션 JSONL을 완전히 읽지 못함") from exc
                 if isinstance(value, dict):
                     objects.append(value)
-    except OSError:
-        return []
+    except (OSError, UnicodeError) as exc:
+        raise CollectionError("Codex 세션 파일을 읽지 못함") from exc
     return objects
 
 
-def root_session(objects: list[dict[str, Any]]) -> tuple[bool, str]:
+def root_session(objects: list[dict[str, Any]]) -> tuple[bool | None, str, dict[str, Any], str | None]:
     for item in objects:
         if item.get("type") != "session_meta" or not isinstance(item.get("payload"), dict):
             continue
@@ -68,8 +93,11 @@ def root_session(objects: list[dict[str, Any]]) -> tuple[bool, str]:
         if payload.get("thread_source") == "subagent":
             is_child = True
         session_id = payload.get("session_id") or payload.get("id") or "unknown"
-        return not is_child, str(session_id)
-    return False, "unknown"
+        metadata_timestamp = payload.get("timestamp") or item.get("timestamp")
+        if not isinstance(metadata_timestamp, str):
+            metadata_timestamp = None
+        return not is_child, str(session_id), payload, metadata_timestamp
+    return None, "unknown", {}, None
 
 
 def user_text(payload: dict[str, Any]) -> str:
@@ -91,25 +119,125 @@ def is_injected(text: str) -> bool:
     return "# AGENTS.md instructions for" in stripped and "<environment_context>" in stripped
 
 
-def collect(root: Path, cursor: str) -> list[dict[str, str]]:
+def is_synthetic_user_message(text: str) -> bool:
+    stripped = text.lstrip()
+    return any(stripped.startswith(prefix) for prefix in SYNTHETIC_USER_PREFIXES)
+
+
+def parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def is_legacy_desktop_session(metadata: dict[str, Any]) -> bool:
+    return (
+        metadata.get("originator") == "Codex Desktop"
+        and metadata.get("source") == "vscode"
+        and metadata.get("history_mode") == "legacy"
+    )
+
+
+def session_paths(root: Path) -> list[Path]:
+    paths: list[Path] = []
+
+    def traversal_error(exc: OSError) -> None:
+        raise CollectionError("Codex 세션 폴더를 완전히 순회하지 못함") from exc
+
+    try:
+        for directory, dirnames, filenames in os.walk(root, followlinks=False, onerror=traversal_error):
+            current = Path(directory)
+            for dirname in dirnames:
+                if (current / dirname).is_symlink():
+                    raise CollectionError("Codex 세션 폴더에 symlink가 있어 순회를 중단함")
+            dirnames.sort()
+            for filename in sorted(filenames):
+                candidate = current / filename
+                if candidate.is_symlink():
+                    raise CollectionError("Codex 세션 파일에 symlink가 있어 순회를 중단함")
+                if filename.endswith(".jsonl"):
+                    paths.append(candidate)
+    except OSError as exc:
+        raise CollectionError("Codex 세션 폴더를 완전히 순회하지 못함") from exc
+    return sorted(paths)
+
+
+def legacy_import_boundaries(
+    sessions: list[tuple[Path, list[dict[str, Any]], str, dict[str, Any], str | None]],
+) -> dict[Path, datetime]:
+    """짧은 시간에 일괄 생성된 legacy 세션의 초기 스냅샷 경계를 계산한다."""
+    candidates: list[tuple[datetime, Path]] = []
+    for path, _objects, _session_id, metadata, metadata_timestamp in sessions:
+        parsed = parse_timestamp(metadata_timestamp)
+        if parsed is not None and is_legacy_desktop_session(metadata):
+            candidates.append((parsed, path))
+    candidates.sort(key=lambda candidate: candidate[0])
+
+    boundaries: dict[Path, datetime] = {}
+    for start, (start_time, _start_path) in enumerate(candidates):
+        end = start
+        while end < len(candidates) and candidates[end][0] - start_time <= LEGACY_IMPORT_WINDOW:
+            end += 1
+        burst = candidates[start:end]
+        if len(burst) < LEGACY_IMPORT_MIN_SESSIONS:
+            continue
+        boundary = burst[-1][0] + LEGACY_IMPORT_INITIAL_GRACE
+        for _metadata_time, path in burst:
+            previous = boundaries.get(path)
+            if previous is None or boundary > previous:
+                boundaries[path] = boundary
+    return boundaries
+
+
+def collect(root: Path, cursor: str, overlap_hours: int = 24) -> list[dict[str, str]]:
     results: list[dict[str, str]] = []
     seen: set[str] = set()
     if not root.is_dir():
         return results
-    for path in sorted(root.rglob("*.jsonl")):
+    cursor_timestamp = parse_timestamp(cursor)
+    if cursor_timestamp is None:
+        raise CollectionError("Codex 수집 커서 시각이 올바르지 않음")
+    if overlap_hours < 1 or overlap_hours > 168:
+        raise CollectionError("Codex overlap-hours는 1~168 범위여야 함")
+    overlap_start = cursor_timestamp - timedelta(hours=overlap_hours)
+
+    sessions: list[tuple[Path, list[dict[str, Any]], str, dict[str, Any], str | None]] = []
+    for path in session_paths(root):
         objects = read_objects(path)
-        is_root, session_id = root_session(objects)
+        is_root, session_id, metadata, metadata_timestamp = root_session(objects)
+        if is_root is None:
+            raise CollectionError("Codex 세션 파일에 session_meta가 아직 없음")
         if not is_root:
             continue
+        sessions.append((path, objects, session_id, metadata, metadata_timestamp))
+
+    import_boundaries = legacy_import_boundaries(sessions)
+    for path, objects, session_id, _metadata, _metadata_timestamp in sessions:
+        import_boundary = import_boundaries.get(path)
         for item in objects:
             timestamp = item.get("timestamp")
             payload = item.get("payload")
-            if not isinstance(timestamp, str) or timestamp <= cursor or not isinstance(payload, dict):
+            if not isinstance(payload, dict):
                 continue
             if item.get("type") != "response_item" or payload.get("type") != "message" or payload.get("role") != "user":
                 continue
+            if not isinstance(timestamp, str):
+                raise CollectionError("Codex 사용자 발화 시각이 문자열이 아님")
+            parsed_timestamp = parse_timestamp(timestamp)
+            if parsed_timestamp is None:
+                raise CollectionError("Codex 사용자 발화 시각이 올바르지 않음")
+            if parsed_timestamp < overlap_start:
+                continue
+            if import_boundary is not None and parsed_timestamp <= import_boundary:
+                continue
             text = user_text(payload)
-            if not text or is_injected(text):
+            if not text or is_injected(text) or is_synthetic_user_message(text):
                 continue
             identity = hashlib.sha256(f"{session_id}\0{timestamp}\0{text}".encode("utf-8")).hexdigest()
             if identity in seen:
@@ -121,7 +249,12 @@ def collect(root: Path, cursor: str) -> list[dict[str, str]]:
 
 def main() -> int:
     args = arguments()
-    atomic_json(Path(args.output).expanduser(), collect(Path(args.sessions_root).expanduser(), args.cursor))
+    try:
+        collected = collect(Path(args.sessions_root).expanduser(), args.cursor, args.overlap_hours)
+    except CollectionError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    atomic_json(Path(args.output).expanduser(), collected)
     return 0
 
 
