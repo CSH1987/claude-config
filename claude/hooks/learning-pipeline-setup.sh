@@ -67,7 +67,7 @@ if [ ! -f "$CURSOR_FILE" ]; then
   DEFAULT_TS=$(date -u -v-7d +"%Y-%m-%dT%H:%M:%S.000Z" 2>/dev/null || date -u -d "7 days ago" +"%Y-%m-%dT%H:%M:%S.000Z")
   python3 -c "
 import json
-    json.dump({
+json.dump({
         'version': 2,
         'lastProcessed': '$DEFAULT_TS',
         'sources': {'claude-code': '$DEFAULT_TS', 'hermes': '$DEFAULT_TS', 'codex': '$DEFAULT_TS'},

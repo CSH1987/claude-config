@@ -64,6 +64,8 @@ Hermes CLI와 공통 규칙은 여러 장치에 둘 수 있지만, gateway·Tele
 - `~/.claude/vault-state/full-vault-index.json`은 모든 파일의 지문·종류·변경 상태를 담는 장치 로컬 캐시입니다. Git에는 넣지 않고 새 장치에서 다시 만듭니다.
 - 세션에는 전체 원문 대신 짧은 지도와 `10_컨텍스트` 패턴을 넣습니다. 질문을 받으면 Vault 전체를 검색해 관련 원문을 직접 읽습니다.
 - 주간 학습은 Claude Code·Hermes·Codex 사용자 발화와 변경된 Vault 서술 문서를 함께 분석합니다. 큰 CSV·JSON은 전체 지도에 남기고 관련 질문 때 필요한 행만 조회합니다.
+- Claude 기능을 다른 AI에 옮긴 현재 상태·테스트·남은 차이는 [`docs/ai-system-porting-ledger.md`](./docs/ai-system-porting-ledger.md)에서 관리합니다.
+- 새 도구의 최신성·유지보수·인기도·보안·호환성을 판단하는 기준은 [`docs/software-candidate-evaluation-standard.md`](./docs/software-candidate-evaluation-standard.md)를 따릅니다.
 
 ### Claude Code 설정만 복구하는 기존 bootstrap
 
