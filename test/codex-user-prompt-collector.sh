@@ -27,6 +27,7 @@ cat > "$SESSIONS/root.jsonl" <<'EOF'
 {"timestamp":"2026-08-20T00:00:13.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n자동 압축 요약"}]}}
 {"timestamp":"2026-08-20T00:00:14.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"설명 중 This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation. 문구는 보존"}]}}
 {"timestamp":"2026-08-20T00:00:15.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"/compact"}]}}
+{"timestamp":"2026-08-20T00:00:16.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_image","image_url":"fixture-only"}]}}
 EOF
 
 cat > "$SESSIONS/subagent.jsonl" <<'EOF'
@@ -79,6 +80,40 @@ if python3 "$REPO_DIR/claude/learning-pipeline/collect-codex-user-prompts.py" \
 fi
 [ "$OUTPUT_HASH" = "$(shasum -a 256 "$OUTPUT" | awk '{print $1}')" ]
 sed -i '' '$d' "$SESSIONS/root.jsonl" 2>/dev/null || sed -i '$d' "$SESSIONS/root.jsonl"
+
+cat >> "$SESSIONS/root.jsonl" <<'EOF'
+{"timestamp":"2026-08-20T00:00:17.000Z","type":"response_item","payload":{"type":"message","role":"user","content":"실제 입력인데 배열이 아님"}}
+EOF
+if python3 "$REPO_DIR/claude/learning-pipeline/collect-codex-user-prompts.py" \
+  --sessions-root "$SESSIONS" --cursor '2026-08-19T00:00:00.000Z' --output "$OUTPUT" >/dev/null 2>&1; then
+  echo 'malformed Codex user content was silently skipped' >&2
+  exit 1
+fi
+[ "$OUTPUT_HASH" = "$(shasum -a 256 "$OUTPUT" | awk '{print $1}')" ]
+sed -i '' '$d' "$SESSIONS/root.jsonl" 2>/dev/null || sed -i '$d' "$SESSIONS/root.jsonl"
+
+cat >> "$SESSIONS/root.jsonl" <<'EOF'
+{"timestamp":"2026-08-20T00:00:17.500Z","type":"response_item","payload":"사용자 응답 payload가 객체가 아님"}
+EOF
+if python3 "$REPO_DIR/claude/learning-pipeline/collect-codex-user-prompts.py" \
+  --sessions-root "$SESSIONS" --cursor '2026-08-19T00:00:00.000Z' --output "$OUTPUT" >/dev/null 2>&1; then
+  echo 'malformed Codex response_item payload was silently skipped' >&2
+  exit 1
+fi
+[ "$OUTPUT_HASH" = "$(shasum -a 256 "$OUTPUT" | awk '{print $1}')" ]
+sed -i '' '$d' "$SESSIONS/root.jsonl" 2>/dev/null || sed -i '$d' "$SESSIONS/root.jsonl"
+
+cat > "$SESSIONS/missing-session-id.jsonl" <<'EOF'
+{"timestamp":"2026-08-20T00:40:00.000Z","type":"session_meta","payload":{"thread_source":"user"}}
+{"timestamp":"2026-08-20T00:40:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"세션 식별자 없는 입력"}]}}
+EOF
+if python3 "$REPO_DIR/claude/learning-pipeline/collect-codex-user-prompts.py" \
+  --sessions-root "$SESSIONS" --cursor '2026-08-19T00:00:00.000Z' --output "$OUTPUT" >/dev/null 2>&1; then
+  echo 'Codex root session without an ID was silently accepted' >&2
+  exit 1
+fi
+[ "$OUTPUT_HASH" = "$(shasum -a 256 "$OUTPUT" | awk '{print $1}')" ]
+rm "$SESSIONS/missing-session-id.jsonl"
 
 cat >> "$SESSIONS/root.jsonl" <<'EOF'
 {"timestamp":null,"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"시각 타입 오류 입력"}]}}

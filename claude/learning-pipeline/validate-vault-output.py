@@ -148,7 +148,36 @@ def rules() -> list[tuple[str, re.Pattern[str]]]:
             "known_secret_prefix",
             re.compile(
                 r"\b(?:sk-(?:ant-)?[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|"
-                r"AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|xox[baprs]-[A-Za-z0-9-]{20,})\b"
+                r"github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|"
+                r"AIza[0-9A-Za-z_-]{30,}|xox[baprs]-[A-Za-z0-9-]{20,}|"
+                r"sk_(?:live|test)_[A-Za-z0-9]{20,}|npm_[A-Za-z0-9]{20,}|"
+                r"pypi-[A-Za-z0-9_-]{30,}|glpat-[A-Za-z0-9_-]{20,})\b"
+            ),
+        ),
+        (
+            "pem_private_key",
+            re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----"),
+        ),
+        (
+            "jwt",
+            re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
+        ),
+        (
+            "generic_secret_assignment",
+            re.compile(
+                r"\b(?i:api[ _-]?key|secret|access[ _-]?token|auth[ _-]?token|"
+                r"private[ _-]?key|client[ _-]?secret|password)\b\s*[:=]\s*[`\"']?"
+                r"(?=[A-Za-z0-9_./+=-]{24,}(?:[`\"'\s,;}\]]|$))"
+                r"(?=[A-Za-z0-9_./+=-]*[a-z])(?=[A-Za-z0-9_./+=-]*[A-Z])"
+                r"(?=[A-Za-z0-9_./+=-]*[0-9])[A-Za-z0-9_./+=-]{24,}"
+            ),
+        ),
+        (
+            "generic_hex_secret_assignment",
+            re.compile(
+                r"\b(?i:api[ _-]?key|secret|access[ _-]?token|auth[ _-]?token|"
+                r"private[ _-]?key|client[ _-]?secret|password)\b\s*[:=]\s*[`\"']?"
+                r"[0-9a-fA-F]{40,}\b"
             ),
         ),
     ]

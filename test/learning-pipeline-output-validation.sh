@@ -13,6 +13,10 @@ OUTPUT="$TEST_ROOT/output.txt"
 VALIDATOR="$REPO_DIR/claude/learning-pipeline/validate-vault-output.py"
 CATALOG="$REPO_DIR/claude/hooks/vault-catalog.py"
 PRIVATE_UUID='123e4567-e89b-12d3-a456-426614174000'
+PRIVATE_FINE_GRAINED_TOKEN='github_pat_FixtureOnlyAbCdEf0123456789'
+PRIVATE_JWT='eyJmaXh0dXJlSGVhZGVy.eyJmaXh0dXJlUGF5bG9hZA.fixtureSignature012345'
+PRIVATE_GENERIC_SECRET='AbCdEfGhIjKlMnOpQrStUvWxYz012345'
+PRIVATE_GENERIC_HEX_SECRET='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 CANONICAL_PATH='10_컨텍스트/AI_협업_패턴.md'
 AUDIT_PATH='90_Hermes/학습이력/2026-08-21_학습분.md'
 ROUTING_PATH='90_Hermes/라우팅제안/2026-08-21_라우팅제안.md'
@@ -104,6 +108,28 @@ expect_failure workflow-output --allowed-path "$CANONICAL_PATH"
 grep -q 'configured_home_absolute' "$OUTPUT"
 grep -q 'uuid' "$OUTPUT"
 ! grep -q "$TEST_HOME\|$PRIVATE_UUID" "$OUTPUT"
+
+# 고신뢰 시크릿 형식도 탐지하되 실제 fixture 값은 오류 출력에 복사하지 않는다.
+reset_vault
+printf '# 협업 패턴\n\n기존.\n' > "$VAULT/$CANONICAL_PATH"
+capture_state "$BASELINE"
+cat > "$VAULT/$CANONICAL_PATH" <<EOF
+# 협업 패턴
+
+token: $PRIVATE_FINE_GRAINED_TOKEN
+jwt: $PRIVATE_JWT
+API key: \`$PRIVATE_GENERIC_SECRET\`
+access token: \`$PRIVATE_GENERIC_HEX_SECRET\`
+EOF
+printf '%s%s%s\n' '-----BEGIN' ' ENCRYPTED PRIVATE' ' KEY-----' >> "$VAULT/$CANONICAL_PATH"
+capture_state "$CURRENT"
+expect_failure workflow-output --allowed-path "$CANONICAL_PATH"
+grep -q 'known_secret_prefix' "$OUTPUT"
+grep -q 'jwt' "$OUTPUT"
+grep -q 'generic_secret_assignment' "$OUTPUT"
+grep -q 'generic_hex_secret_assignment' "$OUTPUT"
+grep -q 'pem_private_key' "$OUTPUT"
+! grep -q "$PRIVATE_FINE_GRAINED_TOKEN\|$PRIVATE_JWT\|$PRIVATE_GENERIC_SECRET\|$PRIVATE_GENERIC_HEX_SECRET" "$OUTPUT"
 
 # workflow-output은 Vault 전체 차이를 보고 허용 범위 밖 변경을 거부한다.
 reset_vault

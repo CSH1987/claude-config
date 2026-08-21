@@ -92,7 +92,9 @@ def root_session(objects: list[dict[str, Any]]) -> tuple[bool | None, str, dict[
         is_child = bool(payload.get("parent_thread_id") or payload.get("agent_path") or payload.get("forked_from_id"))
         if payload.get("thread_source") == "subagent":
             is_child = True
-        session_id = payload.get("session_id") or payload.get("id") or "unknown"
+        session_id = payload.get("session_id") or payload.get("id")
+        if not isinstance(session_id, str) or not session_id.strip():
+            raise CollectionError("Codex session_meta의 세션 식별자가 올바르지 않음")
         metadata_timestamp = payload.get("timestamp") or item.get("timestamp")
         if not isinstance(metadata_timestamp, str):
             metadata_timestamp = None
@@ -103,12 +105,21 @@ def root_session(objects: list[dict[str, Any]]) -> tuple[bool | None, str, dict[
 def user_text(payload: dict[str, Any]) -> str:
     content = payload.get("content")
     if not isinstance(content, list):
-        return ""
-    parts = [
-        part.get("text", "")
-        for part in content
-        if isinstance(part, dict) and part.get("type") == "input_text" and isinstance(part.get("text"), str)
-    ]
+        raise CollectionError("Codex 사용자 content가 배열이 아님")
+    parts: list[str] = []
+    for part in content:
+        if not isinstance(part, dict) or not isinstance(part.get("type"), str):
+            raise CollectionError("Codex 사용자 content part가 객체가 아님")
+        part_type = part["type"]
+        if part_type == "input_text":
+            text = part.get("text")
+            if not isinstance(text, str):
+                raise CollectionError("Codex input_text.text가 문자열이 아님")
+            parts.append(text)
+        elif part_type in {"input_image", "input_audio", "image", "audio", "local_image", "local_audio"}:
+            continue
+        else:
+            raise CollectionError("Codex 사용자 content part 형식을 인식하지 못함")
     return "\n".join(part for part in parts if part).strip()
 
 
@@ -223,9 +234,11 @@ def collect(root: Path, cursor: str, overlap_hours: int = 24) -> list[dict[str, 
         for item in objects:
             timestamp = item.get("timestamp")
             payload = item.get("payload")
-            if not isinstance(payload, dict):
+            if item.get("type") != "response_item":
                 continue
-            if item.get("type") != "response_item" or payload.get("type") != "message" or payload.get("role") != "user":
+            if not isinstance(payload, dict):
+                raise CollectionError("Codex response_item payload가 객체가 아님")
+            if payload.get("type") != "message" or payload.get("role") != "user":
                 continue
             if not isinstance(timestamp, str):
                 raise CollectionError("Codex 사용자 발화 시각이 문자열이 아님")
