@@ -102,13 +102,15 @@ exec /usr/bin/git "$@"
 EOF
 chmod +x "$BIN_DIR/git"
 
-mkdir -p "$TEST_HOME/.codex" "$TEST_HOME/.hermes" "$TEST_HOME/.claude/skills/playbooks" \
+mkdir -p "$TEST_HOME/.codex/agents" "$TEST_HOME/.hermes" "$TEST_HOME/.claude/skills/playbooks" \
   "$TEST_HOME/.claude/agents" "$TEST_HOME/.claude/exports" "$TEST_HOME/Applications/Obsidian.app"
 printf 'model: test\n' > "$TEST_HOME/.hermes/config.yaml"
 printf 'SECRET_KEY=keep-me\nOBSIDIAN_VAULT_PATH="/old/path"\nOBSIDIAN_VAULT_PATH="/duplicate"\n' > "$TEST_HOME/.hermes/.env"
 printf 'keep skill\n' > "$TEST_HOME/.claude/skills/playbooks/user-file.txt"
 printf 'keep agent\n' > "$TEST_HOME/.claude/agents/hermes-liaison.md"
 printf 'keep exports\n' > "$TEST_HOME/.claude/exports/user-file.txt"
+printf 'approval_policy = "untrusted"\n' > "$TEST_HOME/.codex/safe.config.toml"
+printf 'name = "old-reviewer"\n' > "$TEST_HOME/.codex/agents/reviewer.toml"
 
 export HOME="$TEST_HOME"
 export PATH="$BIN_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -130,7 +132,15 @@ CLAUDE_INSTALL_DEPLOY_ONLY=1 bash "$REPO_DIR/install.sh"
 [ "$(readlink "$TEST_HOME/AGENTS.override.md")" = "$REPO_DIR/codex/home-AGENTS.override.md" ]
 [ -L "$TEST_HOME/.codex/hooks/session-context.sh" ]
 [ -L "$TEST_HOME/.codex/hooks/session-end.sh" ]
+[ -L "$TEST_HOME/.codex/hooks/compact-lifecycle.sh" ]
 [ -L "$TEST_HOME/.codex/skills/workload-optimization" ]
+[ "$(readlink "$TEST_HOME/.codex/safe.config.toml")" = "$REPO_DIR/codex/profiles/safe.config.toml" ]
+[ "$(readlink "$TEST_HOME/.codex/routine.config.toml")" = "$REPO_DIR/codex/profiles/routine.config.toml" ]
+[ "$(readlink "$TEST_HOME/.codex/explore.config.toml")" = "$REPO_DIR/codex/profiles/explore.config.toml" ]
+[ "$(readlink "$TEST_HOME/.codex/agents/architect.toml")" = "$REPO_DIR/codex/agents/architect.toml" ]
+[ "$(readlink "$TEST_HOME/.codex/agents/reviewer.toml")" = "$REPO_DIR/codex/agents/reviewer.toml" ]
+[ "$(readlink "$TEST_HOME/.codex/agents/executor.toml")" = "$REPO_DIR/codex/agents/executor.toml" ]
+[ "$(readlink "$TEST_HOME/.codex/agents/explorer.toml")" = "$REPO_DIR/codex/agents/explorer.toml" ]
 [ -f "$TEST_HOME/.codex/hooks.json" ]
 [ -L "$TEST_HOME/.claude/skills/playbooks" ]
 [ -L "$TEST_HOME/.claude/agents/hermes-liaison.md" ]
@@ -138,6 +148,14 @@ CLAUDE_INSTALL_DEPLOY_ONLY=1 bash "$REPO_DIR/install.sh"
 [ "$(find "$TEST_HOME/.claude/skills" -maxdepth 2 -path '*.pre-claude-config.*/user-file.txt' -print -quit | wc -l | tr -d ' ')" = "1" ]
 [ "$(find "$TEST_HOME/.claude/agents" -maxdepth 1 -name 'hermes-liaison.md.pre-claude-config.*' -type f -print -quit | wc -l | tr -d ' ')" = "1" ]
 [ "$(find "$TEST_HOME/.claude" -maxdepth 2 -path '*/exports.pre-claude-config.*/user-file.txt' -print -quit | wc -l | tr -d ' ')" = "1" ]
+[ "$(find "$TEST_HOME/.codex" -maxdepth 1 -name 'safe.config.toml.pre-claude-config.*' -type f | wc -l | tr -d ' ')" = "1" ]
+[ "$(find "$TEST_HOME/.codex/agents" -maxdepth 1 -name 'reviewer.toml.pre-claude-config.*' -type f | wc -l | tr -d ' ')" = "1" ]
+
+CODEX_RUNTIME_HASH="$(shasum -a 256 "$TEST_HOME/.codex/config.toml" "$TEST_HOME/.codex/hooks.json")"
+CLAUDE_INSTALL_DEPLOY_ONLY=1 bash "$REPO_DIR/install.sh"
+[ "$CODEX_RUNTIME_HASH" = "$(shasum -a 256 "$TEST_HOME/.codex/config.toml" "$TEST_HOME/.codex/hooks.json")" ]
+[ "$(find "$TEST_HOME/.codex" -maxdepth 1 -name 'safe.config.toml.pre-claude-config.*' -type f | wc -l | tr -d ' ')" = "1" ]
+[ "$(find "$TEST_HOME/.codex/agents" -maxdepth 1 -name 'reviewer.toml.pre-claude-config.*' -type f | wc -l | tr -d ' ')" = "1" ]
 
 bash "$REPO_DIR/online-bootstrap.sh" --with-hermes --skip-install --no-open
 bash "$REPO_DIR/online-bootstrap.sh" --with-hermes --skip-install --no-open
@@ -158,12 +176,16 @@ grep -q '^hooks = true$' "$TEST_HOME/.codex/config.toml"
 grep -q '^memories = true$' "$TEST_HOME/.codex/config.toml"
 grep -q '^generate_memories = true$' "$TEST_HOME/.codex/config.toml"
 grep -q '^use_memories = true$' "$TEST_HOME/.codex/config.toml"
+grep -q '^approval_policy = "never"$' "$TEST_HOME/.codex/config.toml"
+grep -q '^sandbox_mode = "danger-full-access"$' "$TEST_HOME/.codex/config.toml"
+grep -q '^model_verbosity = "low"$' "$TEST_HOME/.codex/config.toml"
 python3 - "$TEST_HOME/.codex/hooks.json" "$TEST_HOME/.claude/vault-state/full-vault-index.json" <<'PY'
 import json, sys
 hooks=json.load(open(sys.argv[1]))['hooks']
 commands=[h['command'] for groups in hooks.values() for group in groups for h in group['hooks']]
 assert commands.count('bash "$HOME/.codex/hooks/session-context.sh"') == 1
 assert commands.count('bash "$HOME/.codex/hooks/session-end.sh"') == 1
+assert commands.count('bash "$HOME/.codex/hooks/compact-lifecycle.sh"') == 2
 catalog=json.load(open(sys.argv[2]))
 assert catalog['version'] == 1
 assert catalog['counts']['semanticDocuments'] > 0

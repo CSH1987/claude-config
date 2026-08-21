@@ -138,7 +138,6 @@ PY
 
 if command -v codex >/dev/null 2>&1; then
   PROMPT_INPUT="$TEST_ROOT/prompt-input.json"
-  HOME="$TEST_HOME" CODEX_HOME="$CODEX_HOME" codex --strict-config features list >/dev/null
   # `codex debug` 자체는 --strict-config를 지원하지 않는다. 실제 strict exec는
   # 배포 후 acceptance에서 별도로 실행하고, 여기서는 공식 prompt-input 경로를 검증한다.
   HOME="$TEST_HOME" CODEX_HOME="$CODEX_HOME" codex --dangerously-bypass-hook-trust \
