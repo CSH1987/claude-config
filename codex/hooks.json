@@ -24,6 +24,17 @@
         ]
       }
     ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.codex/hooks/guardrails.sh\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
     "PreCompact": [
       {
         "matcher": "manual|auto",

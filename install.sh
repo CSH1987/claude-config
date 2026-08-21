@@ -166,7 +166,7 @@ install_codex_runtime() {
 
   mkdir -p "$codex_home/hooks" "$codex_home/skills" "$codex_home/agents" "$HOME/.claude/vault-state"
   chmod 700 "$codex_home/hooks" "$codex_home/skills" "$codex_home/agents" "$HOME/.claude/vault-state" 2>/dev/null || true
-  for source_path in "$REPO_DIR"/codex/hooks/*.sh; do
+  for source_path in "$REPO_DIR"/codex/hooks/*.sh "$REPO_DIR"/codex/hooks/*.py; do
     [ -f "$source_path" ] || continue
     target_path="$codex_home/hooks/$(basename "$source_path")"
     backup_conflicting_path "$target_path"

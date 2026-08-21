@@ -3,6 +3,9 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RG_BIN="$(command -v rg)"
+# 실제 머신의 Vault 경로가 테스트 HOME으로 들어오면 격리 fixture 대신 운영 Vault를
+# 보존해 assertion이 실패한다. bootstrap의 경로 탐색을 fixture 안으로 한정한다.
+unset OBSIDIAN_VAULT_PATH
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/online-bootstrap-test.XXXXXX")"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
@@ -133,6 +136,11 @@ CLAUDE_INSTALL_DEPLOY_ONLY=1 bash "$REPO_DIR/install.sh"
 [ -L "$TEST_HOME/.codex/hooks/session-context.sh" ]
 [ -L "$TEST_HOME/.codex/hooks/session-end.sh" ]
 [ -L "$TEST_HOME/.codex/hooks/compact-lifecycle.sh" ]
+[ "$(readlink "$TEST_HOME/.codex/hooks/guardrails.sh")" = "$REPO_DIR/codex/hooks/guardrails.sh" ]
+[ "$(readlink "$TEST_HOME/.codex/hooks/guardrails.py")" = "$REPO_DIR/codex/hooks/guardrails.py" ]
+printf '%s\n' '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' | \
+  HOME="$TEST_HOME" bash "$TEST_HOME/.codex/hooks/guardrails.sh" | \
+  python3 -c 'import json,sys; assert json.load(sys.stdin)["hookSpecificOutput"]["permissionDecision"] == "deny"'
 [ -L "$TEST_HOME/.codex/skills/workload-optimization" ]
 [ "$(readlink "$TEST_HOME/.codex/safe.config.toml")" = "$REPO_DIR/codex/profiles/safe.config.toml" ]
 [ "$(readlink "$TEST_HOME/.codex/routine.config.toml")" = "$REPO_DIR/codex/profiles/routine.config.toml" ]
@@ -186,6 +194,7 @@ commands=[h['command'] for groups in hooks.values() for group in groups for h in
 assert commands.count('bash "$HOME/.codex/hooks/session-context.sh"') == 1
 assert commands.count('bash "$HOME/.codex/hooks/session-end.sh"') == 1
 assert commands.count('bash "$HOME/.codex/hooks/compact-lifecycle.sh"') == 2
+assert commands.count('bash "$HOME/.codex/hooks/guardrails.sh"') == 1
 catalog=json.load(open(sys.argv[2]))
 assert catalog['version'] == 1
 assert catalog['counts']['semanticDocuments'] > 0

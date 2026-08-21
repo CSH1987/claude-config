@@ -44,10 +44,19 @@ STATUS_LINE_ITEMS = [
     "estimated-thread-cost",
     "git-branch",
 ]
+AGENT_ROLES = {
+    "architect": "복잡한 요구의 방향, 아키텍처, 복구 전략을 결정하는 상위 판단 에이전트",
+    "reviewer": "구현 결과의 정확성, 회귀, 보안, 누락 테스트를 독립 검토하는 에이전트",
+    "executor": "확정된 명세를 작고 검증 가능한 변경으로 구현하는 실행 에이전트",
+    "explorer": "대량 파일 검색, 실행 경로 추적, 로그 요약을 맡는 읽기 전용 탐색 에이전트",
+}
 MANAGED_HOOK_COMMANDS = {
     'bash "$HOME/.codex/hooks/session-context.sh"',
     'bash "$HOME/.codex/hooks/session-end.sh"',
     'bash "$HOME/.codex/hooks/compact-lifecycle.sh"',
+    'bash "$HOME/.codex/hooks/guardrails.sh"',
+    # 1차 이식의 Claude 런타임 직접 의존을 제거할 때 중복 없이 마이그레이션한다.
+    'bash "$HOME/.claude/hooks/guardrails.sh"',
 }
 
 
@@ -245,6 +254,17 @@ def build_config(existing: str, mcp: tuple[str, str] | None) -> tuple[str, str]:
             "default_subagent_reasoning_effort": json.dumps("high"),
         },
     )
+    # 0.148에서도 역할 파일을 실제 선택지로 로드하도록 명시적으로 등록한다.
+    # 최신 standalone discovery와도 같은 파일을 가리켜 결과가 달라지지 않는다.
+    for role_name, role_description in AGENT_ROLES.items():
+        text = upsert_section_keys(
+            text,
+            f"agents.{role_name}",
+            {
+                "description": json.dumps(role_description, ensure_ascii=False),
+                "config_file": json.dumps(f"./agents/{role_name}.toml"),
+            },
+        )
     text = upsert_section_keys(
         text,
         "tui",
