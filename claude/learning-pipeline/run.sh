@@ -28,7 +28,11 @@ trap 'exit 143' TERM
 mkdir -p "$DIR"
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   LOCK_PID="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
-  if [[ "$LOCK_PID" =~ ^[0-9]+$ ]] && kill -0 "$LOCK_PID" 2>/dev/null; then
+  if ! [[ "$LOCK_PID" =~ ^[0-9]+$ ]]; then
+    printf 'ERROR: 실행 잠금의 PID를 확인할 수 없음 — 경쟁 실행을 막기 위해 중단\n' >> "$LOG"
+    exit 1
+  fi
+  if kill -0 "$LOCK_PID" 2>/dev/null; then
     printf 'ERROR: 학습 파이프라인이 이미 실행 중(pid=%s) — 중복 실행 차단\n' "$LOCK_PID" >> "$LOG"
     exit 1
   fi
@@ -39,7 +43,10 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   fi
 fi
 LOCK_ACQUIRED=1
-printf '%s\n' "$$" > "$LOCK_DIR/pid"
+if ! printf '%s\n' "$$" > "$LOCK_DIR/pid"; then
+  printf 'ERROR: 실행 잠금 PID 기록 실패 — 실행 중단\n' >> "$LOG"
+  exit 1
+fi
 chmod 600 "$LOCK_DIR/pid" 2>/dev/null || true
 
 {
@@ -59,11 +66,15 @@ chmod 600 "$LOCK_DIR/pid" 2>/dev/null || true
 
   # 이전 실패의 staging 결과를 이번 수집으로 오인하지 않도록 확정 상태(cursor.json,
   # vault-state.json)는 보존하고 재생성 가능한 pending/출력만 비운다.
-  rm -f \
-    "$DIR/gathered-utterances.json" \
-    "$DIR/gathered-vault-documents.json" \
-    "$DIR/pending-cursor.json" \
-    "$DIR/pending-vault-state.json"
+  if ! rm -f \
+      "$DIR/gathered-utterances.json" \
+      "$DIR/gathered-vault-documents.json" \
+      "$DIR/pending-cursor.json" \
+      "$DIR/pending-vault-state.json"; then
+    echo "ERROR: 이전 staging 정리 실패 — 기존 커서를 유지하고 종료"
+    echo "===== $(date -u +"%Y-%m-%dT%H:%M:%SZ") 실행 종료(status=1) ====="
+    exit 1
+  fi
   if ! bash "$DIR/gather.sh"; then
     echo "ERROR: 수집 단계 실패 — 기존 커서를 유지하고 종료"
     echo "===== $(date -u +"%Y-%m-%dT%H:%M:%SZ") 실행 종료(status=1) ====="

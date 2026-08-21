@@ -68,6 +68,15 @@ fi
 rm -f "$PIPE_DIR/run.lock/pid"
 rmdir "$PIPE_DIR/run.lock"
 
+# PID가 아직 기록되지 않은 잠금은 경쟁 구간일 수 있으므로 stale로 지우지 않는다.
+mkdir "$PIPE_DIR/run.lock"
+if env "${RUN_ENV[@]}" bash "$REPO_DIR/claude/learning-pipeline/run.sh"; then
+  echo 'pid-less lock was removed' >&2
+  exit 1
+fi
+[ -d "$PIPE_DIR/run.lock" ]
+rmdir "$PIPE_DIR/run.lock"
+
 # 이전 실패의 stale pending은 지우고, 이번 gather가 상태를 못 만들면 분석 전에 멈춘다.
 printf '{"version":1,"vaultFingerprint":"stale","files":[]}\n' > "$PIPE_DIR/pending-vault-state.json"
 rm -f "$PIPE_DIR/received-wait-ceiling.txt" "$PIPE_DIR/received-claude-args.txt"
