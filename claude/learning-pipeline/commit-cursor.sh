@@ -9,15 +9,16 @@ PENDING_VAULT_STATE="$DIR/pending-vault-state.json"
 VAULT_STATE="$DIR/vault-state.json"
 
 [ -f "$PENDING_CURSOR" ] || { echo "pending-cursor.json 없음 — 먼저 gather.sh 실행 필요" >&2; exit 1; }
+[ -f "$PENDING_VAULT_STATE" ] || { echo "pending-vault-state.json 없음 — Vault 수집 상태를 확인해야 함" >&2; exit 1; }
 temporary="$CURSOR_FILE.tmp.$$"
 jq --arg committedAt "$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")" '.committedAt=$committedAt' \
   "$PENDING_CURSOR" > "$temporary"
 chmod 600 "$temporary"
-mv -f "$temporary" "$CURSOR_FILE"
 
-if [ -f "$PENDING_VAULT_STATE" ]; then
-  chmod 600 "$PENDING_VAULT_STATE"
-  mv -f "$PENDING_VAULT_STATE" "$VAULT_STATE"
-fi
+# 둘을 완전히 원자적으로 바꿀 수는 없으므로 Vault 상태를 먼저 확정하고 커서를
+# 마지막에 전진시킨다. 중간 종료가 나도 재수집은 생길 수 있지만 대화 누락은 막는다.
+chmod 600 "$PENDING_VAULT_STATE"
+mv -f "$PENDING_VAULT_STATE" "$VAULT_STATE"
+mv -f "$temporary" "$CURSOR_FILE"
 rm -f "$PENDING_CURSOR"
 echo "대화 커서와 Vault 분석 상태 커밋 완료" >&2
