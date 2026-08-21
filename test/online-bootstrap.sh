@@ -156,7 +156,8 @@ grep -q '^SECRET_KEY=keep-me$' "$TEST_HOME/.hermes/.env"
 [ "$(grep -cF '<!-- claude-config:vault-catalog:start -->' "$TEST_HOME/.hermes/AGENTS.md")" = "1" ]
 grep -q '^hooks = true$' "$TEST_HOME/.codex/config.toml"
 grep -q '^memories = true$' "$TEST_HOME/.codex/config.toml"
-grep -q '^generate = true$' "$TEST_HOME/.codex/config.toml"
+grep -q '^generate_memories = true$' "$TEST_HOME/.codex/config.toml"
+grep -q '^use_memories = true$' "$TEST_HOME/.codex/config.toml"
 python3 - "$TEST_HOME/.codex/hooks.json" "$TEST_HOME/.claude/vault-state/full-vault-index.json" <<'PY'
 import json, sys
 hooks=json.load(open(sys.argv[1]))['hooks']

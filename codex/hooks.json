@@ -8,7 +8,7 @@
             "type": "command",
             "command": "bash \"$HOME/.codex/hooks/session-context.sh\"",
             "timeout": 10,
-            "additionalContextLimit": 3500
+            "additionalContextLimit": 2500
           }
         ]
       }

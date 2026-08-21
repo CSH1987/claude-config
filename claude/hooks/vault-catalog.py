@@ -74,6 +74,25 @@ def read_bytes_and_hash(path: Path) -> tuple[bytes, str]:
     return content, hashlib.sha256(content).hexdigest()
 
 
+def vault_entries(root: Path) -> list[Path]:
+    """`.git`은 순회 자체를 하지 않고, symlink는 링크 항목으로만 돌려준다."""
+    entries: list[Path] = []
+    for directory, dirnames, filenames in os.walk(root, followlinks=False):
+        current = Path(directory)
+        kept_directories: list[str] = []
+        for name in sorted(dirnames):
+            if name == ".git":
+                continue
+            candidate = current / name
+            if candidate.is_symlink():
+                entries.append(candidate)
+            else:
+                kept_directories.append(name)
+        dirnames[:] = kept_directories
+        entries.extend(current / name for name in sorted(filenames))
+    return sorted(entries, key=lambda item: unicodedata.normalize("NFC", item.as_posix()))
+
+
 def scan_once(root: Path) -> dict[str, Any]:
     files: dict[str, dict[str, Any]] = {}
     section_counts: Counter[str] = Counter()
@@ -81,7 +100,7 @@ def scan_once(root: Path) -> dict[str, Any]:
     semantic_count = 0
     fingerprint = hashlib.sha256()
 
-    for path in sorted(root.rglob("*"), key=lambda item: unicodedata.normalize("NFC", item.as_posix())):
+    for path in vault_entries(root):
         if path.is_symlink():
             relative_path = normalized_relative(path, root)
             try:
@@ -275,7 +294,7 @@ def overview(current: dict[str, Any], analyzed: dict[str, Any]) -> str:
     fingerprint = str(current.get("vaultFingerprint", ""))[:12]
     return "\n".join(
         [
-            f"[Vault 전체 파악] 파일 {counts.get('files', 0)}개 · 본문 분석 문서 {counts.get('semanticDocuments', 0)}개 · 환경설정 {kinds.get('environment', 0)}개 · 첨부/기타 {kinds.get('attachment', 0)}개",
+            f"[Vault 전체 파악] 파일 {counts.get('files', 0)}개 · 본문 분석 문서 {counts.get('semanticDocuments', 0)}개 · 환경설정 {kinds.get('environment', 0)}개 · 비밀 메타데이터 {kinds.get('sensitive', 0)}개 · 첨부/기타 {kinds.get('attachment', 0)}개",
             f"- 전체 범위: {section_text}",
             f"- 내용 지문: {fingerprint or '없음'} · 패턴 상태: {status}",
             "- 모든 원문은 동기화·검색 범위다. 아래 패턴 요약을 먼저 적용하고, 비자명한 답변 전에는 Vault 전체에서 관련 원문을 검색해 직접 읽는다.",

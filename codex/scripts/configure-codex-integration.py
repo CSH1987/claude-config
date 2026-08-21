@@ -114,6 +114,22 @@ def upsert_section_keys(text: str, section: str, values: dict[str, str]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def remove_section_keys(text: str, section: str, keys: set[str]) -> str:
+    """관리기가 과거에 잘못 쓴 키만 제거하고 나머지 사용자 설정은 보존한다."""
+    lines = text.splitlines()
+    bounds = section_bounds(lines, section)
+    if bounds is None:
+        return text
+    start, end = bounds
+    patterns = [re.compile(rf"^\s*{re.escape(key)}\s*=") for key in keys]
+    kept = [
+        line
+        for index, line in enumerate(lines)
+        if not (start < index < end and any(pattern.match(line) for pattern in patterns))
+    ]
+    return "\n".join(kept).rstrip() + "\n"
+
+
 def upsert_top_level_key(text: str, key: str, value: str) -> str:
     lines = text.splitlines()
     first_section = next((i for i, line in enumerate(lines) if re.match(r"^\s*\[.+\]", line)), len(lines))
@@ -187,12 +203,15 @@ def build_config(existing: str, mcp: tuple[str, str] | None) -> tuple[str, str]:
     text = existing
     text = upsert_top_level_key(text, "compact_prompt", json.dumps(COMPACT_PROMPT, ensure_ascii=False))
     text = upsert_section_keys(text, "features", {"hooks": "true", "memories": "true"})
+    # 1차 구현이 쓴 `generate`/`use`는 Codex 0.148 strict schema에 없는 키다.
+    # 공식 키로 이관하되 [memories]의 다른 사용자 조정값은 그대로 둔다.
+    text = remove_section_keys(text, "memories", {"generate", "use"})
     text = upsert_section_keys(
         text,
         "memories",
         {
-            "generate": "true",
-            "use": "true",
+            "generate_memories": "true",
+            "use_memories": "true",
             "disable_on_external_context": "false",
             "min_rate_limit_remaining_percent": "25",
         },

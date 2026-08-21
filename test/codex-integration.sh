@@ -16,12 +16,16 @@ printf '{"vaultPath":"%s","projects":[]}\n' "$VAULT" > "$TEST_HOME/.claude/vault
 printf '%s' "$REPO_DIR" > "$TEST_HOME/.claude/.config-sync-path"
 
 cat > "$CODEX_HOME/config.toml" <<'EOF'
-model = "keep-model"
+model = "gpt-5.6-sol"
 model_reasoning_effort = "ultra"
 
 [features]
 memories = false
 chronicle = true
+
+[memories]
+generate = false
+use = false
 
 [mcp_servers.keep-me]
 command = "keep-command"
@@ -44,13 +48,15 @@ python3 - "$CODEX_HOME/config.toml" <<'PY'
 import sys, tomllib
 with open(sys.argv[1], 'rb') as stream:
     data = tomllib.load(stream)
-assert data['model'] == 'keep-model'
+assert data['model'] == 'gpt-5.6-sol'
 assert data['model_reasoning_effort'] == 'ultra'
 assert data['features']['hooks'] is True
 assert data['features']['memories'] is True
 assert data['features']['chronicle'] is True
-assert data['memories']['generate'] is True
-assert data['memories']['use'] is True
+assert data['memories']['generate_memories'] is True
+assert data['memories']['use_memories'] is True
+assert 'generate' not in data['memories']
+assert 'use' not in data['memories']
 assert data['mcp_servers']['keep-me']['command'] == 'keep-command'
 assert data['mcp_servers']['vault-obsidian']['http_headers']['Authorization'] == 'Bearer test-only-local-key'
 PY
@@ -83,4 +89,14 @@ grep -q 'Vault 전체 파악' "$CONTEXT_OUTPUT"
 grep -q '테스트 패턴' "$CONTEXT_OUTPUT"
 ! grep -q 'test-only-local-key' "$CONTEXT_OUTPUT" "$CODEX_HOME/AGENTS.md" "$TEST_HOME/.claude/vault-state/full-vault-index.json"
 
-echo 'PASS: config preservation/hooks merge/idempotency/local MCP secrecy/session context'
+if command -v codex >/dev/null 2>&1; then
+  PROMPT_INPUT="$TEST_ROOT/prompt-input.json"
+  # `codex debug` 자체는 --strict-config를 지원하지 않는다. 실제 strict exec는
+  # 배포 후 acceptance에서 별도로 실행하고, 여기서는 공식 prompt-input 경로를 검증한다.
+  HOME="$TEST_HOME" CODEX_HOME="$CODEX_HOME" codex --dangerously-bypass-hook-trust \
+    debug prompt-input '격리 훅 검증' > "$PROMPT_INPUT"
+  grep -q 'Vault 전체 파악' "$PROMPT_INPUT"
+  ! grep -q 'test-only-local-key' "$PROMPT_INPUT"
+fi
+
+echo 'PASS: config preservation/hooks merge/idempotency/local MCP secrecy/session context/official prompt-input'
